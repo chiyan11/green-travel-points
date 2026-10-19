@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS travel_mode;
+DROP TABLE IF EXISTS sys_config;

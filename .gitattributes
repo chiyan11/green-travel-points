@@ -1,0 +1,15 @@
+# 统一换行，避免 Windows / macOS 混编时整文件 diff
+* text=auto
+
+*.go    text eol=lf
+*.ts    text eol=lf
+*.tsx   text eol=lf
+*.json  text eol=lf
+*.sql   text eol=lf
+*.yml   text eol=lf
+*.md    text eol=lf
+*.ps1   text eol=crlf
+
+*.png   binary
+*.jpg   binary
+*.ico   binary

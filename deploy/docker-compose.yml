@@ -1,0 +1,51 @@
+# 本地一键起 MySQL + API（可选）。前端开发仍建议用 npm run dev，热更新体验更好。
+#
+#   docker compose -f deploy/docker-compose.yml up -d --build
+#   curl http://127.0.0.1:8080/healthz
+#
+# 说明：本机若已安装 MySQL 服务（如 MySQL97），更省事的是跳过 mysql 服务，
+# 直接把 apps/api/.env 的 DB_DSN 指向本机实例，见 README「数据库准备」。
+
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: gtp-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: green_travel_points
+      MYSQL_USER: greentravel
+      MYSQL_PASSWORD: greentravel
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --default-time-zone=+08:00
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./mysql-data:/var/lib/mysql
+      # 迁移脚本按文件名顺序执行，仅在数据目录为空时生效
+      - ../db/migrations/000001_init.up.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
+      - ../db/migrations/000002_event_outbox.up.sql:/docker-entrypoint-initdb.d/02_event_outbox.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.api
+    container_name: gtp-api
+    restart: unless-stopped
+    environment:
+      APP_ENV: dev
+      HTTP_ADDR: :8080
+      DB_DSN: greentravel:greentravel@tcp(mysql:3306)/green_travel_points?parseTime=true&loc=Local&charset=utf8mb4
+    ports:
+      - "8080:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy

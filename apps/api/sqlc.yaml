@@ -1,0 +1,25 @@
+# sqlc 配置：从 db/migrations 读取 schema，生成强类型 MySQL 查询代码。
+#
+# 使用前提：已安装 sqlc（go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest），
+# 并在 internal/repo/queries 下放置带 -- name: 注解的 SQL。
+# Sprint 0 仅提供 travel_mode 一条示例查询，正式查询从 Sprint 1 开始按模块补充。
+#
+# 生成命令（在 apps/api 目录下执行）： sqlc generate
+version: "2"
+sql:
+  - engine: "mysql"
+    schema: "../../db/migrations"
+    queries: "internal/repo/queries"
+    gen:
+      go:
+        package: "sqlcgen"
+        out: "internal/repo/sqlcgen"
+        emit_json_tags: true
+        emit_interface: true
+        emit_empty_slices: true
+        emit_prepared_queries: false
+        output_db_file_name: "db_gen.go"
+        output_models_file_name: "models_gen.go"
+        overrides:
+          - db_type: "decimal"
+            go_type: "string"

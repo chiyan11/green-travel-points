@@ -1,0 +1,39 @@
+# ---- 系统 ----
+.DS_Store
+Thumbs.db
+*.log
+
+# ---- 环境变量与密钥（.env.example 必须保留） ----
+.env
+.env.*
+!.env.example
+
+# ---- 构建产物 ----
+dist/
+build/
+coverage/
+*.out
+*.exe
+*.test
+
+# ---- Go ----
+apps/api/bin/
+apps/api/tmp/
+
+# ---- Node ----
+node_modules/
+.vite/
+.pnpm-store/
+*.tsbuildinfo
+
+# ---- 本机沙箱缓存重定向（见 scripts/dev-env.ps1，勿提交） ----
+.cache/
+
+# ---- IDE ----
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# ---- 数据库本地数据卷 ----
+deploy/mysql-data/
