@@ -1,0 +1,214 @@
+@startuml 图1-4 域模型（分析类图 · 名词短语法 + CRC）
+' 依据：docs/需求规格说明书.md §2.4（名词短语判定表 / CRC 卡片 / 基数表）
+' 约定：类名 "中文 English" as 别名；字段只列分析阶段能确定的；
+'       方法在分析阶段可省，设计阶段（实验二）再补全。
+
+skinparam defaultFontName "Microsoft YaHei"
+skinparam dpi 150
+skinparam shadowing false
+skinparam classAttributeIconSize 0
+skinparam roundcorner 8
+skinparam class {
+  BackgroundColor #F5F9FF
+  BorderColor #2E5C8A
+  ArrowColor #555555
+}
+hide empty members
+hide circle
+
+title 域模型：碳中和城市绿色出行积分系统
+
+' ================= 账户与主体 =================
+
+class "用户 User" as User <<实体类>> {
+  + id: bigint
+  + phone: varchar(20)
+  + nickname: varchar(64)
+  + passwordHash: varchar(100)
+  + role: UserRole {CITIZEN}
+  + status: UserStatus {ACTIVE|FROZEN}
+  + createdAt: datetime
+}
+
+class "管理员 AdminUser" as AdminUser <<实体类>> {
+  + id: bigint
+  + username: varchar(64)
+  + deptRole: {OPERATOR|CERTIFIER}
+  + status: enum
+}
+
+class "商户 Merchant" as Merchant <<实体类>> {
+  + id: bigint
+  + name: varchar(128)
+  + contact: varchar(64)
+  + settleCycle: {MONTHLY|WEEKLY}
+  + status: enum
+}
+
+' ================= 出行与碳核算 =================
+
+class "出行方式 TravelMode" as TravelMode <<实体类 · 字典>> {
+  + code: varchar(32)
+  + name: varchar(64)
+  + efBase: decimal(8,3)
+  + efActual: decimal(8,3)
+  + enabled: bool
+}
+
+class "系统参数 SysConfig" as SysConfig <<实体类 · 字典>> {
+  + configKey: varchar(64)
+  + configValue: varchar(255)
+  + valueType: enum
+  + description: varchar(255)
+}
+
+class "出行记录 TripRecord" as TripRecord <<实体类>> {
+  + id: bigint
+  + userId: bigint
+  + modeCode: varchar(32)
+  + distanceKm: decimal(8,3)
+  + startedAt: datetime
+  + endedAt: datetime
+  + tripHash: varchar(64) {unique with userId}
+  + source: {APP|SIMULATOR|ADMIN}
+  + status: {VALID|REVOKED}
+}
+
+class "碳减排记录 CarbonRecord" as CarbonRecord <<实体类>> {
+  + id: bigint
+  + tripId: bigint
+  + efBase: decimal(8,3)
+  + efActual: decimal(8,3)
+  + carbonSavedG: decimal(12,3)
+  + ruleSnapshot: varchar(255)
+  + computedAt: datetime
+}
+
+' ================= 积分账本 =================
+
+class "积分账户 PointAccount" as PointAccount <<实体类 · 余额快照>> {
+  + id: bigint
+  + userId: bigint
+  + balance: bigint
+  + frozen: bigint
+  + totalSavedG: decimal(14,3)
+  + version: int {乐观锁}
+  + updatedAt: datetime
+}
+
+class "积分流水 PointTxn" as PointTxn <<实体类 · 只增不改>> {
+  + id: bigint
+  + accountId: bigint
+  + txnType: {TRAVEL|REDEEM|REFUND|ADJUST|EXPIRE}
+  + amount: bigint {正数增，负数减}
+  + bizRefType: varchar(32)
+  + bizRefId: bigint
+  + balanceAfter: bigint
+  + occurredAt: datetime
+}
+
+' ================= 商城与订单 =================
+
+class "商品 Product" as Product <<实体类>> {
+  + id: bigint
+  + merchantId: bigint
+  + name: varchar(128)
+  + category: varchar(32)
+  + coverUrl: varchar(255)
+  + status: {DRAFT|ONLINE|OFFLINE}
+  + sortOrder: int
+}
+
+class "商品规格 ProductSku" as ProductSku <<实体类>> {
+  + id: bigint
+  + productId: bigint
+  + skuName: varchar(64)
+  + pointsPrice: bigint
+  + stock: int {≥0}
+  + soldCount: int
+}
+
+class "兑换订单 RedeemOrder" as RedeemOrder <<实体类>> {
+  + id: bigint
+  + orderNo: varchar(32)
+  + userId: bigint
+  + skuId: bigint
+  + pointsSpent: bigint
+  + status: {PENDING|PAID|SHIPPED|COMPLETED|CANCELLED}
+  + redeemCode: varchar(64)
+  + idempotencyKey: varchar(64)
+  + shippedAt: datetime
+}
+
+' ================= 事件与审计 =================
+
+class "事件发件箱 EventOutbox" as EventOutbox <<实体类>> {
+  + id: bigint
+  + eventId: varchar(64) {unique}
+  + eventType: varchar(64)
+  + aggregateType: varchar(32)
+  + aggregateId: bigint
+  + payload: json
+  + status: {NEW|SENT|FAILED|DEAD}
+  + retryCount: int
+  + nextRetryAt: datetime
+}
+
+class "审计日志 AuditLog" as AuditLog <<实体类>> {
+  + id: bigint
+  + actorType: {USER|ADMIN|SYSTEM}
+  + actorId: bigint
+  + action: varchar(64)
+  + targetType: varchar(32)
+  + targetId: bigint
+  + beforeValue: json
+  + afterValue: json
+  + reason: varchar(255)
+  + createdAt: datetime
+}
+
+' ================= 关系与基数 =================
+
+User "1" -- "0..*" TripRecord : 上报 >
+User "1" -- "1" PointAccount : 持有 >
+User "1" -- "0..*" RedeemOrder : 发起 >
+User "1" -- "0..*" AuditLog : 操作 >
+
+TravelMode "1" -- "0..*" TripRecord : 被引用 >
+TripRecord "1" -- "1" CarbonRecord : 产生 >
+CarbonRecord ..> SysConfig : 规则快照来源
+
+PointAccount "1" -- "0..*" PointTxn : 记账 >
+RedeemOrder "1" -- "0..*" PointTxn : 兑换/冲正 >
+TripRecord "1" -- "0..*" PointTxn : 发放来源 >
+
+Merchant "1" -- "0..*" Product : 供货 >
+Product "1" -- "1..*" ProductSku : 包含 >
+ProductSku "1" -- "0..*" RedeemOrder : 被兑换 >
+
+AdminUser "1" -- "0..*" AuditLog : 操作 >
+
+EventOutbox ..> TripRecord : aggregateType=Trip
+EventOutbox ..> RedeemOrder : aggregateType=Order
+
+note bottom of PointAccount
+  **为什么积分一分为二**
+  PointAccount = 余额快照（可并发更新、查得快）
+  PointTxn     = 只增流水（事实来源、可对账）
+  不变量：balance == Σ(PointTxn.amount)   ← BR-07
+end note
+
+note bottom of EventOutbox
+  **EDA 落地点**
+  业务写与事件写同一本地事务，
+  Worker 轮询后按 eventId 幂等投递，
+  保证"业务成功则事件必达"（至少一次）。
+end note
+
+legend right
+  **<<实体类>>** 均映射为数据库表（snake_case）：
+  TripRecord → trip_record，PointTxn → point_txn ……
+  字典表：travel_mode / sys_config（参数化，禁止硬编码）
+endlegend
+
+@enduml

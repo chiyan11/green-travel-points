@@ -37,3 +37,8 @@ node_modules/
 
 # ---- 数据库本地数据卷 ----
 deploy/mysql-data/
+
+# ---- 建模工具与渲染产物（.puml 必须入库；定稿时再单独提交最终图片） ----
+docs/uml/.tools/
+docs/uml/out/
+

@@ -1,0 +1,6 @@
+{
+  // 打开本仓库时 VS Code 会提示安装，装完即可预览/导出 UML
+  "recommendations": [
+    "jebbs.plantuml"
+  ]
+}
