@@ -7,6 +7,11 @@
   --accent: #16794a;
   --accent-soft: #e6f4ec;
   --danger: #b42318;
+  --danger-soft: #fdecea;
+  --warn: #b45309;
+  --warn-soft: #fff7ed;
+  --info: #2563a8;
+  --info-soft: #eaf1f9;
   --ok: #16794a;
   --radius: 12px;
   --shadow: 0 1px 2px rgb(16 40 24 / 6%), 0 8px 24px rgb(16 40 24 / 5%);
@@ -193,8 +198,18 @@ code {
 }
 
 .badge--danger {
-  background: #fdecea;
+  background: var(--danger-soft);
   color: var(--danger);
+}
+
+.badge--warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.badge--info {
+  background: var(--info-soft);
+  color: var(--info);
 }
 
 .checklist {
@@ -210,4 +225,256 @@ code {
 .checklist .done {
   color: var(--accent);
   font-weight: 600;
+}
+
+/* ===== 原型新增：表单 / 统计卡 / 表格 / 商品 / 订单 ===== */
+
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 16px;
+}
+
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+}
+
+.stat-card .stat-label {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.stat-card .stat-value {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 2px 0;
+}
+
+.stat-card .stat-sub {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.form-field label {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.form-field input,
+.form-field select {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  background: #fff;
+}
+
+.form-field input:focus,
+.form-field select:focus {
+  outline: 2px solid var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.field-error {
+  color: var(--danger);
+  font-size: 12.5px;
+  margin: 0;
+}
+
+.mode-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.mode-option {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  text-align: center;
+  cursor: pointer;
+  background: #fff;
+  font-size: 14px;
+}
+
+.mode-option input {
+  display: none;
+}
+
+.mode-option:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  font-weight: 600;
+}
+
+.btn {
+  display: inline-block;
+  padding: 10px 20px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-size: 14px;
+  cursor: pointer;
+  text-decoration: none;
+  background: var(--accent);
+  color: #fff;
+}
+
+.btn--ghost {
+  background: #fff;
+  color: var(--muted);
+  border-color: var(--border);
+}
+
+.btn--danger {
+  background: #fff;
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.result-panel {
+  margin-top: 16px;
+  border-left: 4px solid var(--accent);
+  background: var(--accent-soft);
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.data-table th,
+.data-table td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.data-table th {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.product-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.product-card {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-decoration: none;
+  color: var(--text);
+}
+
+.product-card .product-emoji {
+  font-size: 34px;
+}
+
+.product-card .product-name {
+  font-weight: 600;
+}
+
+.product-card .product-price {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.product-detail {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.product-emoji--large {
+  font-size: 64px;
+  line-height: 1;
+}
+
+.filter-bar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.chip {
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.chip--active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.empty-state {
+  text-align: center;
+  color: var(--muted);
+  padding: 32px 0;
+  font-size: 14px;
+}
+
+.auth-wrap {
+  max-width: 380px;
+  margin: 60px auto;
+}
+
+.row-between {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.txn-positive {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.txn-negative {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.mock-note {
+  font-size: 12px;
+  color: var(--warn);
+  background: var(--warn-soft);
+  border-radius: 8px;
+  padding: 8px 12px;
 }
