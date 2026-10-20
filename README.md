@@ -81,6 +81,8 @@ Get-ChildItem db/migrations/*.up.sql | Sort-Object Name | ForEach-Object {
 docker compose -f deploy/docker-compose.yml up -d --build
 ```
 
+> 本机已按上述步骤实跑过一次（建库 → 两条迁移 → `/readyz` 200），完整命令与输出见 [`docs/数据库联通记录.md`](docs/数据库联通记录.md)。
+
 ### 2. 后端
 
 ```powershell
@@ -141,7 +143,7 @@ pwsh -File .\scripts\verify.ps1
 - [x] 前端 TS7 类型检查通过、单测 5 例通过、生产构建成功
 - [x] 两条迁移可执行（`000001` 参数与出行方式、`000002` 发件箱）
 - [x] CI 配置就绪（Go + Node 双 job）
-- [ ] 数据库连通性与 `migrate up` 实跑 —— 需组内用本机 MySQL 账号验证（见 Sprint 0 说明的"已知缺口"）
+- [x] 数据库连通性与 `migrate up` 实跑 —— 2026-10-20 在本机 MySQL 9.7.2 完成，`/readyz` 返回 `{"database":"up"}`（过程见 [`docs/数据库联通记录.md`](docs/数据库联通记录.md)）
 
 ## 五个人从这里接着做
 
@@ -155,5 +157,5 @@ pwsh -File .\scripts\verify.ps1
 
 ## 已知约束
 
-- 本机 Docker daemon 未运行，`docker compose` 尚未实跑验证；MySQL97 服务的 root 密码未知，迁移未在真库执行。
+- 本机 Docker daemon 未运行，`docker compose` 尚未实跑验证。MySQL 迁移已在真库执行；root 无明文密码，本机是借 MySQL Workbench 存储的凭据调用 `mysqlsh` 执行（见 [`docs/数据库联通记录.md`](docs/数据库联通记录.md) §3）。
 - 前端统一用 **npm**（而非 pnpm）：pnpm 11 的 isolated 链接器用 Junction 指向虚拟 store，Windows + Node 24 下解析 `@typescript/typescript-win32-x64` 与 `std-env` 均失败，改用 npm 后稳定。
