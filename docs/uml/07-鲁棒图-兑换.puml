@@ -76,7 +76,7 @@ note right of C3
 end note
 
 legend right
-  ``设计类清单``（填入报告表 2-1）
+  **设计类清单**（填入报告表 2-1）
   边界类：B1–B4　控制类：C1–C4　实体类：E1–E6
 endlegend
 

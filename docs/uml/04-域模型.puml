@@ -206,7 +206,7 @@ note bottom of EventOutbox
 end note
 
 legend right
-  ``<<实体类>>`` 均映射为数据库表（snake_case）：
+  **<<实体类>>** 均映射为数据库表（snake_case）：
   TripRecord → trip_record，PointTxn → point_txn ……
   字典表：travel_mode / sys_config（参数化，禁止硬编码）
 endlegend

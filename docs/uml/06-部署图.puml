@@ -68,7 +68,7 @@ note bottom of mysql
 end note
 
 legend right
-  部署门槛（NFR-10）：``docker compose up -d`` 一条命令拉起 mysql + api + nginx。
+  部署门槛（NFR-10）：**docker compose up -d** 一条命令拉起 mysql + api + nginx。
   演示环境不承诺 SLA；上线才补备份与监控（NFR-04 已明确排除）。
 endlegend
 

@@ -28,26 +28,56 @@
 | 组件 | 状态 | 说明 |
 |---|---|---|
 | Java | ✅ 已装 `25.0.3` | PlantUML 是 Java 程序，有 JRE 就能跑 |
-| Graphviz (`dot`) | ❌ 未安装 | 类图/用例图/包图的自动布局依赖它；本仓库先用内置 `smetana` 兜底 |
+| Graphviz (`dot`) | ⚠️ 未做系统安装，但**便携版已就位** `docs/uml/.tools/graphviz/dot.exe`（2.44.1） | 由 PlantUML 自动下载后挪到固定位置，见 §2.2 第 5 步；`scripts/uml-export.ps1` 会自动探测它 |
 | `plantuml.jar` | ✅ 已放 `docs/uml/.tools/plantuml.jar`（1.2024.8，22 MB） | 已被 `.gitignore` 忽略，换台机器要重下 |
 | 11 张图 | ✅ **已实测**：语法校验全通过 + 渲染出 PNG | 一条命令：`scripts/uml-export.ps1`，见 §2.5 |
 
 ### 2.2 路线 A：VS Code 插件（推荐日常用）
 
-1. 装扩展 **PlantUML**（作者 `jebbs`）。
-2. `Alt + D` 实时预览，`Ctrl + Shift + P` → `PlantUML: Export Current Diagram` 导出 PNG/SVG。
-3. **必须装 Graphviz**（否则复杂图报 `Cannot find Graphviz`）：
-   ```powershell
-   winget install --id Graphviz.Graphviz -e
-   # 装完重开终端，验证：
-   dot -V
+**本仓库已配好**：`.vscode/settings.json`、`.vscode/extensions.json` 都已提交，
+打开仓库时 VS Code 会提示安装 `jebbs.plantuml`，装完直接能预览。
+
+1. 装扩展 **PlantUML**（发布者 `jebbs`）。
+   推荐弹窗点安装；或命令行：`code --install-extension jebbs.plantuml`
+2. 打开任意 `docs/uml/*.puml` → **`Alt + D`** 实时预览（改一行立刻重画）。
+3. 导出：`Ctrl + Shift + P` → `PlantUML: Export Current Diagram`（或编辑器右上角图标），
+   按本仓库配置会落到 `docs/uml/out/`。批量导出用 `scripts/uml-export.ps1`（§2.5）。
+4. 关键设置（已写进 `.vscode/settings.json`，这里解释为什么这么配）：
+
+   | 键 | 值 | 为什么 |
+   |---|---|---|
+   | `plantuml.render` | `Local` | 本地 jar 渲染，不依赖公网、设计稿不外传 |
+   | `plantuml.commandArgs` | 见下 | 这几个是 **JVM 参数**，必须在 `-jar` 之前；该键正好插在 java 命令行上 |
+   | `plantuml.diagramsRoot` | `docs/uml` | 批量导出的根目录 |
+   | `plantuml.exportOutDir` | `out` | 相对根目录 → `docs/uml/out/` |
+   | `plantuml.exportSubFolder` | `false` | 否则每张图会再套一层同名子文件夹 |
+
+   ```jsonc
+   "plantuml.commandArgs": [
+     "-Dfile.encoding=UTF-8",        // 中文不乱码
+     "-DPLANTUML_LIMIT_SIZE=20000",  // 默认画布上限 4096px，超了会被静默裁切
+     "-DGRAPHVIZ_DOT=D:/coding/green-travel-points/docs/uml/.tools/graphviz/dot.exe"
+   ]
    ```
-4. 插件设置里加（VS Code `settings.json`）：
-   ```json
-   "plantuml.render": "Local",
-   "plantuml.java": "java",
-   "plantuml.commandArgs": ["-Dfile.encoding=UTF-8"]
-   ```
+
+   > 插件没有单独的 "graphvizDot" 设置项（2.18 版已移除），所以**只能**用 `-DGRAPHVIZ_DOT` 指定。
+
+5. **Graphviz 怎么解决**（本机没装，且 `winget` 在此环境不可用）：
+   - ✅ 已解决：便携版 `docs/uml/.tools/graphviz/dot.exe`（2.44.1，共 12 个文件）。
+     它是 PlantUML 首次渲染时**自己下载**到 `<tmpdir>\_graphviz` 的，把整个文件夹挪到
+     `docs/uml/.tools/graphviz/` 即可长期复用（`.tools/` 已被 `.gitignore` 忽略，不入库）。
+   - 换机器想正常装：`winget install --id Graphviz.Graphviz -e`，`dot -V` 能出版本号后，
+     把 `-DGRAPHVIZ_DOT` 那一项删掉，PlantUML 会自动走 PATH。
+   - 换机器不想装：渲染任意一张**类图**（只有类图/用例图/包图强依赖 Graphviz），
+     PlantUML 会自己下到 `<tmpdir>\_graphviz\`，复制过来即可。
+   - 实在没有：加 `-Playout=smetana` 也能出图（纯 Java 布局），只是走线方正、不紧凑。
+
+6. **验证与排错**：
+   - 预览出图 = 通了。
+   - 报 `Cannot find Graphviz` → 第 5 步的路径没对上；先在终端跑
+     `docs\uml\.tools\graphviz\dot.exe -V`。
+   - 中文变问号/方块 → `-Dfile.encoding=UTF-8` 没生效（用 `.vscode/settings.json` 就不会被拆坏）。
+   - 图被切掉右侧/底部 → `-DPLANTUML_LIMIT_SIZE` 没加，或值仍偏小。
 
 ### 2.3 路线 B：在线渲染（零安装，赶报告时最快）
 

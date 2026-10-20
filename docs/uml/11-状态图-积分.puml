@@ -81,7 +81,7 @@ note bottom of 已冲正
 end note
 
 legend right
-  ``不变量（可写成断言 / 单测）``
+  **不变量（可写成断言 / 单测）**
   Σ(point_txn.amount) == point_account.balance
   任一批次：入账量 == 已消耗 + 已过期 + 已冲正 + 剩余
   同一 trip_id 不得产生两条 +amount 流水（BR-06）

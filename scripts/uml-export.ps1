@@ -18,7 +18,11 @@
          会被**静默裁切**，右侧内容凭空消失。
          → -DPLANTUML_LIMIT_SIZE=20000。
 
-    没有 Graphviz 时自动加 -Playout=smetana（纯 Java 布局，样式略方正）。
+    没有 Graphviz 时的兜底顺序：PATH 里的 dot → docs\uml\.tools\graphviz\dot.exe
+    （便携版，PlantUML 首次用可写的 tmpdir 渲染时会自己下载到 <tmpdir>\_graphviz，
+    把整个文件夹挪到 .tools\graphviz 即可长期复用；实测版本 2.44.1）
+    → 两者都没有才退回 -Playout=smetana（纯 Java 布局，走线方正、不紧凑）。
+    检测到 dot 时会额外传 -DGRAPHVIZ_DOT，避免依赖 PATH。
 
 .EXAMPLE
     .\scripts\uml-export.ps1                 # 导出 PNG
@@ -47,6 +51,7 @@ $src   = Join-Path $root 'docs\uml'
 $tools = Join-Path $src  '.tools'
 $tmp   = Join-Path $tools 'tmp'
 $jar   = Join-Path $tools 'plantuml.jar'
+$gvDot = Join-Path $tools 'graphviz\dot.exe'   # PlantUML 自动下载的便携版 Graphviz（见 .DESCRIPTION 第 4 条）
 
 if (-not (Test-Path $src)) { throw "找不到图目录：$src" }
 
@@ -60,25 +65,35 @@ if (-not (Test-Path $jar)) {
 
 New-Item -ItemType Directory -Force $tmp | Out-Null
 
+# ---------- 1.5 探测 Graphviz ----------
+# 顺序：PATH 里的 dot → .tools\graphviz\dot.exe（PlantUML 自动下的便携版）→ 都没有则 smetana
+$dotExe = $null
+if (-not $Smetana) {
+    $onPath = Get-Command dot -ErrorAction SilentlyContinue
+    if ($onPath) { $dotExe = $onPath.Source }
+    elseif (Test-Path $gvDot) { $dotExe = (Resolve-Path $gvDot).Path }
+}
+
 # ---------- 2. 设置 JVM 参数（见 .DESCRIPTION 的三条坑） ----------
 $oldJavaOpts = $env:JAVA_TOOL_OPTIONS
-$env:JAVA_TOOL_OPTIONS = (@(
+$jvm = @(
     '-Dfile.encoding=UTF-8',
     "-Djava.io.tmpdir=$($tmp -replace '\\', '/')",
     '-DPLANTUML_LIMIT_SIZE=20000'
-) -join ' ')
+)
+if ($dotExe) { $jvm += "-DGRAPHVIZ_DOT=$($dotExe -replace '\\', '/')" }
+$env:JAVA_TOOL_OPTIONS = $jvm -join ' '
 
 try {
     $files = @(Get-ChildItem $src -Filter *.puml | Sort-Object Name)
     if ($files.Count -eq 0) { throw "在 $src 下没有找到任何 .puml 文件" }
 
-    $hasDot = [bool](Get-Command dot -ErrorAction SilentlyContinue)
     $layout = @()
-    if ($Smetana -or -not $hasDot) {
+    if (-not $dotExe) {
         $layout = @('-Playout=smetana')
         Write-Host "布局引擎：smetana（未检测到 Graphviz，或已强制指定）" -ForegroundColor DarkGray
     } else {
-        Write-Host "布局引擎：Graphviz (dot)" -ForegroundColor DarkGray
+        Write-Host "布局引擎：Graphviz (dot) → $dotExe" -ForegroundColor DarkGray
     }
 
     if ($CheckOnly) {
