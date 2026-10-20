@@ -1,0 +1,83 @@
+@startuml 图2-4 鲁棒图：兑换商品（UC-08 用例实现）
+' 依据：设计说明书 2.2.1（用例实现 · 设计模型）
+' 鲁棒图约定（UML 非标准图，需在报告中说明）：
+'   边界类 boundary —— 只与 actor 或控制类相连
+'   控制类 control  —— 居中，承载用例流程
+'   实体类 entity   —— 只与控制类相连（禁止 actor 直连实体）
+
+skinparam defaultFontName "Microsoft YaHei"
+skinparam dpi 150
+skinparam shadowing false
+left to right direction
+skinparam rectangle {
+  BackgroundColor #FFFFFF
+  BorderColor #2E5C8A
+}
+
+actor "市民" as U
+actor "运营管理员" as A
+
+boundary "商品列表页\nProductListPage" as B1
+boundary "商品详情页\nProductDetailPage" as B2
+boundary "兑换确认页\nRedeemConfirmPage" as B3
+boundary "运营-订单管理页\nOrderAdminPage" as B4
+
+control "兑换用例控制器\nRedeemOrderController" as C1
+control "库存校验器\nStockChecker" as C2
+control "积分扣减器\nPointsDebiter" as C3
+control "订单状态机\nOrderStateMachine" as C4
+
+entity "商品 Product" as E1
+entity "商品规格 ProductSku" as E2
+entity "积分账户 PointAccount" as E3
+entity "积分流水 PointTxn" as E4
+entity "兑换订单 RedeemOrder" as E5
+entity "事件发件箱 EventOutbox" as E6
+
+' ---------- 市民侧 ----------
+U --> B1 : 浏览
+B1 --> C1 : 查询商品列表
+C1 --> E1 : 读取上架商品
+C1 --> E2 : 读取库存与积分价
+
+U --> B2 : 选择 SKU
+B2 --> C1 : 查看详情
+
+U --> B3 : 提交兑换
+B3 --> C1 : redeem(skuId, idempotencyKey)
+C1 --> C2 : 校验库存与上架状态
+C2 --> E2 : 加锁 + 复核 stock > 0
+C1 --> C3 : 校验并扣减积分
+C3 --> E3 : SELECT ... FOR UPDATE
+C3 --> E4 : INSERT 扣减流水
+C3 --> E3 : UPDATE balance
+C1 --> E5 : 创建订单（PENDING）
+C1 --> E6 : 写入 OrderPaid 事件（同事务）
+C1 --> B3 : 返回订单号 + 核销码
+
+' ---------- 运营侧 ----------
+A --> B4 : 处理订单
+B4 --> C1 : 查订单列表
+C1 --> E5 : 分页查询
+B4 --> C4 : 发货 / 核销
+C4 --> E5 : 状态跃迁（校验合法性）
+C4 --> E6 : 写入 OrderShipped / OrderCompleted
+
+note bottom of C1
+  **控制类拆分口径**
+  一个用例的控制器 = 流程编排；
+  校验、扣减、状态机拆成协作控制类，
+  便于独立单测（对应报告"设计类清单"）。
+end note
+
+note right of C3
+  禁止：先查余额 → 应用层比较 → UPDATE。
+  必须：加锁 → 复核 → 原子扣减（BR-09）。
+end note
+
+legend right
+  ``设计类清单``（填入报告表 2-1）
+  边界类：B1–B4　控制类：C1–C4　实体类：E1–E6
+endlegend
+
+@enduml

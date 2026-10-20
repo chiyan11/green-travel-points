@@ -1,0 +1,75 @@
+@startuml 图2-3 系统物理架构 部署图
+' 依据：设计说明书 2.1.3；deploy/docker-compose.yml
+' 场景：单台云主机（教学演示）+ 浏览器客户端；CI 在 GitHub Actions
+
+skinparam defaultFontName "Microsoft YaHei"
+skinparam dpi 150
+skinparam shadowing false
+skinparam node {
+  BackgroundColor #F5F9FF
+  BorderColor #2E5C8A
+}
+skinparam databaseBackgroundColor #FFF6E5
+skinparam artifactBackgroundColor #FFFFFF
+
+title 物理架构：Docker Compose 单机部署
+
+node "客户端" as client {
+  artifact "浏览器\nChrome / Edge" as browser {
+    component "React SPA\n(apps/web dist)" as spa
+  }
+}
+
+node "云主机 / 内网服务器（4C8G, Linux）" as host {
+
+  node "nginx 容器" as nginx {
+    artifact "静态资源 + 反向代理\n8080 → 80" as ngx
+  }
+
+  node "api 容器（Go 二进制）" as apinode {
+    artifact "HTTP 服务\n:8080" as apisvc
+    artifact "Outbox Worker\n（轮询 goroutine）" as worker
+  }
+
+  database "mysql 容器\nMySQL 8.0（数据卷持久化）" as mysql
+
+  node "定时任务\n（S2/S4：cron 或 go ticker）" as cron
+}
+
+cloud "GitHub Actions" as ci {
+  artifact "lint / test / build\n镜像推送" as pipeline
+}
+
+cloud "模拟数据源" as sim {
+  artifact "行程生成脚本\n（HTTP 调用）" as gen
+}
+
+' ---------- 通信 ----------
+browser --> nginx : HTTPS
+nginx --> apisvc : /api/* 反向代理
+spa ..> apisvc : fetch REST
+apisvc --> mysql : JDBC / TCP 3306
+worker --> mysql : 轮询 event_outbox
+cron --> apisvc : 触发清算接口
+sim --> apisvc : POST /api/v1/trips
+ci ..> host : 构建产物 / 镜像
+
+note right of worker
+  同一进程内的两个角色：
+  请求处理与事件消费**共享数据库**，
+  但通过 outbox 表解耦，
+  将来可拆成独立容器而不改业务代码。
+end note
+
+note bottom of mysql
+  数据卷：mysql-data（避免容器重建丢数据）
+  账号：greentravel（最小权限，仅本库）
+  迁移：golang-migrate up，启动前执行
+end note
+
+legend right
+  部署门槛（NFR-10）：``docker compose up -d`` 一条命令拉起 mysql + api + nginx。
+  演示环境不承诺 SLA；上线才补备份与监控（NFR-04 已明确排除）。
+endlegend
+
+@enduml

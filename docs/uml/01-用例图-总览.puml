@@ -1,0 +1,107 @@
+@startuml 图1-1 城市绿色出行积分系统 用例图
+' 依据：docs/需求规格说明书.md §2.1 角色列表 / §2.2 用例列表 / §2.3.1 分区原则
+' 约定：人工角色在左，系统参与者（R5/R6）在右；虚线箭头表示 include / extend
+' 渲染：java -jar plantuml.jar -charset UTF-8 -tpng "01-用例图-总览.puml"
+
+skinparam defaultFontName "Microsoft YaHei"
+skinparam dpi 150
+skinparam shadowing false
+' 横向布局：actor 在左，三个分区自上而下堆叠，避免 19 个用例排成一条 6500px 的长条
+left to right direction
+
+skinparam usecase {
+  BackgroundColor #F5F9FF
+  BorderColor #2E5C8A
+}
+skinparam actor {
+  BackgroundColor #FFF6E5
+  BorderColor #B8860B
+}
+
+actor "市民\n（出行用户）" as R1
+actor "运营管理员" as R2
+actor "商户" as R3
+actor "碳核证 / 风控专员" as R4
+
+rectangle "城市绿色出行积分系统" {
+
+  rectangle "A. 出行与碳核算" {
+    usecase "UC-01 注册与登录" as UC01
+    usecase "UC-02 上报出行行程" as UC02
+    usecase "UC-03 出行数据采集与校验" as UC03
+    usecase "UC-04 计算碳减排量" as UC04
+    usecase "UC-05 核发碳积分" as UC05
+    usecase "UC-06 查询个人积分与流水" as UC06
+  }
+
+  rectangle "B. 积分与商城" {
+    usecase "UC-07 浏览积分商城商品" as UC07
+    usecase "UC-08 兑换商品" as UC08
+    usecase "UC-09 查看我的订单与核销码" as UC09
+    usecase "UC-10 撤销行程与积分申诉" as UC10
+    usecase "UC-11 商品与 SKU 管理" as UC11
+    usecase "UC-12 处理兑换订单" as UC12
+    usecase "UC-13 商户入驻与结算" as UC13
+  }
+
+  rectangle "C. 运营与治理" {
+    usecase "UC-14 参数配置（因子与积分规则）" as UC14
+    usecase "UC-15 积分风控与人工调账" as UC15
+    usecase "UC-16 运营报表与对账" as UC16
+    usecase "UC-17 事件重放与死信处理" as UC17
+    usecase "UC-18 积分清算与过期" as UC18
+    usecase "UC-19 审计日志查询" as UC19
+  }
+}
+
+actor "交通数据提供方\n（模拟外部系统）" as R5
+actor "定时任务\n（时间触发者）" as R6 <<系统>>
+
+' ---------- 角色 → 用例 关联 ----------
+R1 --> UC01
+R1 --> UC02
+R1 --> UC06
+R1 --> UC07
+R1 --> UC08
+R1 --> UC09
+R1 --> UC10
+
+R2 --> UC01
+R2 --> UC11
+R2 --> UC12
+R2 --> UC13
+R2 --> UC14
+R2 --> UC15
+R2 --> UC16
+R2 --> UC19
+
+R3 --> UC01
+R3 --> UC13
+
+R4 --> UC10
+R4 --> UC15
+R4 --> UC16
+R4 --> UC17
+R4 --> UC19
+
+R5 --> UC03
+R6 --> UC18
+
+' ---------- include / extend（判定口径见 §2.3.1） ----------
+UC02 ..> UC04 : <<include>>
+UC03 ..> UC04 : <<include>>
+UC04 ..> UC05 : <<include>>
+UC08 ..> UC05 : <<include>>  ' 复用积分账户的加锁与扣减逻辑
+UC10 ..> UC15 : <<include>>  ' 申诉成立后必须走人工冲正
+UC12 ..> UC08 : <<include>>  ' 订单处理复用兑换的事务模型
+UC16 ..> UC18 : <<extend>>   ' 对账异常时触发清算补偿
+
+' 事件流与约束不在此图重复：详见 02/03 活动图、08/09 序列图与需求说明书 §2.3.2
+
+legend right
+  优先级：UC-01/02/04/05/06/07/08/11/12/14 为 P0；
+  UC-09/13/15/16/18/19 为 P1；UC-10/17 为 P2。
+  ``<<系统>>`` 标注者为系统参与者，非人工角色。
+endlegend
+
+@enduml

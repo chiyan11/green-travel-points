@@ -1,0 +1,77 @@
+@startuml 图2-7 状态图：兑换订单生命周期
+' 依据：需求规格说明书 BR-10；db/migrations/000001_init.up.sql 中 redeem_order.status
+' 用途：订单状态机单测的用例来源（非法跃迁必须被拒）
+
+skinparam defaultFontName "Microsoft YaHei"
+skinparam dpi 150
+skinparam shadowing false
+skinparam state {
+  BackgroundColor #F5F9FF
+  BorderColor #2E5C8A
+}
+
+title 状态图：兑换订单 RedeemOrder
+
+[*] --> PENDING : 兑换成功\n扣积分 / 扣库存 / 生成核销码
+
+state PENDING {
+  PENDING : 待商户确认
+  PENDING : 积分已扣，库存已占
+}
+
+state PAID {
+  PAID : 商户已确认（待发货）
+  PAID : 不可再改价 / 改数量
+}
+
+state SHIPPED {
+  SHIPPED : 已发货，核销码生效
+}
+
+state COMPLETED {
+  COMPLETED : 已核销（实物）或已到账（券码）
+}
+
+state CANCELLED {
+  CANCELLED : 已取消，积分原路退回
+}
+
+PENDING --> PAID : 商户确认\n【OrderPaid 已触发过，此处为 Confirm】\n守卫：sku.stock 已扣且商户存在
+PENDING --> CANCELLED : 用户取消 / 超时未确认\n守卫：未发货
+PAID --> SHIPPED : 商户发货\n守卫：PENDING→PAID 已完成
+PAID --> CANCELLED : 商户缺货 / 用户申诉\n守卫：未发货 → 退分 + 回补库存
+SHIPPED --> COMPLETED : 用户核销 / 确认收货
+SHIPPED --> CANCELLED : 核销失败 / 配送丢失\n守卫：仅运营管理员可操作，必须写审计日志
+
+COMPLETED --> [*]
+CANCELLED --> [*]
+
+note right of PENDING
+  **幂等**：同一 orderNo 重复提交取消请求，
+  第二次直接返回当前状态，不重复退分（BR-15）。
+end note
+
+note bottom of PAID
+  **非法跃迁（必须被状态机拒绝，写进单测）**
+  PENDING → SHIPPED　（跳过商户确认）
+  COMPLETED → 任意　（终态不可变）
+  CANCELLED → 任意　（终态不可变）
+  SHIPPED → PAID　　（不可回退）
+end note
+
+note bottom of CANCELLED
+  取消的**副作用必须同事务**：
+  ① INSERT point_txn(REFUND, +points)
+  ② UPDATE point_account.balance
+  ③ UPDATE product_sku.stock + 1
+  ④ 写 OrderCancelled 事件到 outbox
+  漏任何一步都会破坏 BR-07 账本等价。
+end note
+
+legend right
+  数据库 status 取值必须与本图一一对应：
+  PENDING | PAID | SHIPPED | COMPLETED | CANCELLED
+  新增状态需同步改：迁移文件 → 状态机常量 → 本图 → 单测表。
+endlegend
+
+@enduml

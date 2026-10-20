@@ -1,0 +1,71 @@
+@startuml 图1-3 兑换下单 活动图
+' 依据：docs/需求规格说明书.md §2.3.2 UC-08 事件流 + BR-09/BR-10/BR-12/BR-15
+' 核心诉求：把"不超兑"画清楚——加锁 → 锁后复核 → 扣减 → 失败回滚
+
+skinparam defaultFontName "Microsoft YaHei"
+skinparam dpi 150
+skinparam shadowing false
+skinparam ActivityBackgroundColor #F5F9FF
+skinparam ActivityBorderColor #2E5C8A
+skinparam ActivityDiamondBackgroundColor #FFF6E5
+
+|市民|
+start
+:在商城选择 SKU;
+:点击"立即兑换"\n（Header 带 Idempotency-Key）;
+
+|接口层|
+:校验登录态与幂等键格式;
+if (Idempotency-Key 已处理过？) then (是)
+  |市民|
+  :返回首次订单\n（不重复扣分）;
+  stop
+endif
+
+|仓储层|
+:开启数据库事务;
+:SELECT * FROM point_account\n  WHERE user_id = ? FOR UPDATE;
+:SELECT * FROM product_sku\n  WHERE id = ? FOR UPDATE;
+
+|领域层|
+if (商品已下架?) then (是)
+  :回滚事务;\n返回 409 E_PRODUCT_OFFLINE;
+  stop
+endif
+if (库存 > 0?) then (否)
+  :回滚事务;\n返回 409 E_OUT_OF_STOCK;
+  stop
+endif
+if (balance − frozen ≥ 所需积分？) then (否)
+  :回滚事务;\n返回 409 E_INSUFFICIENT_POINTS;
+  stop
+endif
+
+|仓储层|
+:INSERT point_txn (type = REDEEM, amount = −所需积分);
+:UPDATE point_account SET balance = balance − 所需积分;
+:UPDATE product_sku SET stock = stock − 1;
+:INSERT redeem_order (status = PENDING, 订单号, 核销码);
+:INSERT event_outbox (OrderPaid, 同事务);
+:提交事务;
+
+|事件总线|
+:Worker 投递 OrderPaid;
+:消费方：通知商户 / 生成核销凭证 / 累计报表;
+note right
+  消费失败不回滚扣分——
+  "扣分即成立"，事件靠重试补齐（至少一次 + 幂等）。
+end note
+
+|市民|
+:返回 200 {订单号, 核销码, 剩余积分};
+stop
+
+legend right
+  **禁止的写法**（领域层，答辩必问）
+  ❌ SELECT 查余额 → 应用层算 → UPDATE
+  ✅ 加锁 → 锁后复核 → 原子 UPDATE
+  前者在 50 并发下必然超兑。
+endlegend
+
+@enduml
