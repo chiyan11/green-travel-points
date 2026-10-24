@@ -29,6 +29,8 @@ services:
       - ../db/migrations/000001_init.up.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
       - ../db/migrations/000002_event_outbox.up.sql:/docker-entrypoint-initdb.d/02_event_outbox.sql:ro
       - ../db/migrations/000003_points_ledger.up.sql:/docker-entrypoint-initdb.d/03_points_ledger.sql:ro
+      - ../db/migrations/000004_user_trip_carbon.up.sql:/docker-entrypoint-initdb.d/04_user_trip_carbon.sql:ro
+      - ../db/migrations/000005_mall_orders.up.sql:/docker-entrypoint-initdb.d/05_mall_orders.sql:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot"]
       interval: 5s
