@@ -54,6 +54,9 @@ func run() error {
 	}
 	cancelPing()
 
+	// P3 业务：商品目录、积分查询、兑换订单共用同一个 Store。
+	store := repo.New(db)
+
 	srv := &http.Server{
 		Addr: cfg.HTTPAddr,
 		Handler: httpserver.NewRouter(httpserver.Options{
@@ -61,6 +64,9 @@ func run() error {
 			Logger:         logger,
 			Env:            cfg.Env,
 			RequestTimeout: cfg.HTTPRequestTimeout,
+			Catalog:        store,
+			Points:         store,
+			Orders:         store,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
