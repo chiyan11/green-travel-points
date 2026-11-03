@@ -67,6 +67,8 @@ func run() error {
 			Catalog:        store,
 			Points:         store,
 			Orders:         store,
+			Admin:          store,
+			Roles:          store,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,

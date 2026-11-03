@@ -21,3 +21,8 @@ type OrderStore interface {
 	ListOrders(ctx context.Context, q OrderQuery) (Page[Order], error)
 	CancelOrder(ctx context.Context, userID, orderID int64, reason string) (Order, error)
 }
+
+// RoleStore 是后台鉴权用的角色查询端口。
+type RoleStore interface {
+	RoleOf(ctx context.Context, userID int64) (string, error)
+}

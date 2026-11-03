@@ -20,6 +20,7 @@ var (
 	ErrProductOffline     = errors.New("app: 商品不存在或已下架")
 	ErrIllegalTransition  = errors.New("app: 非法的订单状态跃迁")
 	ErrConflict           = errors.New("app: 数据冲突")
+	ErrInvalidInput       = errors.New("app: 参数不合法")
 )
 
 // Page 是统一分页响应体。
@@ -74,6 +75,8 @@ type SKU struct {
 // Product 是商品。PointsPrice / Stock 为 SKU 聚合值（最低价 / 总库存）。
 type Product struct {
 	ID           int64  `json:"id"`
+	MerchantID   int64  `json:"merchantId,omitempty"`
+	Status       string `json:"status,omitempty"`
 	Name         string `json:"name"`
 	Description  string `json:"description"`
 	Category     string `json:"category"`
@@ -97,6 +100,7 @@ type ProductQuery struct {
 // Order 是兑换订单。
 type Order struct {
 	ID           int64      `json:"id"`
+	UserID       int64      `json:"userId"`
 	OrderNo      string     `json:"orderNo"`
 	ProductID    int64      `json:"productId"`
 	SKUId        int64      `json:"skuId"`

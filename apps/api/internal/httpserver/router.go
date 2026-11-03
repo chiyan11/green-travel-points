@@ -23,6 +23,10 @@ type Options struct {
 	Catalog app.CatalogStore
 	Points  app.PointsStore
 	Orders  app.OrderStore
+
+	// M8 运营后台；Roles 用于校验管理员身份。
+	Admin app.AdminStore
+	Roles app.RoleStore
 }
 
 // NewRouter 组装全部 HTTP 路由。
@@ -63,6 +67,7 @@ func NewRouter(opt Options) http.Handler {
 	catalog := catalogHandler{store: opt.Catalog, logger: logger}
 	points := pointsHandler{store: opt.Points, logger: logger}
 	orders := orderHandler{store: opt.Orders, logger: logger}
+	admin := adminHandler{store: opt.Admin, logger: logger}
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Get("/ping", func(w http.ResponseWriter, r *http.Request) {
@@ -88,6 +93,23 @@ func NewRouter(opt Options) http.Handler {
 				r.Post("/orders/{id}/cancel", orders.cancel)
 			}
 		})
+
+		// 运营后台：需要管理员身份。
+		if opt.Admin != nil && opt.Roles != nil {
+			r.Group(func(r chi.Router) {
+				r.Use(RequireUser)
+				r.Use(RequireAdmin(opt.Roles, logger))
+				r.Get("/admin/products", admin.listProducts)
+				r.Post("/admin/products", admin.createProduct)
+				r.Patch("/admin/products/{id}", admin.updateProduct)
+				r.Put("/admin/skus/{id}/stock", admin.setStock)
+				r.Get("/admin/orders", admin.listOrders)
+				r.Post("/admin/orders/{id}/confirm", admin.transition("confirm", "PAID"))
+				r.Post("/admin/orders/{id}/ship", admin.transition("ship", "SHIPPED"))
+				r.Post("/admin/orders/{id}/complete", admin.transition("complete", "COMPLETED"))
+				r.Get("/admin/points/reconcile", admin.reconcile)
+			})
+		}
 	})
 
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {

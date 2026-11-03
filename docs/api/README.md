@@ -86,7 +86,41 @@ curl -H "X-User-Id: 1001" http://127.0.0.1:8080/api/v1/points/summary
 > ⚠️ Windows 下用 curl 传中文 JSON 时，命令行参数可能被转成 GBK 导致入库乱码；
 > 中文请求体建议写入 UTF-8 文件后 `--data-binary @file.json`。
 
-## 6. 测试
+## 6. 运营后台（M8，需 ADMIN 身份）
+
+开发期要求 `X-User-Id` 对应用户的 `role = 'ADMIN'`（种子数据里 1002 是管理员），否则返回 403。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/v1/admin/products` | 全部商品（含 DRAFT/OFFLINE）；`status`、`keyword` 可选 |
+| POST | `/api/v1/admin/products` | 新建商品 + SKU（默认 DRAFT） |
+| PATCH | `/api/v1/admin/products/{id}` | 更新商品（含上下架：`status`） |
+| PUT | `/api/v1/admin/skus/{id}/stock` | 设置 SKU 库存（绝对值） |
+| GET | `/api/v1/admin/orders` | 全部订单；`status` 可选 |
+| POST | `/api/v1/admin/orders/{id}/confirm` | `PENDING → PAID`（商户确认） |
+| POST | `/api/v1/admin/orders/{id}/ship` | `PAID → SHIPPED`（发货） |
+| POST | `/api/v1/admin/orders/{id}/complete` | `SHIPPED → COMPLETED`（核销完成） |
+| GET | `/api/v1/admin/points/reconcile` | 全量积分对账：`balance == Σ(txn)`，返回不一致账户（BR-07 证据） |
+
+新建商品示例：
+
+```json
+{
+  "merchantId": 1001,
+  "name": "环保水杯",
+  "description": "可重复使用",
+  "category": "文创",
+  "status": "DRAFT",
+  "sortOrder": 40,
+  "limitPerUser": 1,
+  "skus": [{"name": "标准款", "pointsPrice": 120, "stock": 20}]
+}
+```
+
+订单流转非法时返回 `409 ILLEGAL_TRANSITION`；每次流转都会写 `event_outbox`
+（`OrderConfirmed` / `OrderShipped` / `OrderCompleted`），交给 Worker 消费。
+
+## 7. 测试
 
 ```powershell
 cd apps/api

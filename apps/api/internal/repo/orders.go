@@ -16,7 +16,7 @@ import (
 )
 
 // orderColumns 是订单查询的固定列顺序，scanOrder 依赖该顺序。
-const orderColumns = `id, order_no, product_id, sku_id, product_name, sku_name,
+const orderColumns = `id, user_id, order_no, product_id, sku_id, product_name, sku_name,
 	points_spent, quantity, receiver, status, redeem_code, idempotency_key,
 	created_at, updated_at, shipped_at, completed_at, cancelled_at, cancel_reason`
 
@@ -339,7 +339,7 @@ func scanOrder(row rowScanner) (app.Order, error) {
 		completedAt sql.NullTime
 		cancelledAt sql.NullTime
 	)
-	if err := row.Scan(&o.ID, &o.OrderNo, &o.ProductID, &o.SKUId, &o.ProductName, &o.SKUName,
+	if err := row.Scan(&o.ID, &o.UserID, &o.OrderNo, &o.ProductID, &o.SKUId, &o.ProductName, &o.SKUName,
 		&o.PointsSpent, &o.Quantity, &o.Receiver, &o.Status, &o.RedeemCode, &idem,
 		&o.CreatedAt, &o.UpdatedAt, &shippedAt, &completedAt, &cancelledAt, &o.CancelReason); err != nil {
 		return app.Order{}, err

@@ -25,6 +25,11 @@ INSERT INTO point_batch (id, account_id, grant_txn_id, granted_amount, remaining
 VALUES (1001, 1001, 1001, 1200, 1200, DATE_ADD(NOW(3), INTERVAL 365 DAY), 'ACTIVE')
 ON DUPLICATE KEY UPDATE remaining = VALUES(remaining);
 
+-- 运营后台管理员（role = ADMIN），用于 M8 后台接口联调
+INSERT INTO user (id, phone, nickname, password_hash, role, status)
+VALUES (1002, '13800000002', '运营管理员', '$2a$10$devdemohashplaceholder', 'ADMIN', 'ACTIVE')
+ON DUPLICATE KEY UPDATE nickname = VALUES(nickname);
+
 -- ---------- 商户与商品 ----------
 INSERT INTO merchant (id, name, contact, settle_cycle, status)
 VALUES (1001, '绿色生活商户', '张三 13800000000', 'MONTHLY', 'ACTIVE')

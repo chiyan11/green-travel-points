@@ -38,6 +38,29 @@ func UserID(ctx context.Context) int64 {
 	return 0
 }
 
+// RequireAdmin 必须挂在 RequireUser 之后：校验当前用户角色为 ADMIN。
+// 开发期角色来自 user 表 role 字段（P2 的 JWT 接入后可改为从 token claim 读取）。
+func RequireAdmin(roles app.RoleStore, logger *slog.Logger) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			role, err := roles.RoleOf(r.Context(), UserID(r.Context()))
+			if err != nil {
+				if errors.Is(err, app.ErrNotFound) {
+					Fail(w, http.StatusForbidden, CodeForbidden, "需要管理员权限")
+					return
+				}
+				FailInternal(w, logger, err)
+				return
+			}
+			if role != "ADMIN" {
+				Fail(w, http.StatusForbidden, CodeForbidden, "需要管理员权限")
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // failFromStore 把业务错误统一映射为 HTTP 响应。
 func failFromStore(w http.ResponseWriter, logger *slog.Logger, err error) {
 	switch {
@@ -53,6 +76,8 @@ func failFromStore(w http.ResponseWriter, logger *slog.Logger, err error) {
 		Fail(w, http.StatusConflict, CodeLimitExceeded, "超出单用户限兑数量")
 	case errors.Is(err, app.ErrIllegalTransition):
 		Fail(w, http.StatusConflict, CodeIllegalTransition, "当前订单状态不允许该操作")
+	case errors.Is(err, app.ErrInvalidInput):
+		Fail(w, http.StatusBadRequest, CodeInvalidArgument, "参数不合法")
 	default:
 		FailInternal(w, logger, err)
 	}
