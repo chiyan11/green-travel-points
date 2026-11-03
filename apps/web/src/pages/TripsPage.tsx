@@ -18,7 +18,7 @@ export function TripsPage(): ReactNode {
 
   const [mode, setMode] = useState<TravelMode>('subway')
   const [distanceInput, setDistanceInput] = useState('')
-  const [traveledAt, setTraveledAt] = useState('')
+  const [startedAt, setStartedAt] = useState('')
   const [distanceError, setDistanceError] = useState('')
   const [last, setLast] = useState<TripRecord | null>(null)
   const [submitError, setSubmitError] = useState('')
@@ -36,11 +36,11 @@ export function TripsPage(): ReactNode {
       const trip = submitTrip({
         mode,
         distanceKm: check.value,
-        traveledAt: traveledAt ? new Date(traveledAt).toISOString() : new Date().toISOString(),
+        startedAt: startedAt ? new Date(startedAt).toISOString() : new Date().toISOString(),
       })
       setLast(trip)
       setDistanceInput('')
-      setTraveledAt('')
+      setStartedAt('')
       void queryClient.invalidateQueries({ queryKey: ['trips'] })
       void queryClient.invalidateQueries({ queryKey: ['summary'] })
       void queryClient.invalidateQueries({ queryKey: ['txns'] })
@@ -93,12 +93,12 @@ export function TripsPage(): ReactNode {
           </div>
 
           <div className="form-field">
-            <label htmlFor="traveledAt">出行时间（可选，默认当前）</label>
+            <label htmlFor="startedAt">出发时间（可选，默认当前）</label>
             <input
-              id="traveledAt"
+              id="startedAt"
               type="datetime-local"
-              value={traveledAt}
-              onChange={(e) => setTraveledAt(e.target.value)}
+              value={startedAt}
+              onChange={(e) => setStartedAt(e.target.value)}
             />
           </div>
 
@@ -138,7 +138,7 @@ export function TripsPage(): ReactNode {
             <tbody>
               {trips.map((t) => (
                 <tr key={t.id}>
-                  <td>{formatDateTime(t.traveledAt)}</td>
+                  <td>{formatDateTime(t.startedAt)}</td>
                   <td>
                     {modeMeta(t.mode).emoji} {modeMeta(t.mode).label}
                   </td>

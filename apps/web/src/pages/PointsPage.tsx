@@ -54,7 +54,6 @@ export function PointsPage(): ReactNode {
                 <th>类型</th>
                 <th>变动</th>
                 <th>变动后余额</th>
-                <th>说明</th>
               </tr>
             </thead>
             <tbody>
@@ -63,14 +62,13 @@ export function PointsPage(): ReactNode {
                 const sign = t.amount >= 0 ? '+' : ''
                 return (
                   <tr key={t.id}>
-                    <td>{formatDateTime(t.createdAt)}</td>
+                    <td>{formatDateTime(t.occurredAt)}</td>
                     <td>{meta.label}</td>
                     <td className={t.amount >= 0 ? 'ok' : 'danger'}>
                       {sign}
                       {t.amount}
                     </td>
                     <td>{formatPoints(t.balanceAfter)}</td>
-                    <td>{t.reason}</td>
                   </tr>
                 )
               })}

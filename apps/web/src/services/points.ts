@@ -13,9 +13,9 @@ export function getSummary(): PointSummary {
     .getTxns()
     .filter(
       (t) =>
-        t.type === 'EARN' &&
-        new Date(t.createdAt).getMonth() === now.getMonth() &&
-        new Date(t.createdAt).getFullYear() === now.getFullYear(),
+        t.type === 'TRAVEL' &&
+        new Date(t.occurredAt).getMonth() === now.getMonth() &&
+        new Date(t.occurredAt).getFullYear() === now.getFullYear(),
     )
     .reduce((sum, t) => sum + t.amount, 0)
 
