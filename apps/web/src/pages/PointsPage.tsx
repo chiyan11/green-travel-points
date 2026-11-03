@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
-import { getSummary, listTxns } from '@/services/points'
+import { getRecentCarbonSeries, getSummary, listTxns } from '@/services/points'
 import { POINT_TXN_TYPE_META } from '@/lib/orderStatus'
+import { CarbonTrendChart } from '@/components/CarbonTrendChart'
 import { formatDateTime, formatGrams, formatPoints } from '@/lib/format'
 import type { ReactNode } from 'react'
 
@@ -12,6 +13,10 @@ export function PointsPage(): ReactNode {
   const { data: txns = [] } = useQuery({
     queryKey: ['txns'],
     queryFn: () => Promise.resolve(listTxns()),
+  })
+  const { data: trend = [] } = useQuery({
+    queryKey: ['carbon-trend-7d'],
+    queryFn: () => Promise.resolve(getRecentCarbonSeries()),
   })
 
   return (
@@ -41,6 +46,11 @@ export function PointsPage(): ReactNode {
           </p>
         </div>
       </div>
+
+      <section className="card">
+        <h3>近 7 日碳减排</h3>
+        <CarbonTrendChart data={trend} />
+      </section>
 
       <section className="card">
         <h3>积分流水</h3>
