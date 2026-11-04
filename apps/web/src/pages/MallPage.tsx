@@ -3,16 +3,17 @@ import { Link } from 'react-router-dom'
 import { listProducts } from '@/services/products'
 import { getSummary } from '@/services/points'
 import { formatPoints } from '@/lib/format'
+import { productCoverIcon } from '@/lib/productCover'
 import type { ReactNode } from 'react'
 
 export function MallPage(): ReactNode {
   const { data: products = [] } = useQuery({
     queryKey: ['products'],
-    queryFn: () => Promise.resolve(listProducts()),
+    queryFn: () => listProducts(),
   })
   const { data: summary } = useQuery({
     queryKey: ['summary'],
-    queryFn: () => Promise.resolve(getSummary()),
+    queryFn: () => getSummary(),
   })
 
   return (
@@ -26,7 +27,7 @@ export function MallPage(): ReactNode {
         {products.map((p) => (
           <div key={p.id} className="card product-card">
             <div className="product-emoji" aria-hidden="true">
-              {p.imageEmoji}
+              {p.coverUrl ? <img src={p.coverUrl} alt="" /> : productCoverIcon(p.category)}
             </div>
             <h3>{p.name}</h3>
             <p className="muted">{p.description}</p>

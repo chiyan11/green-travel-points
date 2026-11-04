@@ -1,65 +1,59 @@
 /**
- * 兑换订单服务（MOCK）。
- * TODO 联调替换：GET /api/v1/orders、POST /api/v1/orders、POST /api/v1/orders/{id}/cancel。
- * 防超卖、扣减与冻结以后端事务为准，前端仅做预校验与提示。
+ * 兑换订单服务（联调版）。
+ * GET /api/v1/orders、POST /api/v1/orders、POST /api/v1/orders/{id}/cancel（需 X-User-Id）。
+ * 扣减、冻结、库存一致性以后端事务为准，前端不再本地改余额/库存。
  */
-import { mockDb, nextId } from '@/mock/data'
-import type { RedeemOrder } from '@/types/domain'
+import { api } from '@/lib/http'
+import type { OrderStatus, Page, RedeemOrder } from '@/types/domain'
 
-export function listOrders(): RedeemOrder[] {
-  return mockDb.getOrders()
+interface RawOrder {
+  id: number
+  orderNo: string
+  productId: number
+  skuId?: number
+  productName: string
+  skuName?: string
+  pointsSpent: number
+  quantity?: number
+  receiver?: string
+  status: string
+  redeemCode?: string
+  createdAt: string
+  updatedAt: string
 }
 
-export function createOrder(productId: string, receiver: string): RedeemOrder {
-  const product = mockDb.getProduct(productId)
-  if (!product) throw new Error('商品不存在或已下架')
-  if (product.stock <= 0) throw new Error('库存不足，无法兑换')
-  if (mockDb.getBalance() < product.pointsPrice) throw new Error('积分余额不足')
-
-  const now = new Date().toISOString()
-  const order: RedeemOrder = {
-    id: nextId('order'),
-    productId,
-    productName: product.name,
-    pointsSpent: product.pointsPrice,
-    status: 'PENDING',
-    receiver: receiver.trim() || '本人',
-    createdAt: now,
-    updatedAt: now,
+function toOrder(r: RawOrder): RedeemOrder {
+  return {
+    id: String(r.id),
+    orderNo: r.orderNo,
+    productId: String(r.productId),
+    skuId: String(r.skuId ?? ''),
+    skuName: r.skuName ?? '',
+    productName: r.productName,
+    pointsSpent: r.pointsSpent,
+    quantity: r.quantity ?? 1,
+    receiver: r.receiver ?? '本人',
+    status: (r.status || 'PENDING') as OrderStatus,
+    redeemCode: r.redeemCode ?? '',
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
   }
-  mockDb.addOrder(order)
-  mockDb.addPoints(-product.pointsPrice)
-  mockDb.decrementStock(productId)
-  mockDb.addTxn({
-    id: nextId('txn'),
-    type: 'SPEND',
-    amount: -product.pointsPrice,
-    balanceAfter: mockDb.getBalance(),
-    reason: `兑换${product.name}`,
-    refType: 'ORDER',
-    refId: order.id,
-    createdAt: now,
-  })
-  return order
 }
 
-export function cancelOrder(id: string): void {
-  const order = mockDb.getOrders().find((o) => o.id === id)
-  if (!order) throw new Error('订单不存在')
-  if (order.status !== 'PENDING') throw new Error('仅待支付订单可以取消')
+export async function listOrders(): Promise<RedeemOrder[]> {
+  const page = await api.get<Page<RawOrder>>('/api/v1/orders?page=1&pageSize=50')
+  return (page.items ?? []).map(toOrder)
+}
 
-  const product = mockDb.getProduct(order.productId)
-  mockDb.updateOrder(id, { status: 'CANCELLED' })
-  mockDb.addPoints(order.pointsSpent)
-  if (product) mockDb.restoreStock(product.id)
-  mockDb.addTxn({
-    id: nextId('txn'),
-    type: 'REVERSE',
-    amount: order.pointsSpent,
-    balanceAfter: mockDb.getBalance(),
-    reason: `取消订单 ${order.id}，积分返还`,
-    refType: 'ORDER',
-    refId: id,
-    createdAt: new Date().toISOString(),
-  })
+export async function createOrder(productId: string, receiver: string): Promise<RedeemOrder> {
+  const raw = await api.post<RawOrder>(
+    '/api/v1/orders',
+    { productId: Number(productId), receiver: receiver.trim() || '本人' },
+    { 'Idempotency-Key': crypto.randomUUID() },
+  )
+  return toOrder(raw)
+}
+
+export async function cancelOrder(id: string): Promise<void> {
+  await api.post(`/api/v1/orders/${encodeURIComponent(id)}/cancel`, { reason: '用户在前端取消' })
 }

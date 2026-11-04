@@ -21,15 +21,15 @@ export function OrdersPage(): ReactNode {
 
   const { data: orders = [] } = useQuery({
     queryKey: ['orders'],
-    queryFn: () => Promise.resolve(listOrders()),
+    queryFn: () => listOrders(),
   })
 
   const visible = filter === 'ALL' ? orders : orders.filter((o) => o.status === filter)
 
-  const onCancel = (id: string) => {
+  const onCancel = async (id: string) => {
     setError('')
     try {
-      cancelOrder(id)
+      await cancelOrder(id)
       void queryClient.invalidateQueries({ queryKey: ['orders'] })
       void queryClient.invalidateQueries({ queryKey: ['summary'] })
       void queryClient.invalidateQueries({ queryKey: ['txns'] })
@@ -79,8 +79,13 @@ export function OrdersPage(): ReactNode {
                 const meta = ORDER_STATUS_META[o.status]
                 return (
                   <tr key={o.id}>
-                    <td><code>{o.id}</code></td>
-                    <td>{o.productName}</td>
+                    <td><code>{o.orderNo}</code></td>
+                    <td>
+                      {o.productName}（{o.skuName}）
+                      {o.redeemCode && (
+                        <p className="muted" style={{ margin: '4px 0 0' }}>核销码：{o.redeemCode}</p>
+                      )}
+                    </td>
                     <td>-{formatPoints(o.pointsSpent)}</td>
                     <td>
                       <span className={`badge ${meta.badge}`}>{meta.label}</span>

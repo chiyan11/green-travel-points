@@ -5,6 +5,7 @@ import { getProduct } from '@/services/products'
 import { createOrder } from '@/services/orders'
 import { getSummary } from '@/services/points'
 import { formatPoints } from '@/lib/format'
+import { productCoverIcon } from '@/lib/productCover'
 
 export function ProductDetailPage(): ReactNode {
   const { id } = useParams<{ id: string }>()
@@ -15,11 +16,11 @@ export function ProductDetailPage(): ReactNode {
 
   const { data: product } = useQuery({
     queryKey: ['product', id],
-    queryFn: () => Promise.resolve(id ? getProduct(id) : undefined),
+    queryFn: async () => (id ? getProduct(id) : undefined),
   })
   const { data: summary } = useQuery({
     queryKey: ['summary'],
-    queryFn: () => Promise.resolve(getSummary()),
+    queryFn: () => getSummary(),
   })
 
   if (!product) {
@@ -30,11 +31,11 @@ export function ProductDetailPage(): ReactNode {
     )
   }
 
-  const onSubmit = (e: FormEvent) => {
+  const onSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setError('')
     try {
-      const order = createOrder(product.id, receiver)
+      const order = await createOrder(product.id, receiver)
       void queryClient.invalidateQueries({ queryKey: ['summary'] })
       void queryClient.invalidateQueries({ queryKey: ['orders'] })
       navigate(`/orders?created=${order.id}`)
@@ -49,7 +50,7 @@ export function ProductDetailPage(): ReactNode {
     <section className="card">
       <div className="product-detail">
         <div className="product-emoji product-emoji--large" aria-hidden="true">
-          {product.imageEmoji}
+          {product.coverUrl ? <img src={product.coverUrl} alt="" /> : productCoverIcon(product.category)}
         </div>
         <div>
           <h2>{product.name}</h2>

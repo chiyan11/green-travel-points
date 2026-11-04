@@ -28,10 +28,11 @@ export function canTransition(from: OrderStatus, to: OrderStatus): boolean {
   return TRANSITIONS[from].includes(to)
 }
 
+/** 键名与 point_txn.txn_type（000003）一致：TRAVEL/REDEEM/REFUND/ADJUST/EXPIRE。 */
 export const POINT_TXN_TYPE_META: Record<PointTxnType, { label: string; sign: 1 | -1 }> = {
-  EARN: { label: '出行获得', sign: 1 },
-  SPEND: { label: '商城消耗', sign: -1 },
+  TRAVEL: { label: '出行获得', sign: 1 },
+  REDEEM: { label: '商城消耗', sign: -1 },
+  REFUND: { label: '取消返还', sign: 1 },
   EXPIRE: { label: '过期扣减', sign: -1 },
   ADJUST: { label: '人工调整', sign: 1 },
-  REVERSE: { label: '冲正返还', sign: 1 },
 }
