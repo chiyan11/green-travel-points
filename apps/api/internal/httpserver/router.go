@@ -8,6 +8,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+
+	"greentravelpoints/internal/app"
 )
 
 // Options 是构造路由所需的依赖。
@@ -16,18 +18,32 @@ type Options struct {
 	Logger         *slog.Logger
 	Env            string
 	RequestTimeout time.Duration
+
+	// P3 业务端口；为 nil 时对应路由不挂载（便于单测只测部分模块）。
+	Catalog app.CatalogStore
+	Points  app.PointsStore
+	Orders  app.OrderStore
+
+	// M8 运营后台；Roles 用于校验管理员身份。
+	Admin app.AdminStore
+	Roles app.RoleStore
 }
 
 // NewRouter 组装全部 HTTP 路由。
 //
-// 当前 Sprint 0 只有探针与一个 /api/v1/ping；业务路由在后续 Sprint 按模块挂载：
+// 已实现：
 //
-//	/api/v1/auth     用户与认证        (M1, P2)
-//	/api/v1/trips    行程上报与碳核算  (M2, P2)
-//	/api/v1/points   积分账户与流水    (M3/M5, P3)
-//	/api/v1/products 商品与库存        (M6, P3)
-//	/api/v1/orders   兑换与订单状态机  (M7, P3)
-//	/api/v1/admin    运营后台          (M8, P5)
+//	GET  /healthz /readyz            探针
+//	GET  /api/v1/ping                连通性自检
+//	GET  /api/v1/products            商品列表（M6，公开）
+//	GET  /api/v1/products/{id}       商品详情（M6，公开）
+//	GET  /api/v1/points/summary      积分概览（M5，需身份）
+//	GET  /api/v1/points/transactions 积分流水（M5，需身份）
+//	POST /api/v1/orders              兑换下单（M7，需身份 + Idempotency-Key）
+//	GET  /api/v1/orders              我的订单（M7，需身份）
+//	POST /api/v1/orders/{id}/cancel  取消订单（M7，需身份）
+//
+// 待实现：/api/v1/auth、/api/v1/trips（P2）；/api/v1/admin（P5）。
 func NewRouter(opt Options) http.Handler {
 	if opt.RequestTimeout <= 0 {
 		opt.RequestTimeout = 15 * time.Second
@@ -48,10 +64,52 @@ func NewRouter(opt Options) http.Handler {
 	r.Get("/healthz", health.Liveness)
 	r.Get("/readyz", health.Readiness)
 
+	catalog := catalogHandler{store: opt.Catalog, logger: logger}
+	points := pointsHandler{store: opt.Points, logger: logger}
+	orders := orderHandler{store: opt.Orders, logger: logger}
+	admin := adminHandler{store: opt.Admin, logger: logger}
+
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Get("/ping", func(w http.ResponseWriter, r *http.Request) {
 			OK(w, map[string]string{"pong": "green-travel-points", "env": opt.Env})
 		})
+
+		// 商品目录不需要登录。
+		if opt.Catalog != nil {
+			r.Get("/products", catalog.list)
+			r.Get("/products/{id}", catalog.get)
+		}
+
+		// 需要身份的接口（开发期用 X-User-Id，P2 的 JWT 接入后替换中间件）。
+		r.Group(func(r chi.Router) {
+			r.Use(RequireUser)
+			if opt.Points != nil {
+				r.Get("/points/summary", points.summary)
+				r.Get("/points/transactions", points.transactions)
+			}
+			if opt.Orders != nil {
+				r.Post("/orders", orders.create)
+				r.Get("/orders", orders.list)
+				r.Post("/orders/{id}/cancel", orders.cancel)
+			}
+		})
+
+		// 运营后台：需要管理员身份。
+		if opt.Admin != nil && opt.Roles != nil {
+			r.Group(func(r chi.Router) {
+				r.Use(RequireUser)
+				r.Use(RequireAdmin(opt.Roles, logger))
+				r.Get("/admin/products", admin.listProducts)
+				r.Post("/admin/products", admin.createProduct)
+				r.Patch("/admin/products/{id}", admin.updateProduct)
+				r.Put("/admin/skus/{id}/stock", admin.setStock)
+				r.Get("/admin/orders", admin.listOrders)
+				r.Post("/admin/orders/{id}/confirm", admin.transition("confirm", "PAID"))
+				r.Post("/admin/orders/{id}/ship", admin.transition("ship", "SHIPPED"))
+				r.Post("/admin/orders/{id}/complete", admin.transition("complete", "COMPLETED"))
+				r.Get("/admin/points/reconcile", admin.reconcile)
+			})
+		}
 	})
 
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
