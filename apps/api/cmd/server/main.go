@@ -58,6 +58,7 @@ func run() error {
 		Addr: cfg.HTTPAddr,
 		Handler: httpserver.NewRouter(httpserver.Options{
 			DB:             db,
+			AuthSecret:     cfg.AuthSecret,
 			Logger:         logger,
 			Env:            cfg.Env,
 			RequestTimeout: cfg.HTTPRequestTimeout,

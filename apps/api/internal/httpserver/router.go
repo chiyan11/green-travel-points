@@ -13,6 +13,7 @@ import (
 // Options 是构造路由所需的依赖。
 type Options struct {
 	DB             *sql.DB
+	AuthSecret     string
 	Logger         *slog.Logger
 	Env            string
 	RequestTimeout time.Duration
@@ -20,7 +21,7 @@ type Options struct {
 
 // NewRouter 组装全部 HTTP 路由。
 //
-// 当前 Sprint 0 只有探针与一个 /api/v1/ping；业务路由在后续 Sprint 按模块挂载：
+// P2 已挂载认证与行程链路，其余业务路由按 Sprint 继续挂载：
 //
 //	/api/v1/auth     用户与认证        (M1, P2)
 //	/api/v1/trips    行程上报与碳核算  (M2, P2)
@@ -48,9 +49,17 @@ func NewRouter(opt Options) http.Handler {
 	r.Get("/healthz", health.Liveness)
 	r.Get("/readyz", health.Readiness)
 
+	auth := NewAuthHandler(opt.DB, opt.AuthSecret, logger)
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Get("/ping", func(w http.ResponseWriter, r *http.Request) {
 			OK(w, map[string]string{"pong": "green-travel-points", "env": opt.Env})
+		})
+		r.Post("/auth/register", auth.Register)
+		r.Post("/auth/login", auth.Login)
+		r.Group(func(r chi.Router) {
+			r.Use(auth.Require)
+			r.Get("/me", auth.Me)
+			NewTripHandler(opt.DB, logger).Routes(r)
 		})
 	})
 
