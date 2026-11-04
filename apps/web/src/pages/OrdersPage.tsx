@@ -21,15 +21,15 @@ export function OrdersPage(): ReactNode {
 
   const { data: orders = [] } = useQuery({
     queryKey: ['orders'],
-    queryFn: () => Promise.resolve(listOrders()),
+    queryFn: () => listOrders(),
   })
 
   const visible = filter === 'ALL' ? orders : orders.filter((o) => o.status === filter)
 
-  const onCancel = (id: string) => {
+  const onCancel = async (id: string) => {
     setError('')
     try {
-      cancelOrder(id)
+      await cancelOrder(id)
       void queryClient.invalidateQueries({ queryKey: ['orders'] })
       void queryClient.invalidateQueries({ queryKey: ['summary'] })
       void queryClient.invalidateQueries({ queryKey: ['txns'] })
