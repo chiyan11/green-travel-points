@@ -9,11 +9,11 @@ import type { ReactNode } from 'react'
 export function MallPage(): ReactNode {
   const { data: products = [] } = useQuery({
     queryKey: ['products'],
-    queryFn: () => Promise.resolve(listProducts()),
+    queryFn: () => listProducts(),
   })
   const { data: summary } = useQuery({
     queryKey: ['summary'],
-    queryFn: () => Promise.resolve(getSummary()),
+    queryFn: () => getSummary(),
   })
 
   return (

@@ -16,11 +16,11 @@ export function ProductDetailPage(): ReactNode {
 
   const { data: product } = useQuery({
     queryKey: ['product', id],
-    queryFn: () => Promise.resolve(id ? getProduct(id) : undefined),
+    queryFn: async () => (id ? getProduct(id) : undefined),
   })
   const { data: summary } = useQuery({
     queryKey: ['summary'],
-    queryFn: () => Promise.resolve(getSummary()),
+    queryFn: () => getSummary(),
   })
 
   if (!product) {
@@ -31,11 +31,11 @@ export function ProductDetailPage(): ReactNode {
     )
   }
 
-  const onSubmit = (e: FormEvent) => {
+  const onSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setError('')
     try {
-      const order = createOrder(product.id, receiver)
+      const order = await createOrder(product.id, receiver)
       void queryClient.invalidateQueries({ queryKey: ['summary'] })
       void queryClient.invalidateQueries({ queryKey: ['orders'] })
       navigate(`/orders?created=${order.id}`)

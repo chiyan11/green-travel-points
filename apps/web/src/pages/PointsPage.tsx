@@ -8,11 +8,11 @@ import type { ReactNode } from 'react'
 export function PointsPage(): ReactNode {
   const { data: summary } = useQuery({
     queryKey: ['summary'],
-    queryFn: () => Promise.resolve(getSummary()),
+    queryFn: () => getSummary(),
   })
   const { data: txns = [] } = useQuery({
     queryKey: ['txns'],
-    queryFn: () => Promise.resolve(listTxns()),
+    queryFn: () => listTxns(),
   })
   const { data: trend = [] } = useQuery({
     queryKey: ['carbon-trend-7d'],
