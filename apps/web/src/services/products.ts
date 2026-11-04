@@ -6,7 +6,7 @@ import { mockDb } from '@/mock/data'
 import type { Product } from '@/types/domain'
 
 export function listProducts(): Product[] {
-  return mockDb.getProducts().filter((p) => p.active)
+  return mockDb.getProducts().filter((p) => p.status === 'ONLINE')
 }
 
 export function getProduct(id: string): Product | undefined {

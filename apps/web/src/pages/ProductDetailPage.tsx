@@ -5,6 +5,7 @@ import { getProduct } from '@/services/products'
 import { createOrder } from '@/services/orders'
 import { getSummary } from '@/services/points'
 import { formatPoints } from '@/lib/format'
+import { productCoverIcon } from '@/lib/productCover'
 
 export function ProductDetailPage(): ReactNode {
   const { id } = useParams<{ id: string }>()
@@ -49,7 +50,7 @@ export function ProductDetailPage(): ReactNode {
     <section className="card">
       <div className="product-detail">
         <div className="product-emoji product-emoji--large" aria-hidden="true">
-          {product.imageEmoji}
+          {product.coverUrl ? <img src={product.coverUrl} alt="" /> : productCoverIcon(product.category)}
         </div>
         <div>
           <h2>{product.name}</h2>

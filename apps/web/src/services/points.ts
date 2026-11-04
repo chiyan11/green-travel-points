@@ -13,9 +13,9 @@ export function getSummary(): PointSummary {
     .getTxns()
     .filter(
       (t) =>
-        t.type === 'EARN' &&
-        new Date(t.createdAt).getMonth() === now.getMonth() &&
-        new Date(t.createdAt).getFullYear() === now.getFullYear(),
+        t.type === 'TRAVEL' &&
+        new Date(t.occurredAt).getMonth() === now.getMonth() &&
+        new Date(t.occurredAt).getFullYear() === now.getFullYear(),
     )
     .reduce((sum, t) => sum + t.amount, 0)
 
@@ -30,4 +30,29 @@ export function getSummary(): PointSummary {
 
 export function listTxns(): PointTxn[] {
   return mockDb.getTxns()
+}
+
+export interface DailyCarbonPoint {
+  /** M/D，展示用 */
+  date: string
+  /** 当日碳减排 gCO2e */
+  grams: number
+}
+
+/**
+ * 近 7 日碳减排趋势（原型：固定演示序列）。
+ * TODO 联调替换：GET /api/v1/trips?from=<7天前>，由后端按日聚合 carbon_record.carbon_saved_g。
+ */
+export function getRecentCarbonSeries(): DailyCarbonPoint[] {
+  const demoGrams = [320, 483, 0, 960, 640, 483, 992]
+  const out: DailyCarbonPoint[] = []
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date()
+    d.setDate(d.getDate() - i)
+    out.push({
+      date: `${d.getMonth() + 1}/${d.getDate()}`,
+      grams: demoGrams[6 - i] ?? 0,
+    })
+  }
+  return out
 }

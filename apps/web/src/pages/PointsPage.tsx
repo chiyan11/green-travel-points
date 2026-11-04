@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
-import { getSummary, listTxns } from '@/services/points'
+import { getRecentCarbonSeries, getSummary, listTxns } from '@/services/points'
 import { POINT_TXN_TYPE_META } from '@/lib/orderStatus'
+import { CarbonTrendChart } from '@/components/CarbonTrendChart'
 import { formatDateTime, formatGrams, formatPoints } from '@/lib/format'
 import type { ReactNode } from 'react'
 
@@ -12,6 +13,10 @@ export function PointsPage(): ReactNode {
   const { data: txns = [] } = useQuery({
     queryKey: ['txns'],
     queryFn: () => Promise.resolve(listTxns()),
+  })
+  const { data: trend = [] } = useQuery({
+    queryKey: ['carbon-trend-7d'],
+    queryFn: () => Promise.resolve(getRecentCarbonSeries()),
   })
 
   return (
@@ -43,6 +48,11 @@ export function PointsPage(): ReactNode {
       </div>
 
       <section className="card">
+        <h3>近 7 日碳减排</h3>
+        <CarbonTrendChart data={trend} />
+      </section>
+
+      <section className="card">
         <h3>积分流水</h3>
         {txns.length === 0 ? (
           <p className="empty-state">暂无流水。</p>
@@ -54,7 +64,6 @@ export function PointsPage(): ReactNode {
                 <th>类型</th>
                 <th>变动</th>
                 <th>变动后余额</th>
-                <th>说明</th>
               </tr>
             </thead>
             <tbody>
@@ -63,14 +72,13 @@ export function PointsPage(): ReactNode {
                 const sign = t.amount >= 0 ? '+' : ''
                 return (
                   <tr key={t.id}>
-                    <td>{formatDateTime(t.createdAt)}</td>
+                    <td>{formatDateTime(t.occurredAt)}</td>
                     <td>{meta.label}</td>
                     <td className={t.amount >= 0 ? 'ok' : 'danger'}>
                       {sign}
                       {t.amount}
                     </td>
                     <td>{formatPoints(t.balanceAfter)}</td>
-                    <td>{t.reason}</td>
                   </tr>
                 )
               })}
