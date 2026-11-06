@@ -1,0 +1,86 @@
+@startuml 图2-5 序列图：上报出行行程（UC-02 用例实现）
+' 依据：需求规格说明书 §2.3.2 UC-02 事件流；对应代码 internal/usecase/trip.go
+' 重点表达：事务边界（activate/deactivate）、幂等命中分支、Outbox 异步
+
+skinparam defaultFontName "Microsoft YaHei"
+skinparam dpi 150
+skinparam shadowing false
+autonumber
+
+actor "市民" as U
+participant "前端\n(TripReportPage)" as FE
+participant "HTTP 层\n(router + middleware)" as API
+participant "TripUsecase\n(应用服务 · 事务边界)" as UC
+participant "domain\n(碳核算 / 积分纯函数)" as D
+participant "Repo\n(sqlc)" as R
+database "MySQL" as DB
+participant "Outbox Worker" as W
+
+U -> FE : 填写方式 / 距离 / 起止时间
+FE -> API : POST /api/v1/trips\n(Authorization: Bearer JWT)
+activate API
+API -> API : 认证 + 限流 + 参数校验
+API -> UC : ReportTrip(cmd)
+activate UC
+
+UC -> R : FindTrip(userID, tripHash)
+R -> DB : SELECT id FROM trip_record\nWHERE user_id=? AND trip_hash=?
+DB --> R : 结果集
+R --> UC : existing?
+
+alt 幂等命中（BR-06）
+  UC --> API : existing, deduplicated=true
+  API --> FE : 200 {tripId, points(首次值), deduplicated:true}
+  FE --> U : 提示"该行程已申报，未重复发放"
+else 首次上报
+  UC -> R : LoadEmission(modeCode)
+  R -> DB : SELECT ef_base, ef_actual FROM travel_mode
+  DB --> R : ef
+  UC -> D : EvaluateTrip(distanceKm, ef, rule, alreadyToday)
+  activate D
+  D -> D : carbon_saved = max(0, d×(EF_base−EF_actual))
+  D -> D : points = floor(carbon_saved / carbon_per_point)
+  D -> D : granted = min(points, dailyCap − alreadyToday)
+  D --> UC : Grant{碳减排量, raw, granted, cappedByDaily}
+  deactivate D
+
+  alt 距离越界 / 规则非法（BR-05）
+    UC --> API : ErrDistanceOutOfRange
+    API --> FE : 400 E_DISTANCE_OUT_OF_RANGE
+    FE --> U : 提示允许区间 [0.1, 100] km
+  else 校验通过
+    UC -> R : BeginTx()
+    activate R
+    R -> DB : INSERT trip_record
+    R -> DB : INSERT carbon_record
+    R -> DB : INSERT point_txn(+granted)
+    R -> DB : UPDATE point_account SET balance = balance + ?
+    R -> DB : INSERT event_outbox(TripVerified, PointsGranted)
+    R -> DB : COMMIT
+    deactivate R
+    UC --> API : {carbonSavedG, granted, capped}
+    API --> FE : 200 {tripId, points, carbonSavedG}
+    FE --> U : 展示"本次减排 xx g，获得 xx 积分"
+  end
+end
+deactivate UC
+deactivate API
+
+== 事务提交之后（同一进程内异步，不阻塞响应） ==
+
+W -> DB : 轮询 SELECT * FROM event_outbox\nWHERE status='NEW' LIMIT 100
+DB --> W : events
+W -> W : 按 event_id 幂等消费\n（统计 / 徽章 / 通知）
+W -> DB : UPDATE event_outbox SET status='SENT'\n（失败则 retry_count+1，超限置 DEAD）
+
+note over UC, DB
+  **事务边界**：5 张表的写入 + outbox 在同一事务内，
+  要么全成，要么全不成（BR-07 账本等价的实现基础）。
+end note
+
+note over W
+  消费失败**不影响**已发放的积分：
+  事件重试即可，这是"至少一次投递 + 消费幂等"的代价与收益（BR-13）。
+end note
+
+@enduml

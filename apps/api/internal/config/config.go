@@ -18,6 +18,7 @@ type Config struct {
 	HTTPShutdownTimeout time.Duration
 
 	DatabaseDSN       string
+	AuthSecret        string
 	DBMaxOpenConns    int
 	DBMaxIdleConns    int
 	DBConnMaxLifetime time.Duration
@@ -35,6 +36,7 @@ func Load() (Config, error) {
 		HTTPRequestTimeout:  getEnvDuration("HTTP_REQUEST_TIMEOUT", 15*time.Second),
 		HTTPShutdownTimeout: getEnvDuration("HTTP_SHUTDOWN_TIMEOUT", 10*time.Second),
 		DatabaseDSN:         getEnv("DB_DSN", DefaultDatabaseDSN),
+		AuthSecret:          getEnv("AUTH_SECRET", "dev-only-change-me"),
 		DBMaxOpenConns:      getEnvInt("DB_MAX_OPEN_CONNS", 20),
 		DBMaxIdleConns:      getEnvInt("DB_MAX_IDLE_CONNS", 10),
 		DBConnMaxLifetime:   getEnvDuration("DB_CONN_MAX_LIFETIME", 30*time.Minute),

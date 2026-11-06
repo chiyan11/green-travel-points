@@ -1,0 +1,25 @@
+{
+  // ===== PlantUML（路线 A：本地渲染，预览快捷键 Alt+D）=====
+  // 装了扩展 jebbs.plantuml 后打开任意 docs/uml/*.puml 就能预览。
+  "plantuml.render": "Local",
+
+  // JVM 参数：这三条是在本机实测必须的（详见 scripts/uml-export.ps1 的 .DESCRIPTION）
+  //   -Dfile.encoding=UTF-8     中文不乱码
+  //   -DPLANTUML_LIMIT_SIZE     默认画布上限 4096px，宽图会被静默裁切
+  //   -DGRAPHVIZ_DOT            指向便携版 dot，不依赖 PATH
+  "plantuml.commandArgs": [
+    "-Dfile.encoding=UTF-8",
+    "-DPLANTUML_LIMIT_SIZE=20000",
+    "-DGRAPHVIZ_DOT=D:/coding/green-travel-points/docs/uml/.tools/graphviz/dot.exe"
+  ],
+
+  // 导出：右键 .puml → Export Current File → 落到 docs/uml/out/
+  "plantuml.diagramsRoot": "docs/uml",
+  "plantuml.exportOutDir": "out",
+  "plantuml.exportSubFolder": false,
+  "plantuml.exportFormat": "png",
+
+  // ===== 其他 =====
+  "files.encoding": "utf8",
+  "files.eol": "\n"
+}

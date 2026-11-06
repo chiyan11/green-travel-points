@@ -17,6 +17,12 @@ const (
 	CodeConflict        = "CONFLICT"
 	CodeInternal        = "INTERNAL"
 	CodeUnavailable     = "UNAVAILABLE"
+
+	// P3 业务细分错误码（与前端接口清单的"待确认问题 2"对齐）。
+	CodeInsufficientPoints = "INSUFFICIENT_POINTS"
+	CodeOutOfStock         = "OUT_OF_STOCK"
+	CodeLimitExceeded      = "LIMIT_EXCEEDED"
+	CodeIllegalTransition  = "ILLEGAL_TRANSITION"
 )
 
 // Envelope 是全部 HTTP 接口的响应外壳。

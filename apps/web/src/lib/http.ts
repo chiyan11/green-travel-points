@@ -26,6 +26,11 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (init.body !== undefined && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json')
   }
+  // 开发期后端用 X-User-Id 识别用户（见 httpserver/middleware.go RequireUser）。
+  // TODO P2 JWT 上线后删除此行，改带 Authorization: Bearer <token>。
+  if (!headers.has('X-User-Id')) {
+    headers.set('X-User-Id', '1')
+  }
 
   const res = await fetch(path, { ...init, headers })
   const text = await res.text()
@@ -51,8 +56,8 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export const api = {
   get: <T>(path: string): Promise<T> => request<T>(path),
-  post: <T>(path: string, body: unknown): Promise<T> =>
-    request<T>(path, { method: 'POST', body: JSON.stringify(body) }),
+  post: <T>(path: string, body: unknown, headers?: Record<string, string>): Promise<T> =>
+    request<T>(path, { method: 'POST', body: JSON.stringify(body), headers }),
 }
 
 export interface PingResponse {

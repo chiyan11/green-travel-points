@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { fetchPing } from '@/lib/http'
 
@@ -7,6 +8,13 @@ const RULES = [
   { label: '地铁 / 公交', value: '41 / 68 gCO₂e/km', note: '来自 travel_mode 表' },
   { label: '步行 / 骑行 / 共享单车', value: '0 gCO₂e/km', note: '零直接排放' },
   { label: '积分兑换比例', value: '100 g = 1 分', note: '向下取整，单日上限 500 分' },
+]
+
+const ENTRIES = [
+  { to: '/trips', emoji: '🚇', title: '上报行程', note: '步行/骑行/地铁/公交，一键算减排' },
+  { to: '/points', emoji: '📈', title: '我的积分', note: '余额、流水与近 7 日趋势' },
+  { to: '/mall', emoji: '🎁', title: '积分商城', note: '用碳积分兑换绿色好物' },
+  { to: '/orders', emoji: '📦', title: '兑换记录', note: '订单状态与核销码' },
 ]
 
 export function HomePage(): ReactNode {
@@ -20,9 +28,24 @@ export function HomePage(): ReactNode {
       <section className="hero">
         <h2>把每一次低碳出行，算成看得见的积分</h2>
         <p>
-          上报行程 → 计算碳减排量 → 发放碳积分 → 商城兑换。Sprint 0 只包含可运行骨架，
-          业务接口按 Sprint 1 起逐个交付。
+          上报行程 → 计算碳减排量 → 发放碳积分 → 商城兑换。
         </p>
+        <p style={{ marginTop: 16 }}>
+          <Link to="/login" className="btn">登录 / 注册</Link>
+          <Link to="/mall" className="btn btn--ghost" style={{ marginLeft: 8 }}>逛逛商城</Link>
+        </p>
+      </section>
+
+      <section className="grid">
+        {ENTRIES.map((e) => (
+          <Link to={e.to} className="card" key={e.to} style={{ textDecoration: 'none' }}>
+            <h3 style={{ margin: '0 0 6px' }}>
+              <span aria-hidden="true" style={{ marginRight: 8 }}>{e.emoji}</span>
+              {e.title}
+            </h3>
+            <p className="muted" style={{ margin: 0 }}>{e.note}</p>
+          </Link>
+        ))}
       </section>
 
       <section className="card">

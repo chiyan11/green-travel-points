@@ -16,6 +16,8 @@ const (
 	TopicPointsGranted   = "PointsGranted"   // 积分已发放
 	TopicRedeemOrderPaid = "RedeemOrderPaid" // 兑换订单已支付（待发货）
 	TopicOrderShipped    = "OrderShipped"    // 订单已发货
+	TopicOrderConfirmed  = "OrderConfirmed"  // 商户已确认订单（运营后台）
+	TopicOrderCompleted  = "OrderCompleted"  // 订单已完成核销（运营后台）
 )
 
 // Event 对应 event_outbox 表的一行。

@@ -1,0 +1,95 @@
+@startuml 图2-6 序列图：兑换商品（UC-08 用例实现）
+' 依据：需求规格说明书 §2.3.2 UC-08 事件流；BR-09 / BR-12 / BR-15
+' 重点表达：幂等键、行锁、锁后复核、失败回滚、事务提交后异步
+
+skinparam defaultFontName "Microsoft YaHei"
+skinparam dpi 150
+skinparam shadowing false
+autonumber
+
+actor "市民" as U
+participant "前端\n(RedeemConfirmPage)" as FE
+participant "HTTP 层" as API
+participant "RedeemUsecase\n(事务边界)" as UC
+participant "Repo\n(sqlc + Tx)" as R
+database "MySQL" as DB
+participant "Outbox Worker" as W
+participant "商户 / 运营" as M
+
+U -> FE : 点击"立即兑换"
+FE -> API : POST /api/v1/redeem-orders\n(Idempotency-Key: uuid)
+activate API
+API -> UC : Redeem(userID, skuID, idemKey)
+activate UC
+
+UC -> R : FindOrderByIdemKey(idemKey)
+R -> DB : SELECT * FROM redeem_order WHERE idempotency_key=?
+DB --> R : order?
+R --> UC : existing?
+
+alt 幂等键已处理（BR-15）
+  UC --> API : existing order
+  API --> FE : 200 {orderNo, redeemCode}（不重复扣分）
+else 首次请求
+  UC -> R : BeginTx()
+  activate R
+  R -> DB : SELECT balance, frozen FROM point_account\nWHERE user_id=? FOR UPDATE
+  R -> DB : SELECT stock, status FROM product_sku\nWHERE id=? FOR UPDATE
+  Note right of DB : 两把行锁按固定顺序获取\n（account → sku），避免死锁
+
+  UC -> UC : 锁后复核（禁止先查后写）
+
+  alt 商品下架 / 库存不足 / 积分不足（BR-09）
+    R -> DB : ROLLBACK
+    deactivate R
+    UC --> API : ErrOutOfStock / ErrInsufficientPoints
+    API --> FE : 409 {code, 剩余积分 / 库存}
+    FE --> U : 提示失败，账户无任何变化
+  else 复核通过
+    R -> DB : INSERT point_txn(type=REDEEM, amount=-points)
+    R -> DB : UPDATE point_account SET balance = balance - ?
+    R -> DB : UPDATE product_sku SET stock = stock - 1, sold_count = sold_count + 1
+    R -> DB : INSERT redeem_order(orderNo, status=PENDING, redeemCode)
+    R -> DB : INSERT event_outbox(OrderPaid)
+    R -> DB : COMMIT
+    deactivate R
+    UC --> API : {orderNo, redeemCode, 剩余积分}
+    API --> FE : 201 Created
+    FE --> U : 展示核销码与订单详情
+  end
+end
+deactivate UC
+deactivate API
+
+== 事务提交之后（异步，失败可重试） ==
+
+W -> DB : 轮询 event_outbox (type=OrderPaid)
+DB --> W : events
+W -> M : 通知新订单（站内信 / 邮件模拟）
+M --> W : ack
+W -> DB : UPDATE event_outbox SET status='SENT'
+
+== 备选：订单取消（BR-12 原路回滚） ==
+
+U -> FE : 取消订单
+FE -> API : POST /api/v1/redeem-orders/{no}/cancel
+API -> UC : Cancel(orderNo)
+activate UC
+UC -> R : BeginTx()
+R -> DB : SELECT * FROM redeem_order FOR UPDATE
+R -> DB : INSERT point_txn(type=REFUND, amount=+points)\n并 UPDATE point_account（补反向流水，不改原流水）
+R -> DB : UPDATE product_sku SET stock = stock + 1
+R -> DB : UPDATE redeem_order SET status='CANCELLED'
+R -> DB : COMMIT
+deactivate R
+UC --> API : ok
+deactivate UC
+API --> FE : 200 {status: CANCELLED}
+FE --> U : 提示积分已退回
+
+note over R, DB
+  **append-only 的意义**：取消不修改原 REDEEM 流水，
+  而是补一条 REFUND。这样任何时刻都能回放"谁在何时扣了几分"（BR-08）。
+end note
+
+@enduml

@@ -1,0 +1,90 @@
+@startuml 图2-8 状态图：积分批次生命周期
+' 依据：需求规格说明书 BR-07 / BR-08 / BR-11 / BR-12；§2.5 事件目录 PointsExpired
+' 视角：以"一次发放"为单位（积分批次），而非账户余额 ——
+'       余额是汇总值，批次才能表达"哪一批过期了"（FIFO，BR-11）。
+
+skinparam defaultFontName "Microsoft YaHei"
+skinparam dpi 150
+skinparam shadowing false
+
+title 状态图：积分批次（一次发放 → 消耗 → 过期 / 冲正）
+
+[*] --> 待入账 : 行程通过校验\ncompute Grant
+
+state 待入账 {
+  待入账 : 已算出应发积分数\n尚未写流水
+}
+
+state 可用 {
+  可用 : 已入账（point_txn +amount）\n可被兑换消耗
+  可用 : 记录有效期 = 入账日 + points_expire_days
+}
+
+state 已消耗 {
+  已消耗 : 被兑换扣完
+}
+
+state 部分消耗 {
+  部分消耗 : 剩余可继续消耗
+}
+
+state 已过期 {
+  已过期 : 到期未用完的部分\n写 EXPIRE 流水（负数）
+}
+
+state 已冲正 {
+  已冲正 : 行程被判无效（复核驳回）\n写反向流水
+}
+
+' ---------- 正向 ----------
+待入账 --> 可用 : 事务提交成功\n（写 point_txn + 更新 balance）
+待入账 --> [*] : 事务回滚 / 日上限为 0\n（不写任何记录）
+
+可用 --> 部分消耗 : 兑换（amount < 可用余额）
+可用 --> 已消耗 : 兑换（amount == 可用余额）
+部分消耗 --> 部分消耗 : 继续兑换
+部分消耗 --> 已消耗 : 剩余部分被消耗完
+
+可用 --> 已过期 : 到达 expires_at\n定时任务扫描
+部分消耗 --> 已过期 : 剩余部分到期
+可用 --> 已冲正 : 行程复核驳回 (UC-16)\n写反向流水
+部分消耗 --> 已冲正 : 剩余部分一并冲正
+
+' ---------- 回滚 ----------
+已消耗 --> 可用 : 订单取消（BR-12）\n补 REFUND 流水，**不修改原流水**
+部分消耗 --> 可用 : 同上（退回后合并回可用余额）
+
+已过期 --> [*]
+已冲正 --> [*]
+已消耗 --> [*] : 订单完成（不再回滚）
+
+note right of 可用
+  **allowed 判定（兑换前必须算）**
+  可用额度 = point_account.balance − point_account.frozen
+  其中 frozen 是**风控锁定**金额（账户被风控时占用），
+  兑换直接扣 balance，不走冻结（与 BR-09 一致）。
+end note
+
+note bottom of 已过期
+  **FIFO 顺序**
+  过期先扣最早入账的批次；
+  同一用户多批次同一天到期时按 id 升序处理，
+  保证定时任务可重跑且结果一致（幂等）。
+end note
+
+note bottom of 已冲正
+  **两条红线**
+  1. 任何"减少积分"的操作都必须是**新流水**，
+     绝不 UPDATE / DELETE 已有 point_txn（append-only）。
+  2. 冲正后 balance 不得为负；
+     若已消耗导致负余额，转为欠账标记 + 审计，不得静默忽略。
+end note
+
+legend right
+  **不变量（可写成断言 / 单测）**
+  Σ(point_txn.amount) == point_account.balance
+  任一批次：入账量 == 已消耗 + 已过期 + 已冲正 + 剩余
+  同一 trip_id 不得产生两条 +amount 流水（BR-06）
+endlegend
+
+@enduml

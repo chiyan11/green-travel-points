@@ -9,7 +9,7 @@
 | --- | --- | --- |
 | Go 后端骨架（配置 / 日志 / 路由 / 中间件 / 统一响应壳 / 健康检查） | `apps/api/` | 可编译、可启动、可测 |
 | 领域规则实现 + 单元测试（碳核算、积分） | `apps/api/internal/domain/` | 35 个用例全绿 |
-| 数据库迁移 000001（参数与出行方式）、000002（事务性发件箱） | `db/migrations/` | 文件就绪，待真库执行 |
+| 数据库迁移 000001（参数与出行方式）、000002（事务性发件箱） | `db/migrations/` | 已在 MySQL 9.7.2 实跑：3 张表 + 种子数据 |
 | React + TS7 前端骨架（路由、布局、连通性自检） | `apps/web/` | 类型检查 + 单测 + 构建通过 |
 | 部署与 CI | `deploy/`、`.github/workflows/ci.yml` | 配置就绪，Docker 未实跑 |
 | 一键校验脚本 | `scripts/verify.ps1` | 已验证全绿 |
@@ -20,7 +20,7 @@
 | --- | --- | --- |
 | go | 1.27.2（GOROOT `D:\go`） | `go.mod` 声明 `go 1.24`，向后兼容 |
 | node / npm | v24.16.0 / 11.18.0 | 满足 Node 24 要求 |
-| MySQL | 服务 MySQL97 Running，客户端 9.7 | root 密码未知，**迁移未在真库执行** |
+| MySQL | 服务 MySQL97 Running，版本 9.7.2，`green_travel_points` 库与 `greentravel` 账号已建 | **迁移已执行**，`/readyz` 返回 `database: up` |
 | Docker | CLI 29.8.2，daemon 未运行 | `docker compose` 未验证 |
 | TypeScript | 7.0.2（`latest`，原生 Go 编译器） | 可用，但有两处破坏性变化（见下） |
 | Vite | 8.3.4 | 构建 152 ms，产物 352 kB（gzip 112 kB） |
@@ -90,7 +90,7 @@ func EvaluateTrip(distanceKm float64, e Emission, rule PointsRule, alreadyToday 
 ## 5. 与计划的两处偏离
 
 1. **前端包管理器 pnpm → npm**，原因见 2.1 第 3 条；`package-lock.json` 已入库。
-2. **Docker/数据库未实跑**：本机 daemon 未启动、MySQL root 密码未知。`deploy/` 与迁移脚本是"纸面就绪"，需 P2/P5 在第一次集成分支上补真实执行截图。
+2. **Docker 未实跑**：本机 daemon 未启动，`deploy/` 仍属"纸面就绪"，需 P5 在第一次集成分支上补真实执行截图。数据库侧已于 2026-10-20 补齐（步骤与证据见 `docs/数据库联通记录.md`）。
 
 ## 6. 下一步（Sprint 1 起手）
 

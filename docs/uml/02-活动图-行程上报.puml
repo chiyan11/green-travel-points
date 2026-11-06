@@ -1,0 +1,83 @@
+@startuml 图1-2 上报出行行程 活动图
+' 依据：docs/需求规格说明书.md §2.3.2 UC-02 事件流 + BR-01~BR-06
+' 泳道划分对应代码分层：接口层 httpserver → 领域层 domain → 仓储层 repo → 事件总线 eventbus
+
+skinparam defaultFontName "Microsoft YaHei"
+skinparam dpi 150
+skinparam shadowing false
+skinparam ActivityBackgroundColor #F5F9FF
+skinparam ActivityBorderColor #2E5C8A
+skinparam ActivityDiamondBackgroundColor #FFF6E5
+
+|市民|
+start
+:在"申报"页提交行程\n（出行方式 / 距离 / 起止时间）;
+
+|接口层|
+:校验必填项与字段格式;
+if (格式合法?) then (否)
+  :返回 400 E_INVALID_PARAM;
+  stop
+endif
+:校验距离 ∈ [0.1, 100] km（BR-05）;
+if (距离在区间内?) then (否)
+  :返回 400 E_DISTANCE_OUT_OF_RANGE;
+  stop
+endif
+:账户状态检查;
+if (账户已冻结?) then (是)
+  :返回 403 E_ACCOUNT_FROZEN;
+  stop
+endif
+
+|领域层|
+:计算 trip_hash = SHA256(user_id‖mode‖distance‖started_at);
+:按 user_id + trip_hash 查幂等记录;
+if (幂等命中？) then (是)
+  |市民|
+  :返回首次结果\ndeduplicated = true;
+  stop
+endif
+
+|领域层|
+:从 travel_mode 读取 EF_base 与 EF_actual（BR-02，禁止硬编码）;
+:carbon_saved = max(0, distance × (EF_base − EF_actual))（BR-01）;
+if (carbon_saved ≤ 0?) then (是)
+  :记 0 减排，仅落行程不发放积分;
+else (否)
+  :points_raw = floor(carbon_saved / carbon_per_point + 1e-9)（BR-03）;
+  :points_granted = min(points_raw, daily_cap − 当日已发)（BR-04）;
+  if (points_granted < points_raw?) then (是)
+    :标记 capped_by_daily = true;
+  endif
+endif
+
+|仓储层|
+:开启数据库事务;
+:INSERT trip_record;
+:INSERT carbon_record;
+:INSERT point_txn (type = TRAVEL, amount = +points_granted);
+:UPDATE point_account (balance, total_saved);
+fork
+  :INSERT point_txn 之外的关联记录\n（成就 / 统计）;
+fork again
+  :INSERT event_outbox (TripVerified, PointsGranted);
+end fork
+:提交事务;
+
+|事件总线|
+:Worker 轮询 outbox 投递事件;
+:按 event_id 幂等消费\n（统计 / 徽章 / 通知）;
+
+|市民|
+:返回 200 {碳减排量, 本次积分, capped 标记};
+stop
+
+legend right
+  **两条不可协商的约束（领域层）**
+  1. 事务边界 = 5 张表的写入，事件与业务同一事务（Outbox）。
+  2. 幂等判定必须在事务**内**做，
+     且 trip_hash 上有唯一索引兜底。
+endlegend
+
+@enduml
