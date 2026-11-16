@@ -51,7 +51,7 @@ type authRequest struct {
 
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	var in authRequest
-	if err := decodeJSON(r, &in); err != nil || len(in.Password) < 6 {
+	if err := decodeJSONBody(r, &in); err != nil || len(in.Password) < 6 {
 		Fail(w, http.StatusBadRequest, CodeInvalidArgument, "密码至少 6 位")
 		return
 	}
@@ -116,7 +116,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var in authRequest
-	if err := decodeJSON(r, &in); err != nil || in.Password == "" {
+	if err := decodeJSONBody(r, &in); err != nil || in.Password == "" {
 		Fail(w, http.StatusBadRequest, CodeInvalidArgument, "账号和密码不能为空")
 		return
 	}
@@ -326,7 +326,7 @@ func passwordMatches(encoded, password string) bool {
 
 func userID(id int64) string { return fmt.Sprintf("u_%d", id) }
 
-func decodeJSON(r *http.Request, dst any) error {
+func decodeJSONBody(r *http.Request, dst any) error {
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	return dec.Decode(dst)

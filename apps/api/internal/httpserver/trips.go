@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -52,7 +53,7 @@ type tripResponse struct {
 func (h *TripHandler) Create(w http.ResponseWriter, r *http.Request) {
 	userID, _ := r.Context().Value(authContextKey{}).(int64)
 	var in tripRequest
-	if err := decodeJSON(r, &in); err != nil || strings.TrimSpace(in.Mode) == "" {
+	if err := decodeJSONBody(r, &in); err != nil || strings.TrimSpace(in.Mode) == "" {
 		Fail(w, http.StatusBadRequest, CodeInvalidArgument, "请求参数非法")
 		return
 	}
