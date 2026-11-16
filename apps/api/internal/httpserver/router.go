@@ -43,7 +43,6 @@ type Options struct {
 //	POST /api/v1/orders              兑换下单（M7，需身份 + Idempotency-Key）
 //	GET  /api/v1/orders              我的订单（M7，需身份）
 //	POST /api/v1/orders/{id}/cancel  取消订单（M7，需身份）
-//
 func NewRouter(opt Options) http.Handler {
 	if opt.RequestTimeout <= 0 {
 		opt.RequestTimeout = 15 * time.Second
