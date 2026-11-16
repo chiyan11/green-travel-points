@@ -37,3 +37,8 @@ node_modules/
 
 # ---- 数据库本地数据卷 ----
 deploy/mysql-data/
+/scripts/toc_pages.py
+/scripts/build_team_docx.py
+
+# ---- 文档出图工具链（本地 PlantUML / Graphviz 二进制，约 21MB，勿提交） ----
+docs/uml/.tools/
