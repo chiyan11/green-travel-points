@@ -12,8 +12,12 @@
 > 把一次「步行 / 骑行 / 地铁 / 公交 / 共享单车」出行，变成可计量、可核查、可兑换的碳资产。
 > 后端 Go + chi，前端 React + TypeScript 7 + Vite，MySQL 8 持久化，采用事务性发件箱（Outbox）落地教学级事件驱动架构。
 
-**当前状态：Sprint 0（工程骨架）已完成并通过一键校验**，Sprint 1 起按模块交付业务接口。
-进度与偏差详见 [Sprint 0 骨架说明](docs/Sprint0-骨架说明.md)，分工详见 [项目分工与迭代计划](docs/项目分工与迭代计划.md)。
+**当前进度：Sprint 0 工程骨架 + 实验一需求建模（全套 UML）已完成；后端 M1–M8 主要接口与前端用户端页面均已实现并通过一键校验。**
+
+已实现：认证 / 行程上报与碳核算 / 积分账本与查询 / 商品目录 / 兑换订单与状态机 / 运营后台（含积分对账）；
+待补齐：Outbox Worker（事件只落库、暂无消费者）、集成测试与 E2E、Docker 编排实跑；前端五个 service 均已联调真实接口，`apps/web/src/mock/data.ts` 与 `apps/web/PROTOTYPE.md` 属原型残留，可清理。
+
+进度与偏差详见 [Sprint 0 骨架说明](docs/Sprint0-骨架说明.md)，分工详见 [项目分工与迭代计划](docs/项目分工与迭代计划.md)，接口细节见 [P3 接口说明](docs/api/README.md)。
 
 ---
 
@@ -114,11 +118,11 @@ flowchart LR
 | 层 | 选型 | 版本 | 选型要点 |
 | --- | --- | --- | --- |
 | 后端 | Go + [chi](https://github.com/go-chi/chi) | go 1.24 / chi v5.2.3 | 标准库 `net/http` 语义 + 轻量路由，无框架魔法，便于讲清分层 |
-| 数据访问 | `database/sql` + sqlc（待启用） | mysql 驱动 v1.9.3 | SQL 可见可审，生成强类型代码，直接支撑"数据库字段级清单" |
+| 数据访问 | `database/sql`，手写 SQL | mysql 驱动 v1.9.3 | SQL 可见可审；`apps/api/sqlc.yaml` 已就绪但 sqlc 尚未启用 |
 | 迁移 | golang-migrate 风格的 `db/migrations` | — | up / down 成对，可回滚 |
 | 事件 | 事务性 Outbox 表 + 轮询 Worker | — | 不引入 Kafka / Redis，仍在关系库里保证"业务成功 ⇒ 事件必达" |
 | 前端 | React + TypeScript 7 + Vite + TanStack Query | 19.3 / 7.0.2 / 8.3 / 5.104 | TS7 原生编译器（Go 实现），构建快；Query 统一服务端状态 |
-| 测试 | Go `testing` / Vitest / Playwright | — | 三层测试，对齐实验"基本路径法 + 等价类划分" |
+| 测试 | Go `testing` / Vitest / Playwright / k6 | — | 前两层已落地；集成测试、E2E、性能压测待建 |
 | 数据库 | MySQL | 8.4+（本机 9.7） | `utf8mb4_0900_ai_ci`、`DATETIME(3)`、JSON 存事件负载 |
 | 部署 | Docker Compose + Nginx + GitHub Actions | — | 一条命令起全栈，CI 双 job 门禁 |
 
@@ -126,7 +130,7 @@ flowchart LR
 
 ## 系统架构
 
-前后端分离 + 分层结构，后端内部按 `config → httpserver → usecase → repo → domain` 单向依赖，业务规则（碳核算、积分）做成无 I/O 的纯函数，便于单测与复用。
+前后端分离 + 分层结构。后端依赖方向：`cmd`（装配根）→ `httpserver`（HTTP 层）→ `app`（DTO 与端口接口）← `repo`（SQL 实现），`domain` 在最内层、不 import 任何内部包；业务规则（碳核算、积分、状态机）做成无 I/O 的纯函数，便于单测与复用。
 
 业务事件采用**事务性发件箱（Transactional Outbox）**：
 
@@ -148,24 +152,29 @@ flowchart LR
 ```
 green-travel-points/
 ├── apps/
-│   ├── api/                     # Go 后端
-│   │   ├── cmd/server/          # 入口：配置 → 日志 → 路由 → 优雅关闭
+│   ├── api/                          # Go 后端（module greentravelpoints）
+│   │   ├── cmd/server/main.go        # 入口：配置 → 连接池 → 路由装配 → 优雅关闭
 │   │   └── internal/
-│   │       ├── config/          # 环境变量装配
-│   │       ├── domain/          # 纯业务规则（碳核算、积分）+ 单测
-│   │       ├── eventbus/        # 领域事件主题与处理器契约
-│   │       ├── httpserver/      # 路由、中间件、统一响应壳、健康检查
-│   │       └── repo/            # 连接池；sqlc 生成代码将落 sqlcgen/
-│   ├── web/                     # React 用户端（路由骨架 + 连通性自检）
-│   └── admin/                   # 运营后台（Sprint 3 起）
-├── packages/api-types/          # OpenAPI 生成的前端类型（Sprint 2 起）
-├── db/migrations/               # 000001 参数与出行方式 / 000002 事务性发件箱
-├── deploy/                      # Dockerfile.api / Dockerfile.web / nginx.conf / compose
+│   │       ├── app/                  # DTO、哨兵错误、端口接口（Catalog / Points / Orders / Role）
+│   │       ├── config/config.go      # 环境变量 → Config，含默认值与取值范围校验
+│   │       ├── domain/               # 纯业务规则：碳核算、积分换算、订单状态机（45 个用例）
+│   │       ├── eventbus/eventbus.go  # 领域事件主题与处理器契约（Worker 待实现）
+│   │       ├── httpserver/           # 路由、中间件、统一响应壳、各业务 handler（24 个用例）
+│   │       └── repo/                 # 手写 SQL：连接池、商品、积分、订单、运营后台
+│   └── web/                          # React 用户端：9 个页面组件（含登录与占位页）+ 布局组件 + 碳减排趋势图
+│       └── src/{pages,components,services,lib,types,mock}/
+├── db/
+│   ├── migrations/                   # 5 组 up/down：参数与出行方式 / 发件箱 / 账本 / 用户行程碳记录 / 商城订单
+│   └── seed/dev_demo.sql             # 演示数据：用户 1001（1200 分）+ 3 个上架商品
+├── deploy/                           # Dockerfile.api / Dockerfile.web / nginx.conf / docker-compose.yml
 ├── docs/
-│   ├── uml/                     # PlantUML 源图 + out/ 导出 PNG
-│   └── *.md                     # 需求、分工、Sprint 记录、建模指南
-├── scripts/                     # dev-env.ps1 / verify.ps1 / uml-export.ps1
-└── .github/workflows/ci.yml     # Go + Node 双 job 门禁
+│   ├── api/README.md                 # M5–M8 接口契约：字段、事务步骤、错误码、联调步骤
+│   ├── uml/                          # 11 个 .puml 源图 + out/ 11 张 PNG + .tools/(plantuml.jar, graphviz)
+│   └── *.md                          # 需求规格、分工计划、Sprint 0 记录、联通记录、建模指南、接口需求清单
+├── scripts/                          # dev-env.ps1（缓存重定向）/ verify.ps1（一键门禁）/ uml-export.ps1
+├── .github/workflows/ci.yml          # 双 job：Go（gofmt→vet→test -race→build）+ Node（tsc→vitest→build）
+├── AGENTS.md                         # 代理 / 新人作业手册：分层规范、领域规则、迁移与测试要求、门禁
+└── README.md                         # 项目总览（本文件）
 ```
 
 ---
@@ -227,11 +236,18 @@ docker compose -f deploy/docker-compose.yml up -d --build
 
 ```powershell
 cd apps/api
-Copy-Item .env.example .env      # 按需修改 DB_DSN
 go run ./cmd/server              # 默认监听 :8080
 ```
 
+后端**只读环境变量**、不解析 `.env` 文件；默认值已指向本机 `127.0.0.1:3306` 的 `greentravel` 账号，所以零配置即可启动。要换库或改端口就设环境变量（`DB_DSN` / `HTTP_ADDR` / `AUTH_SECRET` …，完整清单见 `apps/api/.env.example`），例如在 PowerShell 里：
+
+```powershell
+$env:DB_DSN = "root:root@tcp(127.0.0.1:3306)/green_travel_points?parseTime=true&loc=Local&charset=utf8mb4"
+```
+
 无数据库时服务仍可启动（启动日志只 Warn）：`/healthz` 返回 200，`/readyz` 返回 503，便于前端先联调。
+
+> 演示账号注意：`db/seed/dev_demo.sql` 里的 `password_hash` 是占位串，**不能用来登录**；注册一个账号（`POST /api/v1/auth/register` 或登录页「注册」），或把 `X-User-Id: 1001` 当作开发期身份头使用。
 
 ### 4. 启动前端
 
@@ -253,28 +269,24 @@ pwsh -File .\scripts\verify.ps1
 
 ## 接口
 
-当前已实现（Sprint 0）：
+统一响应壳：`{"code":"OK","message":"ok","data":{...}}`，错误时省略 `data`；错误码与 HTTP 状态映射见 `apps/api/internal/httpserver/response.go`。
+字段口径、分页约定、事务步骤与业务错误码见 **[P3 接口说明](docs/api/README.md)**。
 
-| 接口 | 用途 |
-| --- | --- |
-| `GET /healthz` | 存活探针（恒 200） |
-| `GET /readyz` | 就绪探针（DB ping 失败返回 503） |
-| `GET /api/v1/ping` | 前后端连通性自检 |
+**已实现**（均有 httpserver 单测覆盖，测试用假存储、不连 MySQL）：
 
-所有响应统一壳：`{"code":"OK","message":"ok","data":{...}}`，错误码定义见 `apps/api/internal/httpserver/response.go`。
-
-规划中（Sprint 1–3，契约先行）：
-
-| 分组 | 端点 | 负责 |
+| 分组 | 端点 | 说明 |
 | --- | --- | --- |
-| 认证 | `POST /api/v1/auth/register`、`POST /api/v1/auth/login` | P2 |
-| 行程 | `POST /api/v1/trips`、`GET /api/v1/trips` | P2 |
-| 积分 | `GET /api/v1/points/summary`、`GET /api/v1/points/transactions` | P3 |
-| 商城 | `GET /api/v1/products`、`GET /api/v1/products/{id}` | P3 |
-| 兑换 | `POST /api/v1/orders`、`GET /api/v1/orders`、`POST /api/v1/orders/{id}/cancel` | P3 |
-| 运营 | 商品 / 库存 / 订单发货 / 对账 | P5 + P3 |
+| 探针 | `GET /healthz`、`GET /readyz` | 存活恒 200；就绪含 DB ping，失败返回 503 |
+| 认证 | `POST /api/v1/auth/register`、`POST /api/v1/auth/login`、`GET /api/v1/me` | 自签 HMAC-SHA256 token，有效期 2 小时 |
+| 行程 | `POST /api/v1/trips`、`GET /api/v1/trips` | 单事务：行程 + 碳记录 + 积分流水 + 余额 + Outbox |
+| 商品 | `GET /api/v1/products`、`GET /api/v1/products/{id}` | 公开接口，支持分类 / 关键词 / 仅看有货 |
+| 积分 | `GET /api/v1/points/summary`、`GET /api/v1/points/transactions` | 需身份；流水支持类型多选与分页 |
+| 兑换 | `POST /api/v1/orders`、`GET /api/v1/orders`、`POST /api/v1/orders/{id}/cancel` | 支持 `Idempotency-Key`；按 FIFO 消耗积分批次 |
+| 运营 | `/api/v1/admin/products`、`/api/v1/admin/skus/{id}/stock`、`/api/v1/admin/orders`（含 confirm / ship / complete）、`/api/v1/admin/points/reconcile` | 需 `ADMIN` 角色，非法流转返回 409 |
 
-> 接口契约文件 `docs/api/openapi.yaml` 随 Sprint 1 产出；前端类型由它生成，不手写 DTO。
+**身份鉴权**：优先读 `Authorization: Bearer <token>`（登录颁发），未带 token 时回退开发期请求头 `X-User-Id: <id>`；运营后台再叠加 `RequireAdmin` 角色校验。
+
+**路由可裁剪**：`NewRouter` 的 `Catalog` / `Points` / `Orders` / `Admin` / `Roles` 端口为 nil 时不挂载对应分组，单测可以只测目标模块。
 
 ---
 
@@ -313,11 +325,12 @@ pwsh -File .\scripts\verify.ps1
 
 | 层级 | 范围 | 命令 | 现状 |
 | --- | --- | --- | --- |
-| 单元测试（Go） | 碳核算、积分规则、HTTP 层 | `go test ./... -count=1` | 领域规则 35 例 + HTTP 4 例，全绿 |
-| 单元测试（前端） | Envelope 解包、错误映射 | `npx vitest run` | 5 例通过 |
+| 单元测试（Go · domain） | 碳核算、积分换算、日上限、订单状态机 | `go test ./internal/domain -v` | 12 个测试函数 / 45 个用例（含表驱动子用例），全绿 |
+| 单元测试（Go · http） | 路由、中间件、认证、各 handler（假存储，不连库） | `go test ./internal/httpserver -v` | 24 个用例，全绿 |
+| 单元测试（前端） | Envelope 解包、错误映射、表单校验 | `npx vitest run` | 2 个文件 19 例（http 5 + validators 14） |
 | 类型检查 | 前端全量 | `npx tsc --noEmit` | 零错误 |
 | 集成测试 | API + MySQL | 待建（testcontainers） | Sprint 2 起 |
-| E2E | 申报 → 得积分 → 兑换 | 待建（Playwright） | Sprint 3 起 |
+| E2E | 上报 → 得积分 → 兑换 → 核销 | 待建（Playwright） | Sprint 3 起 |
 | 性能 | 行程上报、兑换并发 | 待建（k6） | Sprint 4 起 |
 
 指导书要求的**基本路径法**（组件测试）与**等价类划分法**（功能测试）用例表，在 Sprint 3–4 补齐并写入测试报告。
@@ -330,9 +343,11 @@ pwsh -File .\scripts\verify.ps1
 docker compose -f deploy/docker-compose.yml up -d --build
 ```
 
-包含 `mysql` + `api` + `web` + `nginx` 四个服务，首次启动自动执行迁移；物理部署拓扑见 [部署图](docs/uml/06-部署图.puml)。
+当前 compose 只编排 `mysql` + `api` 两个服务：MySQL 首次启动按文件名顺序导入 5 组迁移，API 等 `mysql` 健康检查通过后启动。
 
-> 本机 Docker daemon 尚未启动，上述编排**尚未实跑验证**，属"配置就绪"状态，由 P5 在第一次集成分支上补执行证据。
+`web` 与反向代理 nginx 的镜像配置已就绪（`deploy/Dockerfile.web` 多阶段构建 → nginx 托管 `dist/`，`deploy/nginx.conf` 含 SPA 回退与 `/api` 反代），但尚未编入 compose。物理部署拓扑见 [部署图](docs/uml/06-部署图.puml)。
+
+> 本机 Docker daemon 未启动，上述编排**尚未实跑验证**，属"配置就绪"状态。
 
 ---
 
@@ -366,17 +381,17 @@ docker compose -f deploy/docker-compose.yml up -d --build
 | Sprint | 周期 | 目标 | 对齐实验 | 状态 |
 | --- | --- | --- | --- | --- |
 | S0 | 第 1 周 | 技术栈验证、业务规则冻结、骨架搭建 | 准备 | ✅ 已完成 |
-| S1 | 第 2–4 周 | 需求建模：角色 / 用例 / 活动图 / 域模型 / 非功能需求 | 实验一 | 🚧 进行中 |
-| S2 | 第 5–7 周 | 设计建模 + 垂直切片（登录 → 上报 → 碳核算 → 积分） | 实验二 | ⏳ 未开始 |
-| S3 | 第 8–10 周 | 商城闭环 + 订单状态机 + Outbox Worker | 实验三 | ⏳ 未开始 |
+| S1 | 第 2–4 周 | 需求建模：角色 / 用例 / 活动图 / 域模型 / 非功能需求 | 实验一 | ✅ 已完成（11 张 UML 源图 + 成图） |
+| S2 | 第 5–7 周 | 设计建模 + 垂直切片（登录 → 上报 → 碳核算 → 积分） | 实验二 | ✅ 主链路已通（认证 + 行程 + 积分） |
+| S3 | 第 8–10 周 | 商城闭环 + 订单状态机 + Outbox Worker | 实验三 | 🚧 商城闭环与状态机已实现，Worker 未做 |
 | S4 | 第 11–13 周 | 三层测试 + 性能 + 容器化部署 + 报告四 / 五章 | 实验四 | ⏳ 未开始 |
 
 **Sprint 0 验收**
 
 - [x] 前后端可独立启动，`/healthz` `/readyz` `/api/v1/ping` 行为符合预期
-- [x] 领域规则单元测试全绿（碳核算 12 例、积分 23 例）
-- [x] 前端 TS7 类型检查通过、单测 5 例通过、生产构建成功
-- [x] 两条迁移可执行（`000001` 参数与出行方式、`000002` 发件箱）
+- [x] 领域规则单元测试全绿（12 个测试函数 / 45 个用例：碳核算、积分换算、日上限、订单状态机）
+- [x] 前端 TS7 类型检查通过、单测 19 例通过、生产构建成功
+- [x] 五组迁移可执行（`000001`–`000005`），种子数据 `db/seed/dev_demo.sql` 可导入
 - [x] CI 配置就绪（Go + Node 双 job）
 - [x] 数据库连通性与 `migrate up` 实跑：2026-10-20 本机 MySQL 9.7.2，`/readyz` 返回 `{"database":"up"}`
 
@@ -394,10 +409,20 @@ TS7 把编译器编译成各平台二进制，通过 `optionalDependencies` 分�
 pnpm 11 的 isolated 链接器用 Junction 指向虚拟 store，Windows + Node 24 下解析 `@typescript/typescript-win32-x64` 与 `std-env` 均失败；改用 npm 并锁定 `package-lock.json`。
 
 **4. `vite build` / `vitest` 报 `spawn EPERM`**
-受限沙箱下子进程被拦截，在普通终端执行即正常；CI 使用标准 runner 不受影响。
+受限沙箱（某些编辑器内置终端、带沙箱的 Agent 工具）会拦截子进程，`vite` / `vitest` 需要 spawn 子进程来做配置打包与 worker 池，因此失败。在普通终端执行即正常；CI 使用标准 runner 不受影响。
 
 **5. `docker compose` 报无法连接 daemon**
 本机 Docker Desktop 未启动。启动后再执行部署命令，或改用方式 B 手动跑迁移、本地 `go run` + `npm run dev`。
+
+**6. Windows 下读写仓库子目录报 `EPERM`（不是代码问题）**
+仓库若是从别处复制 / 解压来的，既有目录可能带着一份不含当前用户的 ACL：表现为根目录能写、`apps` `docs` `db` 等子目录全被拒。用当前账户补一次完全控制即可（只增不删，可用 `/remove:g` 撤销）：
+
+```powershell
+icacls "D:\coding\green-travel-points" /grant "$env:USERNAME:(OI)(CI)F" /T /C
+```
+
+**7. 前端页面报 401 / 列表为空**
+前端已全部走真实接口，先确认后端在跑并导入种子：`db/seed/dev_demo.sql`（用户 1001 / 管理员 1002）。未登录时 `lib/http.ts` 回退带 `X-User-Id: 1`，所以不登录也能看商城；登录页登录后改走 `Authorization: Bearer <token>`。401 会由 `http.ts` 统一清会话并跳 `/login`。
 
 ---
 
@@ -411,7 +436,10 @@ pnpm 11 的 isolated 链接器用 Junction 指向虚拟 store，Windows + Node 2
 | [Sprint 0 骨架说明](docs/Sprint0-骨架说明.md) | 实施记录、实测数据、踩坑与验收证据 |
 | [数据库联通记录](docs/数据库联通记录.md) | 建库、迁移执行、连通性验证全过程 |
 | [PlantUML 建模指南](docs/PlantUML建模指南.md) | 出图流程与 `scripts/uml-export.ps1` 用法 |
-| [UML 源图与导出](docs/uml) | 用例图、活动图、域模型、包图、部署图、鲁棒图、序列图、状态图 |
+| [AGENTS.md](AGENTS.md) | 代理 / 新人作业手册：分层与依赖方向、领域规则、迁移与测试要求、门禁与排错 |
+| [P3 接口说明](docs/api/README.md) | M5–M8 端点、字段口径、事务步骤、业务错误码、联调步骤 |
+| [前端接口需求清单](docs/前端接口需求清单.md) | 页面 ↔ 端点对照、字段与错误码需求（P4 → P2/P3） |
+| [UML 源图与导出](docs/uml) | 11 个 `.puml`：用例图、2 张活动图、域模型、包图、部署图、鲁棒图、2 张序列图、2 张状态图；`out/` 下为 11 张 PNG |
 
 ---
 

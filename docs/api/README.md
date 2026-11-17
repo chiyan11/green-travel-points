@@ -2,7 +2,7 @@
 
 > 实现：`apps/api/internal/httpserver`（HTTP 层）+ `apps/api/internal/repo`（SQL 层）+ `apps/api/internal/app`（DTO 与端口）。
 > 对应报告：实验三"系统原型构建与实现"、实验二"设计类清单 / 序列图"。
-> 状态：✅ 已实现并通过单元测试 + 本地 MySQL 联调；⏳ 待 P2 的 JWT 认证接入后替换开发期身份头。
+> 状态：✅ 已实现并通过单元测试 + 本地 MySQL 联调。身份已支持 `Authorization: Bearer <token>`（`POST /api/v1/auth/login` 自签签发，有效期 2 小时）；未带 token 时回退开发期请求头 `X-User-Id`，便于不登录联调。
 
 ## 0. 约定
 
@@ -10,8 +10,9 @@
 - 分页参数：`page`（从 1 起，默认 1）、`pageSize`（默认 20，上限 100）；响应 `{items, page, pageSize, total}`。
 - 时间：RFC3339（带时区）。
 - 金额/积分：整数 `int64`。
-- 身份（**开发期临时方案**）：请求头 `X-User-Id: <user_id>`。
-  上线前由 P2 的 `POST /api/v1/auth/login` 签发 JWT，把 `RequireUser` 中间件换成解析 JWT 即可，Handler 不用改。
+- 身份：优先 `Authorization: Bearer <token>`（登录 / 注册响应里的 `token`）；缺失时回退 `X-User-Id: <user_id>`（开发期便利，生产须关闭）。
+  运营接口额外要求角色为 `ADMIN`（`RequireAdmin`），越权返回 403 `FORBIDDEN`。
+  注意：当前 token 是自签 HMAC-SHA256 的紧凑格式，并非标准 JWT（无 header 段），仅课程范围内可用。
 
 ## 1. 商品目录（M6，公开）
 
