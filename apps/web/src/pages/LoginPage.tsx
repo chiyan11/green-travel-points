@@ -116,7 +116,7 @@ export function LoginPage(): ReactNode {
           </button>
         </form>
 
-        <p className="mock-note" style={{ marginTop: 12 }}>
+        <p className="hint-note" style={{ marginTop: 14 }}>
           已对接 POST /api/v1/auth/login、/auth/register；登录成功后 token 存本地，后续请求带 Authorization: Bearer。
         </p>
       </section>
