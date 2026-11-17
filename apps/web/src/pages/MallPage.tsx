@@ -22,20 +22,30 @@ export function MallPage(): ReactNode {
         <h2>积分商城</h2>
         <p>用积攒的碳积分兑换绿色好物；兑换扣减以后端事务为准，原型仅做预校验。</p>
       </section>
-      <p className="muted">当前余额：{formatPoints(summary?.balance ?? 0)} 分</p>
+
+      <div className="row-between">
+        <span className="muted" style={{ margin: 0 }}>共 {products.length} 件在售商品</span>
+        <span className="price-chip">我的余额 {formatPoints(summary?.balance ?? 0)} 分</span>
+      </div>
+
       <div className="grid product-grid">
         {products.map((p) => (
           <div key={p.id} className="card product-card">
-            <div className="product-emoji" aria-hidden="true">
+            <div className="product-cover" aria-hidden="true">
               {p.coverUrl ? <img src={p.coverUrl} alt="" /> : productCoverIcon(p.category)}
             </div>
-            <h3>{p.name}</h3>
-            <p className="muted">{p.description}</p>
-            <p className="product-price">{formatPoints(p.pointsPrice)} 分</p>
-            <p className="muted">库存 {p.stock}</p>
-            <Link to={`/mall/${p.id}`} className="btn btn--ghost">
-              查看详情
-            </Link>
+            <div className="product-body">
+              {p.category && <span className="chip chip--tiny">{p.category}</span>}
+              <h3>{p.name}</h3>
+              <p className="muted" style={{ margin: 0 }}>{p.description}</p>
+              <div className="product-meta">
+                <span className="price-chip">{formatPoints(p.pointsPrice)} 分</span>
+                <span className="muted" style={{ margin: 0 }}>库存 {p.stock}</span>
+              </div>
+              <Link to={`/mall/${p.id}`} className="btn btn--ghost">
+                查看详情
+              </Link>
+            </div>
           </div>
         ))}
       </div>
