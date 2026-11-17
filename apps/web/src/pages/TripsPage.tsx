@@ -57,7 +57,10 @@ export function TripsPage(): ReactNode {
       </section>
 
       <section className="card">
-        <h3>提交一次出行</h3>
+        <div className="section-head">
+          <h3>提交一次出行</h3>
+          <span className="muted" style={{ margin: 0 }}>单日最多计 500 分</span>
+        </div>
         <form onSubmit={onSubmit}>
           <div className="form-field">
             <label>出行方式</label>
@@ -109,12 +112,27 @@ export function TripsPage(): ReactNode {
         {last && (
           <div className="result-panel">
             <h3 style={{ marginTop: 0 }}>本次结果（后端核算）</h3>
-            <p>
-              {modeMeta(last.mode).emoji} {modeMeta(last.mode).label} · {formatDistance(last.distanceKm)}
-              ，减排 {formatGrams(last.carbonSavedGrams)}，原始 {last.rawPoints} 分，实发{' '}
-              <b>{last.grantedPoints}</b> 分
-              {last.cappedByDaily && '（已触单日 500 分上限）'}。
-            </p>
+            <div className="result-grid">
+              <div>
+                <p className="stat-label">出行方式</p>
+                <p className="stat-value" style={{ fontSize: 18 }}>
+                  {modeMeta(last.mode).emoji} {modeMeta(last.mode).label}
+                </p>
+                <p className="stat-sub">{formatDistance(last.distanceKm)}</p>
+              </div>
+              <div>
+                <p className="stat-label">碳减排量</p>
+                <p className="stat-value">{formatGrams(last.carbonSavedGrams)}</p>
+                <p className="stat-sub">相对燃油私家车</p>
+              </div>
+              <div>
+                <p className="stat-label">发放积分</p>
+                <p className="stat-value">{last.grantedPoints} 分</p>
+                <p className="stat-sub">
+                  原始 {last.rawPoints} 分{last.cappedByDaily ? ' · 已触单日上限' : ''}
+                </p>
+              </div>
+            </div>
             <p className="muted">
               同一次出行重复提交不会重复发分（后端按用户+方式+距离+时间做幂等，返回首次结果）。
             </p>
@@ -123,7 +141,10 @@ export function TripsPage(): ReactNode {
       </section>
 
       <section className="card">
-        <h3>最近行程</h3>
+        <div className="section-head">
+          <h3>最近行程</h3>
+          <span className="muted" style={{ margin: 0 }}>共 {trips.length} 条</span>
+        </div>
         {trips.length === 0 ? (
           <p className="empty-state">还没有行程，先上报一次吧。</p>
         ) : (

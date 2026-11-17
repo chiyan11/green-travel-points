@@ -60,6 +60,10 @@ export function OrdersPage(): ReactNode {
       {error && <p className="field-error">{error}</p>}
 
       <section className="card">
+        <div className="section-head">
+          <h3>{filter === 'ALL' ? '全部订单' : FILTERS.find((f) => f.value === filter)?.label + '订单'}</h3>
+          <span className="muted" style={{ margin: 0 }}>共 {visible.length} 条</span>
+        </div>
         {visible.length === 0 ? (
           <p className="empty-state">该状态下暂无订单。</p>
         ) : (

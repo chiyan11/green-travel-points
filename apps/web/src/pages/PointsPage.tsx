@@ -27,23 +27,39 @@ export function PointsPage(): ReactNode {
       </section>
 
       <div className="grid">
-        <div className="card">
-          <p className="muted">当前余额</p>
-          <p className="metric">{formatPoints(summary?.balance ?? 0)} 分</p>
+        <div className="stat-card stat-card--accent">
+          <span className="stat-card__icon" aria-hidden="true">💰</span>
+          <div>
+            <p className="stat-label">当前余额</p>
+            <p className="stat-value">{formatPoints(summary?.balance ?? 0)} 分</p>
+            <p className="stat-sub">可兑换商城商品</p>
+          </div>
         </div>
-        <div className="card">
-          <p className="muted">累计碳减排</p>
-          <p className="metric">{formatGrams(summary?.totalCarbonSavedGrams ?? 0)}</p>
+        <div className="stat-card">
+          <span className="stat-card__icon" aria-hidden="true">🌿</span>
+          <div>
+            <p className="stat-label">累计碳减排</p>
+            <p className="stat-value">{formatGrams(summary?.totalCarbonSavedGrams ?? 0)}</p>
+            <p className="stat-sub">全部行程累计</p>
+          </div>
         </div>
-        <div className="card">
-          <p className="muted">本月获得</p>
-          <p className="metric">{formatPoints(summary?.earnedThisMonth ?? 0)} 分</p>
+        <div className="stat-card">
+          <span className="stat-card__icon" aria-hidden="true">📅</span>
+          <div>
+            <p className="stat-label">本月获得</p>
+            <p className="stat-value">{formatPoints(summary?.earnedThisMonth ?? 0)} 分</p>
+            <p className="stat-sub">按自然月统计</p>
+          </div>
         </div>
-        <div className="card">
-          <p className="muted">今日已发 / 上限</p>
-          <p className="metric">
-            {summary?.earnedToday ?? 0} / {summary?.dailyCap ?? 500}
-          </p>
+        <div className="stat-card">
+          <span className="stat-card__icon" aria-hidden="true">⏱️</span>
+          <div>
+            <p className="stat-label">今日已发 / 上限</p>
+            <p className="stat-value">
+              {summary?.earnedToday ?? 0} / {summary?.dailyCap ?? 500}
+            </p>
+            <p className="stat-sub">超出上限的部分不计积分</p>
+          </div>
         </div>
       </div>
 
