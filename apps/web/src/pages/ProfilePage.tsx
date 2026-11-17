@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { getSession, logoutMock } from '@/services/auth'
+import { getSession, logout } from '@/services/auth'
 import { getSummary } from '@/services/points'
 import { formatGrams, formatPoints } from '@/lib/format'
 import type { ReactNode } from 'react'
@@ -10,11 +10,11 @@ export function ProfilePage(): ReactNode {
   const session = getSession()
   const { data: summary } = useQuery({
     queryKey: ['summary'],
-    queryFn: () => Promise.resolve(getSummary()),
+    queryFn: () => getSummary(),
   })
 
   const onLogout = () => {
-    logoutMock()
+    logout()
     navigate('/login', { replace: true })
   }
 
@@ -28,6 +28,9 @@ export function ProfilePage(): ReactNode {
         <h3>账号</h3>
         <p>昵称：{session?.nickname ?? '未登录'}</p>
         <p className="muted">用户 ID：{session?.userId ?? '-'}</p>
+        <p className="muted">
+          登录态：{session ? 'JWT 已保存（有效期 2 小时）' : '未登录'}
+        </p>
         <button className="btn btn--ghost" onClick={onLogout}>
           退出登录（清除本地会话）
         </button>

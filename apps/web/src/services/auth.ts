@@ -1,32 +1,81 @@
 /**
- * 认证服务（MOCK）。
- * TODO 联调替换：POST /api/v1/auth/login、POST /api/v1/auth/register，
- * Token 存入 Authorization: Bearer 头，见 docs/前端接口需求清单.md。
+ * 认证服务（联调版）。
+ * POST /api/v1/auth/register、POST /api/v1/auth/login、GET /api/v1/me。
+ *
+ * 后端约定（apps/api/internal/httpserver/auth.go）：
+ * - 注册/登录请求体只允许 phone / account / nickname / password 四个键（DisallowUnknownFields）
+ * - 注册用手机号登记（phone 或 account 传一个即可），昵称可省略（默认同手机号）
+ * - 登录按手机号查库
+ * - 响应统一壳 {code, message, data}
  */
+import { api } from '@/lib/http'
+import { clearSession, readSession, writeSession } from '@/lib/session'
 import type { AuthUser } from '@/types/domain'
 
-const SESSION_KEY = 'gtp_session'
+interface RawRegister {
+  userId: string
+  nickname: string
+  token: string
+}
 
-export function loginMock(nickname: string): AuthUser {
+interface RawLogin {
+  token: string
+  user: { userId: string; nickname: string }
+}
+
+/** 登录：账号即手机号。成功后把 token 与用户信息写入本地会话。 */
+export async function login(account: string, password: string): Promise<AuthUser> {
+  const res = await api.post<RawLogin>('/api/v1/auth/login', {
+    account: account.trim(),
+    password,
+  })
   const user: AuthUser = {
-    userId: 'u_demo',
-    nickname: nickname.trim() || '演示用户',
-    token: 'mock-token',
+    userId: res.user.userId,
+    nickname: res.user.nickname,
+    token: res.token,
   }
-  localStorage.setItem(SESSION_KEY, JSON.stringify(user))
+  writeSession(user)
   return user
 }
 
-export function getSession(): AuthUser | null {
-  try {
-    const raw = localStorage.getItem(SESSION_KEY)
-    if (!raw) return null
-    return JSON.parse(raw) as AuthUser
-  } catch {
-    return null
+/** 注册：手机号 + 密码（≥6 位）+ 可选昵称；成功后直接带 token 登录态。 */
+export async function register(input: {
+  phone: string
+  password: string
+  nickname?: string
+}): Promise<AuthUser> {
+  const body: Record<string, string> = {
+    phone: input.phone.trim(),
+    password: input.password,
   }
+  const nickname = input.nickname?.trim()
+  if (nickname) body.nickname = nickname
+
+  const res = await api.post<RawRegister>('/api/v1/auth/register', body)
+  const user: AuthUser = {
+    userId: res.userId,
+    nickname: res.nickname,
+    token: res.token,
+  }
+  writeSession(user)
+  return user
 }
 
-export function logoutMock(): void {
-  localStorage.removeItem(SESSION_KEY)
+export interface MeResponse {
+  userId: string
+  nickname: string
+  joinedAt: string
+}
+
+/** 校验当前 token 是否有效（401 时 http 层会自动清会话并跳登录）。 */
+export async function fetchMe(): Promise<MeResponse> {
+  return api.get<MeResponse>('/api/v1/me')
+}
+
+export function getSession(): AuthUser | null {
+  return readSession()
+}
+
+export function logout(): void {
+  clearSession()
 }

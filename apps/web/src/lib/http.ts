@@ -1,4 +1,6 @@
 /** 与 Go 后端 `internal/httpserver/response.go` 的 Envelope 保持一致的响应壳。 */
+import { clearSession, getToken } from './session'
+
 export interface Envelope<T> {
   code: string
   message: string
@@ -26,13 +28,26 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (init.body !== undefined && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json')
   }
-  // 开发期后端用 X-User-Id 识别用户（见 httpserver/middleware.go RequireUser）。
-  // TODO P2 JWT 上线后删除此行，改带 Authorization: Bearer <token>。
-  if (!headers.has('X-User-Id')) {
+
+  // 已登录走 JWT（后端 httpserver/auth.go Require 优先校验 Bearer）；
+  // 未登录时退回开发期约定的 X-User-Id，方便不登录也能浏览商城。
+  const token = getToken()
+  if (token !== null && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`)
+  } else if (token === null && !headers.has('X-User-Id')) {
     headers.set('X-User-Id', '1')
   }
 
   const res = await fetch(path, { ...init, headers })
+
+  // 会话失效统一处理：清本地会话并回登录页（避免多页重复写判断）。
+  if (res.status === 401 && !path.startsWith('/api/v1/auth/')) {
+    clearSession()
+    if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+      window.location.assign('/login')
+    }
+  }
+
   const text = await res.text()
 
   let payload: Envelope<T> | null = null

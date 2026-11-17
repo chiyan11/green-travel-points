@@ -1,51 +1,69 @@
 /**
- * 行程服务（MOCK，本地预览计算）。
- * TODO 联调替换：GET/POST /api/v1/trips，碳减排与积分以后端 EvaluateTrip 为准。
- * 字段口径对齐 trip_record（000004）：startedAt=started_at，status=VALID。
+ * 行程服务（联调版）。
+ * GET /api/v1/trips、POST /api/v1/trips（需登录）。
+ *
+ * 字段兼容说明（后端 trips.go 与迁移表 000004 存在命名差异）：
+ * - 后端 JSON 用 `traveledAt`，前端契约用 `startedAt`（started_at），这里双向对齐
+ * - 上报响应里 status 硬编码为 "VERIFIED"，而库里 trip_record.status 是 VALID/REVOKED，
+ *   统一归一成前端枚举，避免页面出现两种状态值
+ * - 积分与碳减排一律以后端 domain.EvaluateTrip 为准，前端不再本地计算
  */
-import { mockDb, nextId } from '@/mock/data'
-import { capDaily, carbonSavedGrams, rawPointsFor } from '@/lib/validators'
-import { type TravelMode, type TripRecord } from '@/types/domain'
+import { api } from '@/lib/http'
+import type { Page, TravelMode, TripRecord, TripStatus } from '@/types/domain'
 
 export interface SubmitTripInput {
   mode: TravelMode
   distanceKm: number
+  /** ISO 8601 字符串，随请求体以 traveledAt 发送。 */
   startedAt: string
 }
 
-export function listTrips(): TripRecord[] {
-  return mockDb.getTrips()
+interface RawTrip {
+  id: string
+  mode: TravelMode
+  distanceKm: number
+  /** 后端字段名；兼容尚未改名的实现。 */
+  traveledAt?: string
+  startedAt?: string
+  carbonSavedGrams: number
+  rawPoints?: number
+  grantedPoints?: number
+  cappedByDaily?: boolean
+  status?: string
 }
 
-export function submitTrip(input: SubmitTripInput): TripRecord {
-  const saved = carbonSavedGrams(input.distanceKm, input.mode)
-  const raw = rawPointsFor(saved)
-  const granted = capDaily(raw, mockDb.earnedToday())
+function normalizeStatus(status: string | undefined): TripStatus {
+  if (status === 'REVOKED' || status === 'REJECTED') return 'REVOKED'
+  return 'VALID'
+}
 
-  const trip: TripRecord = {
-    id: nextId('trip'),
-    mode: input.mode,
-    distanceKm: input.distanceKm,
-    startedAt: input.startedAt || new Date().toISOString(),
-    carbonSavedGrams: saved,
+function toTrip(r: RawTrip): TripRecord {
+  const raw = r.rawPoints ?? 0
+  const granted = r.grantedPoints ?? 0
+  return {
+    id: r.id,
+    mode: r.mode,
+    distanceKm: r.distanceKm,
+    startedAt: r.startedAt || r.traveledAt || '',
+    carbonSavedGrams: r.carbonSavedGrams,
     rawPoints: raw,
     grantedPoints: granted,
-    cappedByDaily: granted < raw,
-    status: 'VALID',
+    cappedByDaily: r.cappedByDaily ?? granted < raw,
+    status: normalizeStatus(r.status),
   }
-  mockDb.addTrip(trip)
+}
 
-  if (granted > 0) {
-    mockDb.addPoints(granted)
-    mockDb.addTxn({
-      id: nextId('txn'),
-      type: 'TRAVEL',
-      amount: granted,
-      balanceAfter: mockDb.getBalance(),
-      bizRefType: 'trip_record',
-      bizRefId: trip.id,
-      occurredAt: new Date().toISOString(),
-    })
-  }
-  return trip
+export async function listTrips(): Promise<TripRecord[]> {
+  const page = await api.get<Page<RawTrip>>('/api/v1/trips')
+  return (page.items ?? []).map(toTrip)
+}
+
+/** 上报行程：后端做幂等（同用户+同模式+同距离+同时间只记一次，重复提交返回首次结果）。 */
+export async function submitTrip(input: SubmitTripInput): Promise<TripRecord> {
+  const raw = await api.post<RawTrip>('/api/v1/trips', {
+    mode: input.mode,
+    distanceKm: input.distanceKm,
+    traveledAt: input.startedAt || new Date().toISOString(),
+  })
+  return toTrip(raw)
 }
