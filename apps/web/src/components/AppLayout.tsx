@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { fetchPing } from '@/lib/http'
-import { getSession, logoutMock } from '@/services/auth'
+import { getSession, logout } from '@/services/auth'
 
 const NAV_ITEMS = [
   { to: '/', label: '首页', end: true },
@@ -29,7 +29,7 @@ export function AppLayout() {
   const session = getSession()
 
   const onLogout = () => {
-    logoutMock()
+    logout()
     navigate('/login', { replace: true })
   }
 
@@ -79,7 +79,7 @@ export function AppLayout() {
       </main>
 
       <footer className="app__footer">
-        软件工程实验 · 第 14 题 碳中和绿色出行积分系统 · 前端原型（MOCK 数据，待接口联调）
+        软件工程实验 · 第 14 题 碳中和绿色出行积分系统 · 前端已对接后端接口
       </footer>
     </div>
   )

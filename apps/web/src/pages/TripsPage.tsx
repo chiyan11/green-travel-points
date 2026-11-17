@@ -13,7 +13,7 @@ export function TripsPage(): ReactNode {
   const queryClient = useQueryClient()
   const { data: trips = [] } = useQuery({
     queryKey: ['trips'],
-    queryFn: () => Promise.resolve(listTrips()),
+    queryFn: () => listTrips(),
   })
 
   const [mode, setMode] = useState<TravelMode>('subway')
@@ -23,7 +23,7 @@ export function TripsPage(): ReactNode {
   const [last, setLast] = useState<TripRecord | null>(null)
   const [submitError, setSubmitError] = useState('')
 
-  const onSubmit = (e: FormEvent) => {
+  const onSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setSubmitError('')
     const check = validateDistance(distanceInput)
@@ -33,7 +33,7 @@ export function TripsPage(): ReactNode {
     }
     setDistanceError('')
     try {
-      const trip = submitTrip({
+      const trip = await submitTrip({
         mode,
         distanceKm: check.value,
         startedAt: startedAt ? new Date(startedAt).toISOString() : new Date().toISOString(),
@@ -108,12 +108,15 @@ export function TripsPage(): ReactNode {
 
         {last && (
           <div className="result-panel">
-            <h3 style={{ marginTop: 0 }}>本次结果（本地预览）</h3>
+            <h3 style={{ marginTop: 0 }}>本次结果（后端核算）</h3>
             <p>
               {modeMeta(last.mode).emoji} {modeMeta(last.mode).label} · {formatDistance(last.distanceKm)}
               ，减排 {formatGrams(last.carbonSavedGrams)}，原始 {last.rawPoints} 分，实发{' '}
               <b>{last.grantedPoints}</b> 分
               {last.cappedByDaily && '（已触单日 500 分上限）'}。
+            </p>
+            <p className="muted">
+              同一次出行重复提交不会重复发分（后端按用户+方式+距离+时间做幂等，返回首次结果）。
             </p>
           </div>
         )}
@@ -148,7 +151,9 @@ export function TripsPage(): ReactNode {
                     {t.rawPoints} / <b>{t.grantedPoints}</b>
                   </td>
                   <td>
-                    <span className="badge badge--ok">已发放</span>
+                    <span className={`badge ${t.status === 'VALID' ? 'badge--ok' : 'badge--muted'}`}>
+                      {t.status === 'VALID' ? '有效' : '已撤销'}
+                    </span>
                   </td>
                 </tr>
               ))}
