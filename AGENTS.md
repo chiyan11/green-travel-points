@@ -56,6 +56,10 @@ docker compose -f deploy/docker-compose.yml up -d --build
 3. **缓存重定向。** 若全局缓存目录不可写（受限沙箱、只读用户目录），先执行 `. .\scripts\dev-env.ps1`，它把 `GOCACHE` / `GOMODCACHE` / `npm` 缓存指到仓库内 `.cache/`。
 4. **种子账号不能登录。** `db/seed/dev_demo.sql` 的 `password_hash` 是占位串，后端校验的是 `sha256$<salt>$<digest>` 格式，二者对不上。要么注册新账号，要么用开发期身份头 `X-User-Id: 1001`。
 
+> **团队共享库（ZeroTier 内网）**：连接方式见 [`docs/dev/shared-db.md`](dev/shared-db.md)。
+> 该链路延迟较高，后端启动需带 `HTTP_REQUEST_TIMEOUT=60s`，`DB_DSN` 要加 `timeout/readTimeout/writeTimeout`；
+> 日常开发建议本地库，联调/演示切共享库。
+
 ### 常用命令
 
 | 目的 | 命令 | 工作目录 |
