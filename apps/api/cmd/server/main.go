@@ -34,6 +34,15 @@ func run() error {
 	logger := newLogger(cfg.Env)
 	slog.SetDefault(logger)
 
+	// 启动时播报数据库目标：连远程共享实例时，本机的读写对其他成员实时可见，避免连错库。
+	if addr, local, ok := dbEndpoint(cfg.DatabaseDSN); !ok {
+		logger.Warn("无法解析 DB_DSN，跳过数据库目标提示")
+	} else if local {
+		logger.Info("数据库目标：本机实例", "db_addr", addr)
+	} else {
+		logger.Warn("数据库目标：远程共享实例，你的读写对其他成员实时可见", "db_addr", addr)
+	}
+
 	db, err := repo.Open(cfg)
 	if err != nil {
 		return err
