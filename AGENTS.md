@@ -59,6 +59,8 @@ docker compose -f deploy/docker-compose.yml up -d --build
 > **团队共享库（ZeroTier 内网）**：连接方式见 [`docs/dev/shared-db.md`](dev/shared-db.md)。
 > 该链路延迟较高，后端启动需带 `HTTP_REQUEST_TIMEOUT=60s`，`DB_DSN` 要加 `timeout/readTimeout/writeTimeout`；
 > 日常开发建议本地库，联调/演示切共享库。
+> **若本机就是共享库主机**（`docs/dev/shared-db.md` 顶部写明主机名的那台），`127.0.0.1` 与共享库是**同一实例**：
+> 切换只影响延迟不改数据，任何 `down` 迁移 / 清表 / 批量造数据都等于直接改全组。
 
 ### 常用命令
 
