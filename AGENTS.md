@@ -89,6 +89,7 @@ green-travel-points/
 ├── apps/
 │   ├── api/                      Go 后端（module: greentravelpoints）
 │   │   ├── cmd/server/main.go    进程入口：装配 config → repo → 端口实现 → httpserver
+│   │   ├── cmd/server/dbendpoint.go  从 DB_DSN 解析目标地址（启动日志提示本机库 / 共享库，不打印凭据）
 │   │   ├── internal/
 │   │   │   ├── config/           环境变量 → Config（无 .env 解析）
 │   │   │   ├── domain/           纯业务规则：碳核算、积分、订单状态机（无 I/O、可裸测）
@@ -266,6 +267,7 @@ pages/*.tsx  ──►  services/*.ts  ──►  lib/http.ts  ──►  fetch
 | --- | --- | --- | --- |
 | 领域单测 | `apps/api/internal/domain/*_test.go` | 12 个函数 / 45 例 | 表驱动，覆盖边界与非法输入 |
 | HTTP 单测 | `apps/api/internal/httpserver/*_test.go` | 24 例 | 注入假存储，**不连 MySQL**；断言响应壳与错误码 |
+| 启动日志单测 | `apps/api/cmd/server/dbendpoint_test.go` | 1 个函数 / 9 例 | 表驱动：默认 DSN、局域网 / ZeroTier、localhost、IPv6 回环、unix socket、省略地址、非法 DSN |
 | 前端单测 | `apps/web/src/lib/*.test.ts` | 2 文件 19 例 | `http.test.ts` 用 `vi.stubGlobal('fetch')` 测解包与错误映射；`validators.test.ts` 测校验规则 |
 
 ### 新增功能的底线
@@ -327,7 +329,7 @@ CI（`.github/workflows/ci.yml`）两个 job 与本地一致，差异：CI 用 `
 
 | 项 | 现状 | 若要接手 |
 | --- | --- | --- |
-| Outbox Worker | 事件只写入 `event_outbox`，**没有消费者**；`internal/eventbus` 只有契约 | 实现轮询 + 退避 + 死信，读 `dispatched_at IS NULL AND available_at <= NOW()` |
+| Outbox Worker | 事件只写入 `event_outbox`，**没有消费者**；`internal/eventbus` 只有契约。生产端事件名还没统一：订单侧写死字面量 `OrderPaid` / `OrderCancelled`，常量却是 `TopicRedeemOrderPaid = "RedeemOrderPaid"`，且 `OrderCancelled` 无常量 | 先统一 topic 常量（含补 `OrderCancelled`），再实现轮询 + 退避 + 死信，读 `dispatched_at IS NULL AND available_at <= NOW()` |
 | 密码哈希 | 加盐 SHA-256（`sha256$salt$digest`），注释已标"临时方案" | 换 bcrypt / argon2，并给出存量数据迁移方案 |
 | Token | 自签 HMAC-SHA256 紧凑串，**不是标准 JWT**（无 header 段） | 需要标准 JWT 时统一改签发与校验两端 |
 | sqlc | `apps/api/sqlc.yaml` 已配置但未启用，repo 全是手写 SQL | 启用即要重写 repo 层，别半途混用 |
