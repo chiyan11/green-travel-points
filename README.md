@@ -169,7 +169,7 @@ green-travel-points/
 ├── deploy/                           # Dockerfile.api / Dockerfile.web / nginx.conf / docker-compose.yml
 ├── docs/
 │   ├── api/README.md                 # M5–M8 接口契约：字段、事务步骤、错误码、联调步骤
-│   ├── uml/                          # 11 个 .puml 源图 + out/ 11 张 PNG + .tools/(plantuml.jar, graphviz)
+│   ├── uml/                          # 12 个 .puml 源图 + out/ 12 张 PNG + .tools/(plantuml.jar, graphviz)
 │   └── *.md                          # 需求规格、分工计划、Sprint 0 记录、联通记录、建模指南、接口需求清单
 ├── scripts/                          # dev-env.ps1（缓存重定向）/ verify.ps1（一键门禁）/ uml-export.ps1
 ├── .github/workflows/ci.yml          # 双 job：Go（gofmt→vet→test -race→build）+ Node（tsc→vitest→build）
@@ -381,7 +381,7 @@ docker compose -f deploy/docker-compose.yml up -d --build
 | Sprint | 周期 | 目标 | 对齐实验 | 状态 |
 | --- | --- | --- | --- | --- |
 | S0 | 第 1 周 | 技术栈验证、业务规则冻结、骨架搭建 | 准备 | ✅ 已完成 |
-| S1 | 第 2–4 周 | 需求建模：角色 / 用例 / 活动图 / 域模型 / 非功能需求 | 实验一 | ✅ 已完成（11 张 UML 源图 + 成图） |
+| S1 | 第 2–4 周 | 需求建模：角色 / 用例 / 活动图 / 域模型 / 非功能需求 | 实验一 | ✅ 已完成（12 张 UML 源图 + 成图） |
 | S2 | 第 5–7 周 | 设计建模 + 垂直切片（登录 → 上报 → 碳核算 → 积分） | 实验二 | ✅ 主链路已通（认证 + 行程 + 积分） |
 | S3 | 第 8–10 周 | 商城闭环 + 订单状态机 + Outbox Worker | 实验三 | 🚧 商城闭环与状态机已实现，Worker 未做 |
 | S4 | 第 11–13 周 | 三层测试 + 性能 + 容器化部署 + 报告四 / 五章 | 实验四 | ⏳ 未开始 |
@@ -439,7 +439,7 @@ icacls "D:\coding\green-travel-points" /grant "$env:USERNAME:(OI)(CI)F" /T /C
 | [AGENTS.md](AGENTS.md) | 代理 / 新人作业手册：分层与依赖方向、领域规则、迁移与测试要求、门禁与排错 |
 | [P3 接口说明](docs/api/README.md) | M5–M8 端点、字段口径、事务步骤、业务错误码、联调步骤 |
 | [前端接口需求清单](docs/前端接口需求清单.md) | 页面 ↔ 端点对照、字段与错误码需求（P4 → P2/P3） |
-| [UML 源图与导出](docs/uml) | 11 个 `.puml`：用例图、2 张活动图、域模型、包图、部署图、鲁棒图、2 张序列图、2 张状态图；`out/` 下为 11 张 PNG |
+| [UML 源图与导出](docs/uml) | 12 个 `.puml`：用例图、2 张活动图、域模型、包图、部署图、2 张鲁棒图（市民 / 运营管理员各一张）、2 张序列图、2 张状态图；`out/` 下为 12 张 PNG |
 
 ---
 

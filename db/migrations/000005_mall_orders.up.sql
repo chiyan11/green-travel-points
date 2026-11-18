@@ -2,8 +2,8 @@
 --
 -- 对齐：
 --   docs/uml/04-域模型.puml              Merchant / Product / ProductSku / RedeemOrder
---   docs/uml/10-状态图-订单.puml          PENDING → PAID → SHIPPED → COMPLETED，可 CANCELLED（BR-10）
---   docs/uml/11-状态图-积分.puml / BR-11  积分批次 + 365 天先进先出过期
+--   docs/uml/11-状态图-订单.puml          PENDING → PAID → SHIPPED → COMPLETED，可 CANCELLED（BR-10）
+--   docs/uml/12-状态图-积分.puml / BR-11  积分批次 + 365 天先进先出过期
 --   docs/前端接口需求清单.md              imageUrl / description / limitPerUser / receiver 等展示字段
 --
 -- 依赖：000003（point_account / point_txn）、000004（user / trip_record / carbon_record）。
@@ -11,7 +11,7 @@
 --   - 不建物理外键，全部用 id 逻辑关联，与 000001~000004 风格一致。
 --   - redeem_order 保存商品名 / SKU 名 / 扣分快照：商品改名或下架后，历史订单仍可正确展示。
 --   - point_batch 是一次发放（TRAVEL 流水）对应的积分批次，支撑 BR-11 的 FIFO 过期；
---     批次状态与 11-状态图-积分 的 可用 / 部分消耗 / 已消耗 / 已过期 / 已冲正 对应。
+--     批次状态与 12-状态图-积分 的 可用 / 部分消耗 / 已消耗 / 已过期 / 已冲正 对应。
 
 -- ============ 1. 商户 ============
 CREATE TABLE IF NOT EXISTS merchant (
@@ -71,7 +71,7 @@ CREATE TABLE IF NOT EXISTS product_sku (
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_0900_ai_ci COMMENT = '商品规格（库存 / 积分价格）';
 
--- ============ 4. 兑换订单（状态机见 10-状态图-订单） ============
+-- ============ 4. 兑换订单（状态机见 11-状态图-订单） ============
 CREATE TABLE IF NOT EXISTS redeem_order (
   id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
   order_no        VARCHAR(32)     NOT NULL                COMMENT '订单号（对外展示）',

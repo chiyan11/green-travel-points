@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-// OrderStatus 是兑换订单状态，取值必须与 docs/uml/10-状态图-订单.puml、
+// OrderStatus 是兑换订单状态，取值必须与 docs/uml/11-状态图-订单.puml、
 // db/migrations/000005_mall_orders.up.sql 的 redeem_order.status 枚举一一对应。
 type OrderStatus string
 

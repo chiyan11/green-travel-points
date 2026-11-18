@@ -105,7 +105,7 @@ export interface Product {
   limitPerUser: number
 }
 
-/** redeem_order.status（000005 / 10-状态图-订单）。 */
+/** redeem_order.status（000005 / 11-状态图-订单）。 */
 export type OrderStatus = 'PENDING' | 'PAID' | 'SHIPPED' | 'COMPLETED' | 'CANCELLED'
 
 /** 兑换订单。orderNo=对外订单号，redeemCode=核销码（SHIPPED 后生效），quantity 默认 1。 */

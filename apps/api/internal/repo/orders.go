@@ -22,7 +22,7 @@ const orderColumns = `id, user_id, order_no, product_id, sku_id, product_name, s
 
 // CreateOrder 兑换下单（M7）。
 //
-// 事务步骤（对应 docs/uml/09-序列图-兑换下单.puml）：
+// 事务步骤（对应 docs/uml/10-序列图-兑换下单.puml）：
 //  1. 幂等键命中 → 直接返回原订单（BR-15）；
 //  2. 账户行 FOR UPDATE → SKU 行 FOR UPDATE（固定顺序，避免死锁）；
 //  3. 锁后复核：商品在线、库存 > 0、balance - frozen ≥ 价格、未超限兑（BR-09）；

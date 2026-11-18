@@ -1,0 +1,56 @@
+@startuml 图2-5 鲁棒图：处理兑换订单（UC-12 用例实现 · 参与者：运营管理员）
+' 依据：设计说明书 2.2.1（用例实现 · 设计模型）
+' 拆分口径：一个参与者一张鲁棒图。本图只画运营管理员（UC-12 处理兑换订单）；
+'           市民侧（UC-08 兑换商品）见图2-4。
+' 鲁棒图约定（UML 非标准图，需在报告中说明）：
+'   边界类 boundary —— 只与 actor 或控制类相连
+'   控制类 control  —— 居中，承载用例流程
+'   实体类 entity   —— 只与控制类相连（禁止 actor 直连实体）
+
+skinparam defaultFontName "Microsoft YaHei"
+skinparam dpi 150
+skinparam shadowing false
+left to right direction
+skinparam rectangle {
+  BackgroundColor #FFFFFF
+  BorderColor #2E5C8A
+}
+
+actor "运营管理员" as A
+
+boundary "运营-订单管理页\nOrderAdminPage" as B4
+
+control "兑换用例控制器\nRedeemOrderController" as C1
+control "订单状态机\nOrderStateMachine" as C4
+
+entity "兑换订单 RedeemOrder" as E5
+entity "事件发件箱 EventOutbox" as E6
+
+' ---------- UC-12 主成功场景：查单 → 发货 → 核销 ----------
+A --> B4 : 处理订单
+B4 --> C1 : 查订单列表
+C1 --> E5 : 分页查询
+B4 --> C4 : 发货 / 核销
+C4 --> E5 : 状态跃迁（校验合法性）
+C4 --> E6 : 写入 OrderShipped / OrderCompleted
+
+note bottom of C4
+  **状态机口径**（详见 图2-8 状态图）
+  PENDING → PAID | CANCELLED；
+  PAID → SHIPPED | CANCELLED；
+  SHIPPED → COMPLETED | CANCELLED；
+  非法跃迁返回 ILLEGAL_TRANSITION。
+end note
+
+note bottom of C1
+  查单复用 UC-08 的订单仓储读取路径，
+  不复制一份查询实现（对应报告"设计类清单"）。
+end note
+
+legend right
+  **设计类清单·本图**（填入报告表 2-1）
+  边界类：B4　控制类：C1、C4　实体类：E5、E6
+  与图2-4 共用：C1 / E5 / E6
+endlegend
+
+@enduml
