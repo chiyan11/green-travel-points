@@ -120,7 +120,7 @@ flowchart LR
 | 后端 | Go + [chi](https://github.com/go-chi/chi) | go 1.24 / chi v5.2.3 | 标准库 `net/http` 语义 + 轻量路由，无框架魔法，便于讲清分层 |
 | 数据访问 | `database/sql`，手写 SQL | mysql 驱动 v1.9.3 | SQL 可见可审；`apps/api/sqlc.yaml` 已就绪但 sqlc 尚未启用 |
 | 迁移 | golang-migrate 风格的 `db/migrations` | — | up / down 成对，可回滚 |
-| 事件 | 事务性 Outbox 表 + 轮询 Worker | — | 不引入 Kafka / Redis，仍在关系库里保证"业务成功 ⇒ 事件必达" |
+| 事件 | 事务性 Outbox 表 + 轮询 Worker | — | 不引入 Kafka / Redis，仍在关系库里保证"业务成功 ⇒ 事件必达"；**Worker 尚未实现**（见「系统架构」实现现状） |
 | 前端 | React + TypeScript 7 + Vite + TanStack Query | 19.3 / 7.0.2 / 8.3 / 5.104 | TS7 原生编译器（Go 实现），构建快；Query 统一服务端状态 |
 | 测试 | Go `testing` / Vitest / Playwright / k6 | — | 前两层已落地；集成测试、E2E、性能压测待建 |
 | 数据库 | MySQL | 8.4+（本机 9.7） | `utf8mb4_0900_ai_ci`、`DATETIME(3)`、JSON 存事件负载 |
@@ -138,10 +138,12 @@ flowchart LR
 上报行程（单事务）
   INSERT trip_record + INSERT carbon_record + INSERT point_txn
   + 更新 point_account + INSERT event_outbox(type=TripVerified, payload=...)
-后台 Worker（轮询 outbox）
+后台 Worker（轮询 outbox）——**尚未实现，事件只入表**
   TripVerified → 更新碳减排统计 / 触发成就徽章 / 写排行榜
   OrderPaid    → 扣减库存 / 通知商户 / 生成核销码
 ```
+
+> **实现现状**：生产端已落地——行程上报、下单 / 取消、运营流转都在各自事务里 `INSERT event_outbox`；消费端未实现——`internal/eventbus` 只有 `Event` 与 `Handler` 契约，没有轮询循环，`event_outbox` 只增不消。接消费者前先统一事件名：订单侧写的是字面量 `OrderPaid` / `OrderCancelled`，而常量定义是 `TopicRedeemOrderPaid = "RedeemOrderPaid"`，且 `OrderCancelled` 无常量。
 
 选择 EDA 而非"经典分层同步调用"的理由、与其他架构方案的对比，写在设计说明书的「2.1.1 架构决策与选型」；逻辑架构（包图）、物理架构（部署图）见 [docs/uml](docs/uml)。
 
@@ -154,6 +156,7 @@ green-travel-points/
 ├── apps/
 │   ├── api/                          # Go 后端（module greentravelpoints）
 │   │   ├── cmd/server/main.go        # 入口：配置 → 连接池 → 路由装配 → 优雅关闭
+│   │   ├── cmd/server/dbendpoint.go  # 启动日志播报数据库目标（本机 / 共享库，不打印账号密码）
 │   │   └── internal/
 │   │       ├── app/                  # DTO、哨兵错误、端口接口（Catalog / Points / Orders / Role）
 │   │       ├── config/config.go      # 环境变量 → Config，含默认值与取值范围校验
@@ -327,10 +330,11 @@ pwsh -File .\scripts\verify.ps1
 | --- | --- | --- | --- |
 | 单元测试（Go · domain） | 碳核算、积分换算、日上限、订单状态机 | `go test ./internal/domain -v` | 12 个测试函数 / 45 个用例（含表驱动子用例），全绿 |
 | 单元测试（Go · http） | 路由、中间件、认证、各 handler（假存储，不连库） | `go test ./internal/httpserver -v` | 24 个用例，全绿 |
+| 单元测试（Go · cmd/server） | 启动日志的 DSN 目标判定：本机 / 局域网 / ZeroTier / socket / 非法 DSN | `go test ./cmd/server -v` | 1 个函数 / 9 个用例 |
 | 单元测试（前端） | Envelope 解包、错误映射、表单校验 | `npx vitest run` | 2 个文件 19 例（http 5 + validators 14） |
 | 类型检查 | 前端全量 | `npx tsc --noEmit` | 零错误 |
-| 集成测试 | API + MySQL | 待建（testcontainers） | Sprint 2 起 |
-| E2E | 上报 → 得积分 → 兑换 → 核销 | 待建（Playwright） | Sprint 3 起 |
+| 集成测试 | API + MySQL | 待建（testcontainers） | 未建：原计划 S2 已过，随 S4 补 |
+| E2E | 上报 → 得积分 → 兑换 → 核销 | 待建（Playwright） | 未建：原计划 S3 已过，随 S4 补 |
 | 性能 | 行程上报、兑换并发 | 待建（k6） | Sprint 4 起 |
 
 指导书要求的**基本路径法**（组件测试）与**等价类划分法**（功能测试）用例表，在 Sprint 3–4 补齐并写入测试报告。
