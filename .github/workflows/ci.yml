@@ -60,6 +60,11 @@ jobs:
       - name: 安装依赖
         run: npm ci
 
+      - name: 契约类型与 openapi.yaml 一致
+        run: |
+          npm run gen:api
+          git diff --exit-code -- src/types/api.ts
+
       - name: 类型检查
         run: npx tsc --noEmit
 

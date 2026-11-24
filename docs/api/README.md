@@ -4,6 +4,32 @@
 > 对应报告：实验三"系统原型构建与实现"、实验二"设计类清单 / 序列图"。
 > 状态：✅ 已实现并通过单元测试 + 本地 MySQL 联调。身份已支持 `Authorization: Bearer <token>`（`POST /api/v1/auth/login` 自签签发，有效期 2 小时）；未带 token 时回退开发期请求头 `X-User-Id`，便于不登录联调。
 
+## 机器可读契约：[openapi.yaml](openapi.yaml)
+
+本目录下的 `openapi.yaml` 是前后端唯一的传输契约（OpenAPI 3.1），覆盖 auth / products / points / trips / orders / admin 全部端点。
+上文各小节的表格是给人读的说明，字段以 `openapi.yaml` 为准；两者不一致时按 yaml 修文档。
+
+流程：
+
+```bash
+cd apps/web
+npm run gen:api     # 读 ../../docs/api/openapi.yaml，生成 src/types/api.ts（勿手改）
+```
+
+- 生成物 `apps/web/src/types/api.ts` 需要提交；`apps/web/src/services/*.ts` 全部按它标注传输类型，
+  再把 wire 字段映射成页面视图模型（`apps/web/src/types/domain.ts`）。
+- 门禁会校验「生成物与 yaml 一致」：`scripts/verify.ps1` 的 `web: api contract` 步骤、
+  CI 的「契约类型与 openapi.yaml 一致」步骤（`npm run gen:api` 后 `git diff --exit-code`）。
+- 改接口的顺序固定为：改 `apps/api` → 改 `openapi.yaml` → `npm run gen:api` → 修 `services/` 的映射 → 提交。
+
+生成器选型说明：原计划用 `openapi-typescript`，但它把 `typescript@^5.x` 声明为 peer 依赖，
+而本项目前端是 TypeScript 7（Go 实现的编译器），`npm install` 会 ERESOLVE、`npm ci` 直接失败；
+`--legacy-peer-deps` 能装上但 CI 的 `npm ci` 仍然报错，且它运行时依赖 TS 编译器 API（`ts.SyntaxKind`），
+在 TS7 下会 `TypeError`。`@hey-api/openapi-ts` 同样卡在这个运行时 API 上。
+因此改用 `swagger-typescript-api`（devDependency，自带 `typescript@^6` 副本，不改动项目 TS 版本），
+`--no-client --enum-style union` 只产出 data contract，正好是 wire 类型所需的东西。
+等前端升到官方 TS 5.x/6.x 后可以再评估换回 `openapi-typescript`，契约与生成物路径都不受影响。
+
 ## 0. 约定
 
 - 统一响应壳：`{"code":"OK","message":"ok","data":...}`；错误时 `data` 省略。
@@ -133,6 +159,10 @@ curl -H "X-User-Id: 1001" http://127.0.0.1:8080/api/v1/points/summary
 
 订单流转非法时返回 `409 ILLEGAL_TRANSITION`；每次流转都会写 `event_outbox`
 （`OrderConfirmed` / `OrderShipped` / `OrderCompleted`），交给 Worker 消费。
+
+> `GET /api/v1/admin/products` 会随每个商品返回 `skus` 明细（`id / name / pointsPrice / stock / soldCount`），
+> 后台「改库存」直接用 `skus[].id` 调 `PUT /api/v1/admin/skus/{id}/stock`；
+> `pointsPrice` / `stock` 仍是聚合值（最低价 / 总库存），不要拿它当 SKU 库存。
 
 ### 6.1 参数配置（UC-14）
 

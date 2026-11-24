@@ -1,9 +1,13 @@
 # 团队共享数据库（ZeroTier 内网）
 
 > 用途：全组共用一个 MySQL 实例，避免各自本地数据不一致。
-> **本机（`DESKTOP-IGAKB82`）就是共享库主机**：ZeroTier 网络 `743993800f43676f`，Node ID `0bab0cb69b`，
-> 内网 IP `10.213.180.114`；本机 MySQL 9.7.2（Windows 服务 `MySQL97`，数据目录 `D:\coding\mysql\Data\`）
-> 即为全组共用的那一个实例。
+> **共享库主机是 `DESKTOP-IGAKB82`**，不是「每台机器自己」：ZeroTier 网络 `743993800f43676f`，
+> 主机 ZeroTier 内网 IP `10.213.180.114`，MySQL 9.7.2（Windows 服务 `MySQL97`，数据目录 `D:\coding\mysql\Data\`）。
+> 宿主机上 `127.0.0.1` 与共享 DSN 是同一个实例；**其余成员机一律连 `10.213.180.114`**。
+> 判断自己是不是主机：`hostname` 为 `DESKTOP-IGAKB82` 才是；只看 ZeroTier 网络号不够，
+> 成员机（如 `MSI` / `10.213.180.75`）也在同一个网络号里。
+> 成员机本地 3306 上可能另有自己的 MySQL（本仓库开发机上实测是 `MySQL80` 8.0.46），
+> 里面没有 `greentravel` 账号、也不是共享库，直连会 `ERROR 1045 (28000)`。
 > 早期本节把组员 B 的 `19c56b20f1 / 10.213.180.43` 误记成「本机」，那是组员设备，别混；
 > 主机地址以 `ipconfig` 里 `ZeroTier One [743993800f43676f]` 的实际值为准，成员对照见 `docs/数据库联通记录.md`。
 
@@ -51,7 +55,9 @@ curl http://127.0.0.1:8080/readyz
 > 组员：日常可用自己机器的本地库，联调/演示再切共享库。
 > 主机：`127.0.0.1` 与共享 DSN 是**同一个实例**，切换只影响延迟，不改变数据。
 >
-> 首次请求可能返回 503「数据库不可用」——冷连接超过探针 2s 超时，再请求一次即为 200。
+> **冷启动 503 是可预期的**：`/readyz` 的探针超时写死在 `apps/api/internal/httpserver/health.go:29`（2s），
+> 而共享库冷连接要 2–3s。后端刚起时连续几次 `/readyz` 都会 503，**光重试探针把连接池捂不热**：
+> 先打一次真实接口（`curl http://127.0.0.1:8080/api/v1/products`，实测约 3.0s），再探即 200（实测 0.59s）。
 
 ## 3. 演示数据
 
@@ -158,4 +164,24 @@ git pull --rebase          # 拿迁移文件（留档 / 本地库复现用）
 | Docker 的 initdb 只对空数据卷生效 | `deploy/docker-compose.yml` 把迁移挂到 `/docker-entrypoint-initdb.d`，但 `./mysql-data` 已有数据时**不会重跑**；新增迁移得手动执行。 |
 | 没有 `schema_migrations` 表 | 没人知道别人跑到第几版，只能靠「up 幂等 + 全跑」兜底。这是技术债，不是设计。 |
 | `down` 只回滚结构，不回滚数据 | 删表删列后数据回不来，所以 §6.2 第 1 步的备份不能省；共享库上不要随手 `down`（另见 §5）。 |
+
+### 6.6 延迟实测（2026-11-24，跨 ZeroTier）
+
+共享库在 `DESKTOP-IGAKB82`（`10.213.180.114:3306`，MySQL 9.7.2），本机 `MSI` 经 ZeroTier 访问，ping 426–541 ms。用后端 `:18080` 实测：
+
+| 接口 | 单次耗时 | 说明 |
+| --- | --- | --- |
+| `GET /api/v1/products` | 1.7 s | 冷启动 3.0 s，首条请求会把连接池捂热 |
+| `GET /api/v1/trips` | 1.1 s | |
+| `GET /api/v1/points/summary` | 3.5 s | |
+| `GET /api/v1/points/transactions` | 4.6 s | |
+| `POST /api/v1/trips` | 12–20 s | 一个事务里 8 条 SQL（trip / carbon / account / txn / outbox），每条都要一次跨网往返 |
+| `POST /api/v1/orders` | 12 s | 同理，行锁 + 账本写入 |
+
+两个直接后果：
+
+1. **前端 E2E 的超时必须放宽**：`apps/web/playwright.config.ts` 里 `timeout: 300_000`、`expect.timeout` 与 `actionTimeout` 都是 `120_000`，压到 5–10 s 会稳定假失败（第一次跑就是被 30 s 的 URL 断言卡住的）。
+2. **`/readyz` 冷启动会 503**：`apps/api/internal/httpserver/health.go` 里探活超时写死 2 s，而冷连接要 2–3 s。想让就绪检查变绿，先打一次真实接口把连接池热起来，或者等代码把超时调大。
+3. **写请求会比服务器的写超时先撞线**：`apps/api/cmd/server/main.go` 原本把 `WriteTimeout` 写死 30 s，比 `HTTP_REQUEST_TIMEOUT` 还早到期，于是 30 s 左右的兑换/取消会以 502 出现在浏览器侧（Vite dev 代理把被掐断的连接报成 502），而后端日志里是一条 `status=200 duration_ms≈30000`。现在 `WriteTimeout = serverWriteTimeout(cfg.HTTPRequestTimeout)`（请求超时 + 15 s），对着共享库跑时把 `HTTP_REQUEST_TIMEOUT=90s` 才有意义。
+4. **运营后台 E2E 的种子账号只在本机开发库有效**：共享库里 `13800000002`（ADMIN）的口令哈希与本机不同，`apps/web/e2e/admin-console.e2e.ts` 已改成开跑前探一次登录、失败就跳过并给出原因；要真跑，用 `E2E_ADMIN_PHONE` / `E2E_ADMIN_PASSWORD` / `E2E_CITIZEN_PHONE` / `E2E_CITIZEN_PASSWORD` 覆盖。
 

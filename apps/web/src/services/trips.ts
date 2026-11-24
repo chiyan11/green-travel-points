@@ -1,15 +1,15 @@
 /**
- * 行程服务（联调版）。
+ * 行程服务。
  * GET /api/v1/trips、POST /api/v1/trips（需登录）。
  *
- * 字段兼容说明（后端 trips.go 与迁移表 000004 存在命名差异）：
- * - 后端 JSON 用 `traveledAt`，前端契约用 `startedAt`（started_at），这里双向对齐
- * - 上报响应里 status 硬编码为 "VERIFIED"，而库里 trip_record.status 是 VALID/REVOKED，
- *   统一归一成前端枚举，避免页面出现两种状态值
- * - 积分与碳减排一律以后端 domain.EvaluateTrip 为准，前端不再本地计算
+ * 传输类型来自 `src/types/api.ts`（由 docs/api/openapi.yaml 生成）。映射时处理两处口径差异：
+ * - 后端 wire 字段是 `traveledAt`，页面视图模型用 `startedAt`（对应 trip_record.started_at）
+ * - `rawPoints > grantedPoints` 即被单日上限截断，`cappedByDaily` 缺失时由两者推算
+ * 积分与碳减排一律以后端 domain.EvaluateTrip 为准，前端不再本地计算。
  */
 import { api } from '@/lib/http'
-import type { Page, TravelMode, TripRecord, TripStatus } from '@/types/domain'
+import type { Trip as WireTrip, TripPage, TripStatus as WireTripStatus } from '@/types/api'
+import type { TravelMode, TripRecord, TripStatus } from '@/types/domain'
 
 export interface SubmitTripInput {
   mode: TravelMode
@@ -18,49 +18,34 @@ export interface SubmitTripInput {
   startedAt: string
 }
 
-interface RawTrip {
-  id: string
-  mode: TravelMode
-  distanceKm: number
-  /** 后端字段名；兼容尚未改名的实现。 */
-  traveledAt?: string
-  startedAt?: string
-  carbonSavedGrams: number
-  rawPoints?: number
-  grantedPoints?: number
-  cappedByDaily?: boolean
-  status?: string
+function normalizeStatus(status: WireTripStatus): TripStatus {
+  // POST /api/v1/trips 目前硬编码返回 "VERIFIED"（见 openapi.yaml 的 TripStatus 说明），
+  // 列表返回库里的 VALID / REVOKED；这里收敛到 trip_record.status 的两个枚举值。
+  return status === 'REVOKED' ? 'REVOKED' : 'VALID'
 }
 
-function normalizeStatus(status: string | undefined): TripStatus {
-  if (status === 'REVOKED' || status === 'REJECTED') return 'REVOKED'
-  return 'VALID'
-}
-
-function toTrip(r: RawTrip): TripRecord {
-  const raw = r.rawPoints ?? 0
-  const granted = r.grantedPoints ?? 0
+function toTrip(r: WireTrip): TripRecord {
   return {
     id: r.id,
     mode: r.mode,
     distanceKm: r.distanceKm,
-    startedAt: r.startedAt || r.traveledAt || '',
+    startedAt: r.traveledAt,
     carbonSavedGrams: r.carbonSavedGrams,
-    rawPoints: raw,
-    grantedPoints: granted,
-    cappedByDaily: r.cappedByDaily ?? granted < raw,
+    rawPoints: r.rawPoints,
+    grantedPoints: r.grantedPoints,
+    cappedByDaily: r.cappedByDaily,
     status: normalizeStatus(r.status),
   }
 }
 
 export async function listTrips(): Promise<TripRecord[]> {
-  const page = await api.get<Page<RawTrip>>('/api/v1/trips')
+  const page = await api.get<TripPage>('/api/v1/trips')
   return (page.items ?? []).map(toTrip)
 }
 
 /** 上报行程：后端做幂等（同用户+同模式+同距离+同时间只记一次，重复提交返回首次结果）。 */
 export async function submitTrip(input: SubmitTripInput): Promise<TripRecord> {
-  const raw = await api.post<RawTrip>('/api/v1/trips', {
+  const raw = await api.post<WireTrip>('/api/v1/trips', {
     mode: input.mode,
     distanceKm: input.distanceKm,
     traveledAt: input.startedAt || new Date().toISOString(),

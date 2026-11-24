@@ -75,7 +75,44 @@ func (s *Store) ListAllProducts(ctx context.Context, q app.AdminProductQuery) (a
 	if err := rows.Err(); err != nil {
 		return app.Page[app.Product]{}, err
 	}
+	// 列表原先只给聚合价 / 总库存；后台「改库存」需要 skuId，这里批量补 SKU 明细。
+	if err := s.attachSKUs(ctx, items); err != nil {
+		return app.Page[app.Product]{}, err
+	}
 	return app.Page[app.Product]{Items: items, Page: page, PageSize: pageSize, Total: total}, nil
+}
+
+// attachSKUs 为商品列表批量补 SKU 明细：一次 IN 查询，避免逐条 N+1。
+func (s *Store) attachSKUs(ctx context.Context, items []app.Product) error {
+	if len(items) == 0 {
+		return nil
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(items)), ",")
+	args := make([]any, 0, len(items))
+	index := make(map[int64]int, len(items))
+	for i := range items {
+		args = append(args, items[i].ID)
+		index[items[i].ID] = i
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT product_id, id, sku_name, points_price, stock, sold_count
+		 FROM product_sku WHERE product_id IN (`+placeholders+`)
+		 ORDER BY product_id, id`, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var productID int64
+		var sku app.SKU
+		if err := rows.Scan(&productID, &sku.ID, &sku.Name, &sku.PointsPrice, &sku.Stock, &sku.SoldCount); err != nil {
+			return err
+		}
+		if i, ok := index[productID]; ok {
+			items[i].SKUs = append(items[i].SKUs, sku)
+		}
+	}
+	return rows.Err()
 }
 
 // CreateProduct 后台新建商品（含 SKU），返回完整商品。

@@ -108,16 +108,23 @@ green-travel-points/
 │       │   ├── routes.tsx        路由表：/login 公开，其余 RequireAuth + AppLayout
 │       │   ├── pages/            9 个页面：Home / Login / Trips / Points / Mall / ProductDetail / Orders / Profile / Placeholder
 │       │   ├── components/       AppLayout（外壳+导航）、RequireAuth（守卫）、CarbonTrendChart（折线图）
-│       │   ├── services/         按域拆的 API 调用：auth / trips / products / points / orders
+│       │   ├── services/         按域拆的 API 调用：auth / trips / products / points / orders（按生成契约标注传输类型）
 │       │   ├── lib/              http（Envelope 解包、错误、401 处理）、session、validators、format、orderStatus、productCover、queryClient
-│       │   ├── types/domain.ts   全站共享的前端类型
-│       │   └── styles.css        全站样式（单文件，无 CSS 框架）
-│       └── vite.config.ts        端口 5173 + /api 代理
+│       │   ├── types/api.ts      由 docs/api/openapi.yaml 生成的 wire 类型（npm run gen:api，勿手改）
+│       │   ├── types/domain.ts   页面视图模型（id 转 string、coverUrl、startedAt 等展示口径）
+│       │   ├── themes/green-travel/  Astryx 品牌子主题（defineTheme 源码 + theme build 产物）
+│       │   ├── astryx-brand.css  品牌 token 覆盖（主色 #177a4d、中文字体栈、页面底色）
+│       │   └── styles.css        全站业务样式（单文件 token 层，零硬编码颜色）
+│       ├── e2e/                  Playwright 主链路用例（真后端，截图落 docs/screenshots/）
+│       ├── scripts/fix-generated.mjs  生成后处理：去掉 @ts-nocheck、加来源说明
+│       └── vite.config.ts        端口 5173 + /api 代理（VITE_API_TARGET 可改目标）
 ├── db/
 │   ├── migrations/               6 组 up/down 迁移（见 §6）
 │   └── seed/dev_demo.sql         演示数据：用户 1001、管理员 1002、3 个商品
 ├── deploy/                       docker-compose.yml、Dockerfile.api、Dockerfile.web、nginx.conf
 ├── docs/                         需求规格、设计规格、故事地图/Backlog、实验报告、分工计划、Sprint 0 记录、数据库记录、接口说明、前端接口清单、UML
+│   ├── api/openapi.yaml          机器可读契约（生成 types/api.ts 的唯一来源）
+│   └── screenshots/              E2E 跑出来的验收截图（改主链路后必须更新）
 ├── scripts/                      dev-env.ps1（缓存重定向）、verify.ps1（一键门禁）、uml-export.ps1、toc_pages.py、build_team_docx.py
 ├── .github/workflows/ci.yml      Go job + Web job
 └── README.md                     面向人的总览（本文是面向干活的细节补充）
@@ -248,16 +255,25 @@ domain ◄──────────────────────┘�
 ```
 pages/*.tsx  ──►  services/*.ts  ──►  lib/http.ts  ──►  fetch
     │                  │
-    └── types/domain.ts（共享类型）      lib/session.ts（token 存取）
+    └── types/domain.ts（视图模型）      lib/session.ts（token 存取）
+                       └── types/api.ts（wire 契约，由 openapi.yaml 生成）
 ```
 
 - **组件不直接 `fetch`**：请求只写在 `services/`，页面用 TanStack Query（`useQuery` / `useMutation`）调用。
-- **后端字段差异在 service 层吸收**，页面只看到干净的前端类型。已有例子：`imageUrl`/`coverUrl` 双字段、`traveledAt`/`startedAt`、`rawPoints`/`grantedPoints`、`status` 归一化。新增接口不许把原始 JSON 直接漏给页面。
+- **两层类型，不许混用**：`types/api.ts` 是后端 wire 契约（`npm run gen:api` 从 `docs/api/openapi.yaml` 生成，禁止手改）；`types/domain.ts` 是页面视图模型（`id` 统一 `string`、`imageUrl→coverUrl`、`traveledAt→startedAt`、`bizRefType/occurredAt` 等）。映射只写在 `services/` 的 `toXxx()` 里。
+- **接口变更顺序**：改 `apps/api` → 改 `docs/api/openapi.yaml` → `cd apps/web && npm run gen:api` → 修 `services/` 映射 → 提交生成物。门禁会校验生成物与 yaml 一致。
+- **后端字段差异在 service 层吸收**，页面只看到干净的前端类型。现有例子：`status`/`active` 归一化、`traveledAt`/`startedAt`、`refType→bizRefType`、`createdAt→occurredAt`、`rawPoints`/`grantedPoints` 推算 `cappedByDaily`。新增接口不许把原始 JSON 直接漏给页面。
 - **401 统一处理**：`lib/http.ts` 收到 401 会清会话并跳 `/login`，页面不要重复写这套逻辑。
 - **会话存 `localStorage` 的 `gtp_session`**（`lib/session.ts`）；不要另起 key。
 - **路由守卫**：`routes.tsx` 里 `/login` 公开，其余包 `RequireAuth` + `AppLayout`；新增页面挂到对应子路由下。
-- **样式**：全站单文件 `styles.css`，用现有类名（`btn` / `card` / `field-error` / `badge--ok` 等）；不引入 CSS 框架，不写内联大段样式。
-- **Astryx 底座**：依赖已在 `apps/web/package.json`（`@astryxdesign/core`、`theme-neutral` 0.7.17，`cli` 为 devDep）。`apps/web/src/main.tsx` 负责按层导入 4 份样式表（`theme-neutral/fonts.css` → `core/reset.css` → `core/astryx.css` → `themes/green-travel/greenTravelTheme.css`，最后才是自有 `styles.css`）并挂 `Theme` + `LinkProvider`（`components/AstryxLink.tsx` 把 href 接到 react-router）。**导入顺序不要改**。品牌主题源码在 `apps/web/src/themes/green-travel/greenTravelTheme.ts`，改完必须重跑 `npx astryx theme build src/themes/green-travel/greenTravelTheme.ts --out src/themes/green-travel/greenTravelTheme.css` 重建（CLI 需设 `LOCALAPPDATA`/`APPDATA` 到可写目录）。要用 Astryx 组件写页面时，先读 `apps/web/AGENTS.md`；页面是否迁移由任务明确授权，不要顺手改。
+- **样式**：分三层，各管一段，不要混写。
+  1. **Astryx**（`@astryxdesign/core` + `@astryxdesign/theme-neutral` 0.7.17）：控件与 design token 的来源。`apps/web/src/main.tsx` 按层导入四份样式表——`theme-neutral/fonts.css` → `core/reset.css` → `core/astryx.css` → `themes/green-travel/greenTravelTheme.css`，最后才是自有 `styles.css`；**导入顺序不要改**。组件用 props（`label` / `variant` / `isDisabled` …）驱动，禁止 `stylex.create()` / `xstyle` / utility class。
+  2. **品牌主题** `apps/web/src/themes/green-travel/greenTravelTheme.ts`：`defineTheme({ extends: neutralTheme, ... })` 只换品牌绿（`--color-accent: #177a4d`）与中文字体回退。**改完必须重建**：`npx astryx theme build src/themes/green-travel/greenTravelTheme.ts`（产物 `green-travel.js` / `greenTravelTheme.css` 一并提交）。
+  3. **`styles.css`**：唯一业务样式文件，自带一套设计 token（第 1 节 `:root`）：品牌绿 `--green-700/800/900/50/100`、积分专用琥珀 `--amber-500/600/50`、中性 `--ink/--ink-2/--ink-3`、`--line/--line-strong`、`--surface/--surface-2/--bg`、字号 `--fs-12..--fs-44`、间距 `--sp-1..--sp-7`、圆角 `--r-card:12px`/`--r-input:10px`/`--r-pill:999px`、阴影 `--shadow`/`--shadow-hover`。页面与组件类名只用这些变量，**禁止写颜色/圆角/阴影字面量**。
+     约定：积分与碳减排数字用 `--amber-*`（钱要跳出绿色），大标题与数字用 `--green-900`，卡片圆角 12px、胶囊 999px，阴影只保留 `--shadow` 一档，层级靠边框与底色。
+  文件第 18 节是「兼容层」，把运营后台（#21）沿用的旧类名（`btn` / `card` / `badge--ok` / `sku-row` / `filter-bar` …）映射到本文件 token，供 `apps/web/src/pages/admin/` 继续工作；新增页面不要再往这一层加东西。
+- **不引入 StyleX / Tailwind 编译器**：Astryx 官方约定见 `apps/web/AGENTS.md`，与本文件冲突时以本文件为准。
+- **图标手写、图表用 CSS**：`apps/web/src/components/icons.tsx` 里是一组 24×24 单色线性 SVG（`stroke=currentColor`、`strokeWidth=1.75`），不引入图标库；近 7 日碳减排是 CSS 柱状图（`CarbonTrendChart`），不引入图表库。空间不够就删元素，不要靠新增依赖解决。
 - **类型**：`tsc --noEmit` 必须零错误；不用 `any` 绕过（确需时先说明）。
 
 ### 界面文案与信息密度
@@ -278,12 +294,18 @@ pages/*.tsx  ──►  services/*.ts  ──►  lib/http.ts  ──►  fetch
 | HTTP 单测 | `apps/api/internal/httpserver/*_test.go` | 24 例 | 注入假存储，**不连 MySQL**；断言响应壳与错误码 |
 | 启动日志单测 | `apps/api/cmd/server/dbendpoint_test.go` | 1 个函数 / 9 例 | 表驱动：默认 DSN、局域网 / ZeroTier、localhost、IPv6 回环、unix socket、省略地址、非法 DSN |
 | 前端单测 | `apps/web/src/lib/*.test.ts` | 2 文件 19 例 | `http.test.ts` 用 `vi.stubGlobal('fetch')` 测解包与错误映射；`validators.test.ts` 测校验规则 |
+| 前端页面测试 | `apps/web/src/pages/*.test.tsx` | 5 文件 16 例 | jsdom + Testing Library + MSW 3 拦截 `fetch`；`src/test/render.tsx` 提供 QueryClient/路由壳，`src/test/http.ts` 造 `{code,message,data}` 壳（测试里也重放后端协议，不是随手 mock） |
+| E2E 主链路 | `apps/web/e2e/*.spec.ts`、`apps/web/e2e/*.e2e.ts` | 2 文件 3 例 | Playwright + Chromium，跑**真实前后端与共享库**，不 mock；消费者主链路每步落截图到 `docs/screenshots/`；运营后台用例依赖本机开发库种子账号 |
 
 ### 新增功能的底线
 
 - 新的领域规则 → 至少 1 组表驱动用例，含边界值与非法输入。
 - 新的 HTTP 端点 → `api_test.go` 加用例：正常路径 + 至少一个错误路径（参数错 / 未授权 / 冲突），断言 `code` 与状态码。
 - 新的前端校验或解包逻辑 → `vitest` 用例；纯展示改动不强制。
+- **新页面 / 页面新交互 → 至少 1 个 `src/pages/*.test.tsx` 用例**：用 MSW 声明端点，断言用户看到的结果（成功态与至少一个失败态），不要 mock service 函数。
+- MSW 的 `onUnhandledFrame: 'error'` 是硬开关：新增接口时忘了补 handler，测试会直接失败，照提示补上即可。
+- 改主链路（登录 / 上报 / 兑换 / 取消）后重跑 `npm run test:e2e` 并提交新的 `docs/screenshots/`：截图是验收证据，过期截图比没有更糟。
+- E2E 用真实后端，断言里不要写死共享库里的历史余额；用例自己注册新手机号造数据。
 - 不加「只为了覆盖率」的空测试；不为通过而放宽断言。
 
 ### 命令
@@ -293,6 +315,26 @@ cd apps/api; go test ./... -count=1              # 全量
 cd apps/api; go test ./internal/domain -run TestCarbon -v
 cd apps/web; npx vitest run                      # 全量
 cd apps/web; npx vitest run src/lib/http.test.ts # 单文件
+cd apps/web; npm run test:e2e                    # E2E（需要先起后端；见下）
+```
+
+E2E 前置：后端在跑，且**把前端代理指到它**。默认代理 `127.0.0.1:8080`；后端不在 8080 时用环境变量改：
+
+```powershell
+cd apps/web
+$env:E2E_API_TARGET = 'http://127.0.0.1:18080'   # Playwright 启动 vite 时注入 VITE_API_TARGET
+npm run test:e2e
+```
+
+共享库跨 ZeroTier：写接口单次 10–40s、读接口 1–5s，所以 `playwright.config.ts` 的 `timeout` 是 300s、`expect.timeout` 与 `actionTimeout` 都是 120s，不要按常规项目压到 5–10s。
+
+写接口的超时链路要一起看：`apps/api/cmd/server/main.go` 里 `WriteTimeout = serverWriteTimeout(cfg.HTTPRequestTimeout)`（请求超时 + 15s），必须**晚于** `middleware.Timeout` 到期，否则慢请求会在响应当前被服务器掐断，浏览器/dev 代理侧看到 502，而后端日志里只留一条 duration≈30s 的成功记录。
+
+运营后台用例（`apps/web/e2e/admin-console.e2e.ts`）默认只在接口指向本机时运行：共享库上的种子管理员口令与本机开发库不同。要对着共享库跑，显式给账号：
+
+```powershell
+$env:E2E_ADMIN_PHONE = '13800000002'; $env:E2E_ADMIN_PASSWORD = '<共享库口令>'
+$env:E2E_CITIZEN_PHONE = '13800000001'; $env:E2E_CITIZEN_PASSWORD = '<共享库口令>'
 ```
 
 ---
@@ -303,7 +345,7 @@ cd apps/web; npx vitest run src/lib/http.test.ts # 单文件
 pwsh -File .\scripts\verify.ps1
 ```
 
-七步，任一失败即非 0 退出并打印 `VERIFY FAILED: <步骤>`：
+八步，任一失败即非 0 退出并打印 `VERIFY FAILED: <步骤>`：
 
 | # | 步骤 | 失败常见原因 |
 | --- | --- | --- |
@@ -311,11 +353,14 @@ pwsh -File .\scripts\verify.ps1
 | 2 | `go vet ./...` | 未使用的变量、错的格式化占位符 |
 | 3 | `go test ./...` | 改了规则没改测试，或断言写死旧数值 |
 | 4 | `go build` | 导入未使用的包、接口实现不全 |
-| 5 | `tsc --noEmit` | 类型漂移；TS7 不认 `baseUrl`，路径别名用相对形式 |
-| 6 | `vitest run` | 断言过时、mock 返回值形状变了 |
-| 7 | `vite build` | 仅构建期才暴露的引用错误 |
+| 5 | `web: api contract`（`npm run gen:api` + `git status`） | 改了 `openapi.yaml` 没重新生成，或手改了 `types/api.ts`；跑 `npm run gen:api` 并提交 |
+| 6 | `tsc --noEmit` | 类型漂移；TS7 不认 `baseUrl`，路径别名用相对形式 |
+| 7 | `vitest run` | 断言过时、mock 返回值形状变了 |
+| 8 | `vite build` | 仅构建期才暴露的引用错误 |
 
 CI（`.github/workflows/ci.yml`）两个 job 与本地一致，差异：CI 用 `go test -race -coverprofile`、`npm ci`。
+
+E2E **不在门禁里**：它需要真实后端 + 共享库，CI 没有这些环境。提交涉及主链路的改动时手动跑 `npm run test:e2e`，并把截图一起提交。
 
 ---
 
@@ -343,9 +388,9 @@ CI（`.github/workflows/ci.yml`）两个 job 与本地一致，差异：CI 用 `
 | 密码哈希 | 加盐 SHA-256（`sha256$salt$digest`），注释已标"临时方案" | 换 bcrypt / argon2，并给出存量数据迁移方案 |
 | Token | 自签 HMAC-SHA256 紧凑串，**不是标准 JWT**（无 header 段） | 需要标准 JWT 时统一改签发与校验两端 |
 | sqlc | `apps/api/sqlc.yaml` 已配置但未启用，repo 全是手写 SQL | 启用即要重写 repo 层，别半途混用 |
-| 集成 / E2E | 均未建（计划 testcontainers + Playwright） | 先补「上报 → 得分 → 兑换 → 核销」主链路 |
+| 集成 / E2E | 集成测试未建（计划 testcontainers）；E2E 主链路已建（`apps/web/e2e`，真后端 + 共享库，截图在 `docs/screenshots/`），未进 CI | 集成测试按 testcontainers 补；E2E 若要进 CI，需先给 CI 一个可用的 MySQL 服务容器 |
 | 部署 | compose 只有 `mysql` + `api`；`web` 与 nginx 配置就绪但未编入；本机未实跑 docker | 补 web 服务与反向代理，留下实跑证据 |
-| 前端包体 | `vite build` 单包 1.63 MB（gzip 532 kB）+ CSS 352 kB（gzip 55 kB），已触发 500 kB 警告。其中 Astryx 底座贡献约 140 kB JS 与约 320 kB CSS（`@astryxdesign/core/astryx.css` 是全组件样式，无法按组件裁剪） | 用路由级 `import()` 分包，图表库按需加载；若长期不使用 Astryx 组件，可把 4 份样式表与 `Theme` 一并撤掉，包体即回到 1.49 MB / 489 kB |
+| 前端包体 | `vite build` 单包约 540 kB（gzip 163 kB）+ CSS 354 kB（gzip 54 kB）；移除 ECharts 后已从 1.95 MB 降下来，仍略超 500 kB 警告。 | 用路由级 `import()` 分包；预算从 gzip 163 kB 起算 |
 
 ---
 
