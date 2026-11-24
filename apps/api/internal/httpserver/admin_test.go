@@ -132,6 +132,34 @@ func TestAdminListProducts(t *testing.T) {
 	}
 }
 
+// 后台商品列表必须带 SKU 明细：否则「改库存」屏拿不到 skuId，只能只读展示。
+func TestAdminListProductsIncludesSKUs(t *testing.T) {
+	admin := fakeAdmin{products: app.Page[app.Product]{
+		Items: []app.Product{{
+			ID: 1003, Name: "环保水杯", Status: "DRAFT", PointsPrice: 120, Stock: 20,
+			SKUs: []app.SKU{{ID: 2001, Name: "标准款", PointsPrice: 120, Stock: 20}},
+		}},
+		Page: 1, PageSize: 20, Total: 1,
+	}}
+	h := newAdminRouter(admin, fakeRoles{role: "ADMIN"})
+	rec, env := doJSON(t, h, http.MethodGet, "/api/v1/admin/products", "",
+		map[string]string{"X-User-Id": "1002"})
+	if rec.Code != http.StatusOK || env.Code != CodeOK {
+		t.Fatalf("期望 200/OK，实际 %d/%s", rec.Code, env.Code)
+	}
+	var page struct {
+		Items []struct {
+			SKUs []app.SKU `json:"skus"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(env.Data, &page); err != nil {
+		t.Fatalf("解析 data 失败: %v", err)
+	}
+	if len(page.Items) != 1 || len(page.Items[0].SKUs) != 1 || page.Items[0].SKUs[0].ID != 2001 {
+		t.Fatalf("列表未带 SKU 明细: %+v", page)
+	}
+}
+
 func TestAdminCreateProductValidation(t *testing.T) {
 	h := newAdminRouter(fakeAdmin{}, fakeRoles{role: "ADMIN"})
 	cases := []string{

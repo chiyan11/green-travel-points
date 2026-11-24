@@ -15,7 +15,7 @@
 **当前进度：Sprint 0–S2 文档已补齐（需求规格 + 设计规格 + 用户故事地图/Backlog）；后端主链路与商城主体已实现；Outbox Worker、集成/E2E、Docker 实跑仍待补。**
 
 已实现：认证 / 行程上报与碳核算 / 积分账本与查询 / 商品目录 / 兑换订单与状态机 / 运营后台（含积分对账）；
-待补齐：Outbox Worker（事件只落库、暂无消费者）、集成测试与 E2E、Docker 编排实跑；前端五个 service 均已联调真实接口。
+待补齐：Outbox Worker（事件只落库、暂无消费者）、集成测试、消费者主链路 E2E、Docker 编排实跑；运营后台（M8）前端五屏与一条 Playwright E2E 已建。前端五个 service 均已联调真实接口。
 
 进度与偏差详见 [Sprint 0 骨架说明](docs/Sprint0-骨架说明.md)，分工详见 [项目分工与迭代计划](docs/项目分工与迭代计划.md)，接口细节见 [P3 接口说明](docs/api/README.md)。
 
@@ -97,7 +97,7 @@ flowchart LR
 | M5 积分查询 | 余额、流水（分页 / 筛选）、碳减排看板 |
 | M6 商品与库存 | 商品 / SKU 管理、上下架、库存扣减 |
 | M7 兑换与订单 | 兑换下单、幂等、状态机、核销码 |
-| M8 运营后台 | 商品 / 订单 / 用户 / 流水 / 报表 / 对账 |
+| M8 运营后台 | 商品 / 订单（前端五屏已建）；用户 / 流水 / 报表 / 对账未做 |
 | M9–M10 前端 | 用户端页面 + 运营端表格页 |
 
 **明确不做**（避免范围蔓延）
@@ -165,9 +165,10 @@ green-travel-points/
 │   │       ├── eventbus/eventbus.go  # 领域事件主题与处理器契约（Worker 待实现）
 │   │       ├── httpserver/           # 路由、中间件、统一响应壳、各业务 handler（24 个用例）
 │   │       └── repo/                 # 手写 SQL：连接池、商品、积分、订单、运营后台
-│   └── web/                          # React 用户端：9 个页面组件（含登录与占位页）+ 布局组件 + 碳减排趋势图
+│   └── web/                          # React 前端：用户端 9 页 + 运营后台 3 页（/admin）
 │       ├── AGENTS.md                 # 前端专项代理指南（Astryx 工作流与规则，由 astryx init 维护）
-│       └── src/{pages,components,services,lib,themes,types}/  # themes/ = Astryx 品牌主题（green-travel）
+│       ├── src/{pages,components,services,lib,themes,types}/  # themes/ = Astryx 品牌主题；pages/admin = M8 后台五屏
+│       └── e2e/ + playwright.config.ts                        # 运营后台主链路 E2E
 ├── db/
 │   ├── migrations/                   # 6 组 up/down：参数与出行方式 / 发件箱 / 账本 / 用户行程碳记录 / 商城订单 / 批次流水
 │   └── seed/dev_demo.sql             # 演示数据：用户 1001（1200 分）+ 3 个上架商品
@@ -340,7 +341,8 @@ pwsh -File .\scripts\verify.ps1
 | 单元测试（前端） | Envelope 解包、错误映射、表单校验 | `npx vitest run` | 2 个文件 19 例（http 5 + validators 14） |
 | 类型检查 | 前端全量 | `npx tsc --noEmit` | 零错误 |
 | 集成测试 | API + MySQL | 待建（testcontainers） | 未建：计划 S5–S6 补主链路 |
-| E2E | 上报 → 得积分 → 兑换 → 核销 | 待建（Playwright） | 未建：计划 S6 补 |
+| E2E（运营后台） | 建商品 → 上架 → 改库存 → 下单 → 后台确认收款 | `npx playwright test`（apps/web） | 1 条用例绿；截图证据在 `docs/p5-evidence/` |
+| E2E（消费者主链路） | 上报 → 得积分 → 兑换 → 核销 | 待建（Playwright） | 未建：计划 S6 补 |
 | 性能 | 行程上报、兑换并发 | 待建（k6） | 未建：计划 S6 起 |
 
 指导书要求的**基本路径法**（组件测试）与**等价类划分法**（功能测试）用例表，在 S6 补齐并写入测试报告。

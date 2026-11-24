@@ -73,6 +73,11 @@ export const api = {
   get: <T>(path: string): Promise<T> => request<T>(path),
   post: <T>(path: string, body: unknown, headers?: Record<string, string>): Promise<T> =>
     request<T>(path, { method: 'POST', body: JSON.stringify(body), headers }),
+  // PATCH / PUT 供运营后台（商品上下架、SKU 库存）使用。
+  patch: <T>(path: string, body: unknown): Promise<T> =>
+    request<T>(path, { method: 'PATCH', body: JSON.stringify(body) }),
+  put: <T>(path: string, body: unknown): Promise<T> =>
+    request<T>(path, { method: 'PUT', body: JSON.stringify(body) }),
 }
 
 export interface PingResponse {
