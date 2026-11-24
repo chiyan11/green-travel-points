@@ -40,17 +40,19 @@ func (s *Store) CreateOrder(ctx context.Context, in app.CreateOrderInput) (app.O
 		}
 	}
 
+	// 账户不存在时先建空账户。必须放在事务外：事务里先 INSERT IGNORE（共享锁）再
+	// SELECT ... FOR UPDATE（升级排他锁）会在并发下单时互相等待，实测触发 MySQL 1213 死锁。
+	if _, err := s.db.ExecContext(ctx,
+		`INSERT IGNORE INTO point_account (user_id) VALUES (?)`, in.UserID); err != nil {
+		return app.Order{}, false, err
+	}
+
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return app.Order{}, false, err
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	// 账户不存在时先建空账户，保证后续可以行锁。
-	if _, err := tx.ExecContext(ctx,
-		`INSERT IGNORE INTO point_account (user_id) VALUES (?)`, in.UserID); err != nil {
-		return app.Order{}, false, err
-	}
 	var accountID, balance, frozen int64
 	if err := tx.QueryRowContext(ctx,
 		`SELECT id, balance, frozen FROM point_account WHERE user_id = ? FOR UPDATE`, in.UserID,

@@ -71,6 +71,14 @@ type ReconcileResult struct {
 	OK         bool            `json:"ok"`
 }
 
+// ExpireResult 是一次积分过期清算的结果（POST /api/v1/admin/points/expire）。
+// Batches 为被置为 EXPIRED 的批次数，Points 为实际过期扣减的积分，Accounts 为余额发生变化的账户数。
+type ExpireResult struct {
+	Batches  int64 `json:"batches"`
+	Points   int64 `json:"points"`
+	Accounts int64 `json:"accounts"`
+}
+
 // ConfigItem 是一条系统参数（UC-14 参数配置）。值一律用字符串承载，
 // 语义由 ValueType（int / decimal / bool / string）决定，与 sys_config 表一致。
 type ConfigItem struct {
@@ -119,6 +127,8 @@ type AdminStore interface {
 	UpdateConfig(ctx context.Context, updates []ConfigUpdate) ([]ConfigItem, error)
 	// UpdateTravelMode 更新一种出行方式的名称 / 排放因子 / 启用状态（travel_mode）。
 	UpdateTravelMode(ctx context.Context, code string, in TravelModeUpdate) (TravelMode, error)
+	// ExpirePoints 清算已到期批次：写 EXPIRE 反向流水、扣余额、批次置 EXPIRED。
+	ExpirePoints(ctx context.Context) (ExpireResult, error)
 }
 
 // configKeyNumericRules 是"取 0 或负值会让主链路失效"的参数语义约束：

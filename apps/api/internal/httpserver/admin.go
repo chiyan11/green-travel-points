@@ -168,6 +168,18 @@ func (h adminHandler) reconcile(w http.ResponseWriter, r *http.Request) {
 	OK(w, res)
 }
 
+// expirePoints 手动触发积分过期清算：POST /api/v1/admin/points/expire
+// 把 expires_at <= NOW() 的 ACTIVE 批次置为 EXPIRED、写 EXPIRE 流水并扣余额；
+// 演示时也用它把过期数据造出来的效果立刻落地。
+func (h adminHandler) expirePoints(w http.ResponseWriter, r *http.Request) {
+	res, err := h.store.ExpirePoints(r.Context())
+	if err != nil {
+		failFromStore(w, h.logger, err)
+		return
+	}
+	OK(w, res)
+}
+
 // listConfig 系统参数列表：GET /api/v1/admin/config
 // 返回 sys_config 全部参数（键 / 值 / 值类型 / 说明），值一律为字符串。
 func (h adminHandler) listConfig(w http.ResponseWriter, r *http.Request) {
