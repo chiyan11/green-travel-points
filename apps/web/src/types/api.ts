@@ -10,6 +10,44 @@
  * ---------------------------------------------------------------
  */
 
+export interface AdjustPointsInput {
+  /**
+   * 正数=增加，负数=扣减，0 非法
+   * @format int64
+   */
+  amount: number;
+  /**
+   * 操作理由（BR-14 必填）
+   * @maxLength 255
+   */
+  reason: string;
+  /** @format int64 */
+  userId: number;
+}
+
+export interface AdjustResponse {
+  code: "OK";
+  data: AdjustResult;
+  message: string;
+}
+
+export interface AdjustResult {
+  /** @format int64 */
+  accountId: number;
+  /**
+   * 对应的 audit_log.id
+   * @format int64
+   */
+  auditId: number;
+  /**
+   * 调账后余额
+   * @format int64
+   */
+  balance: number;
+  /** @format int64 */
+  userId: number;
+}
+
 export interface AdminProductInput {
   category?: string;
   description?: string;
@@ -51,6 +89,49 @@ export interface AdminTravelMode {
   /** @example "公交" */
   name: string;
 }
+
+export interface AuditLog {
+  action: AuditLogAction;
+  afterValue: string;
+  /**
+   * 积分变动量（仅调账非 0）
+   * @format int64
+   */
+  amount: number;
+  beforeValue: string;
+  /** @format date-time */
+  createdAt: string;
+  /** @format int64 */
+  id: number;
+  /**
+   * 操作人 user.id
+   * @format int64
+   */
+  operatorId: number;
+  reason: string;
+  /** @format int64 */
+  targetId: number;
+  targetKey: string;
+  targetType: AuditTargetType;
+}
+
+export type AuditLogAction = "ADJUST" | "CONFIG_UPDATE" | "TRAVEL_MODE_UPDATE";
+
+export interface AuditLogPage {
+  items: AuditLog[];
+  page: number;
+  pageSize: number;
+  /** @format int64 */
+  total: number;
+}
+
+export interface AuditLogPageResponse {
+  code: "OK";
+  data: AuditLogPage;
+  message: string;
+}
+
+export type AuditTargetType = "point_account" | "sys_config" | "travel_mode";
 
 export interface AuthSession {
   nickname: string;

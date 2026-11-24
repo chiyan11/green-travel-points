@@ -211,7 +211,7 @@ func (h adminHandler) updateConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	res, err := h.store.UpdateConfig(r.Context(), req.Items)
+	res, err := h.store.UpdateConfig(r.Context(), UserID(r.Context()), req.Items)
 	if err != nil {
 		failFromStore(w, h.logger, err)
 		return
@@ -231,10 +231,49 @@ func (h adminHandler) updateTravelMode(w http.ResponseWriter, r *http.Request) {
 			"至少要改一个字段；name 不能为空；efBase > 0；efActual ≥ 0")
 		return
 	}
-	mode, err := h.store.UpdateTravelMode(r.Context(), chi.URLParam(r, "code"), req)
+	mode, err := h.store.UpdateTravelMode(r.Context(), UserID(r.Context()), chi.URLParam(r, "code"), req)
 	if err != nil {
 		failFromStore(w, h.logger, err)
 		return
 	}
 	OK(w, mode)
+}
+
+// adjustPoints 人工调增 / 调减积分：POST /api/v1/admin/points/adjust
+// 请求体 {"userId":1001,"amount":-50,"reason":"刷分扣回"}；reason 必填（BR-14），变动写 audit_log。
+func (h adminHandler) adjustPoints(w http.ResponseWriter, r *http.Request) {
+	var req app.AdjustPointsInput
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	req.Reason = strings.TrimSpace(req.Reason)
+	if req.UserID <= 0 || req.Amount == 0 || req.Reason == "" {
+		Fail(w, http.StatusBadRequest, CodeInvalidArgument, "userId / amount（非 0）/ reason 均为必填")
+		return
+	}
+	res, err := h.store.AdjustPoints(r.Context(), UserID(r.Context()), req)
+	if err != nil {
+		failFromStore(w, h.logger, err)
+		return
+	}
+	OK(w, res)
+}
+
+// auditLogs 审计日志查询：GET /api/v1/admin/audit-logs?operatorId=&action=&targetType=&targetKey=&page=
+func (h adminHandler) auditLogs(w http.ResponseWriter, r *http.Request) {
+	page, pageSize := parsePaging(r)
+	operatorID, _ := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("operatorId")), 10, 64)
+	res, err := h.store.ListAuditLogs(r.Context(), app.AuditQuery{
+		OperatorID: operatorID,
+		Action:     strings.TrimSpace(r.URL.Query().Get("action")),
+		TargetType: strings.TrimSpace(r.URL.Query().Get("targetType")),
+		TargetKey:  strings.TrimSpace(r.URL.Query().Get("targetKey")),
+		Page:       page,
+		PageSize:   pageSize,
+	})
+	if err != nil {
+		failFromStore(w, h.logger, err)
+		return
+	}
+	OK(w, res)
 }
