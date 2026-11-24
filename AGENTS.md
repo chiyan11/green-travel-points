@@ -12,9 +12,9 @@
 
 ---
 
-## 1. 六条硬约束
+## 1. 七条硬约束
 
-以下六条破坏一次，后面所有工作都要返工。
+以下七条破坏一次，后面所有工作都要返工。
 
 1. **结论要有命令证据。** 说「改好了」之前必须跑过对应验证（`scripts/verify.ps1` 或针对性的 `go test` / `vitest`），并把输出贴出来。不要用「应该没问题」交付。
 2. **不擅自扩大改动面。** 不升级依赖、不新增第三方库、不改技术选型、不动领域常量、不重排目录、不顺手格式化全仓。确需变更，先说明理由并取得确认。
@@ -22,6 +22,7 @@
 4. **开发阶段，不做旧数据兼容。** 项目仍在开发期，**禁止**为旧的历史数据写兼容代码分支：不保留旧字段、旧格式、旧状态值的解析与回退路径，不写 `legacy` 判断，不做双写。表结构或数据模型变了就直接改迁移与种子，**丢掉旧数据**，用新数据跑通并测试。唯一例外是团队共享库：动它之前先按 §2「团队共享库」对齐，别把全组的数据洗掉。
 5. **每次修改，三方体验一起变好。** 用户（更快完成目标、界面更清楚）、开发者（更好改、更好测）、AI Agent（更好定位、更好验证）三者都必须变好或至少不变差，并且**不能破坏现有功能**。任何一方明显变差就停下来重做，不要用「后面再优化」交付。
 6. **只走分支 + PR，不直推 `main`。** 任何改动上传 GitHub 都必须先开独立分支（`<type>/<简短主题>`，如 `docs/pr-only-merge-rule`），在分支上提交并推送，然后开 PR；PR 说明写清改了什么、怎么验证，CI 通过后再合并进 `main`。**禁止** `git push origin main`、禁止在本地 `main` 上直接提交后推送、禁止跳过 PR 强推；紧急修复也一样（可以快速合并，但不能省略分支与 PR）。
+7. **分支用完就删。** 改动提交并合并后立即删除对应分支：远程 `git push origin --delete <分支>`，本地 `git branch -d <分支>`。不再需要的试验分支、临时分支，把该保留的内容提交进目标分支后同样删掉，不留长期挂着的废弃分支——废弃分支会让人误以为还有未完成的工作，也让 `git branch` 与 PR 列表越来越难读。命名仍沿用第 6 条的 `<type>/<简短主题>`。
 
 ---
 
@@ -57,7 +58,7 @@ docker compose -f deploy/docker-compose.yml up -d --build
 1. **配置只来自环境变量。** `internal/config/config.go` 只调用 `os.LookupEnv`，**不解析 `.env` 文件**；复制 `.env.example` 成 `.env` 不会生效。默认值可直接连本机库：`greentravel:greentravel@tcp(127.0.0.1:3306)/green_travel_points`。
 2. **端口写死。** 后端 `:8080`，前端 `5173`（`apps/web/vite.config.ts`），代理规则 `/api → 127.0.0.1:8080`。改端口要同时改这两处。
 3. **缓存重定向。** 若全局缓存目录不可写（受限沙箱、只读用户目录），先执行 `. .\scripts\dev-env.ps1`，它把 `GOCACHE` / `GOMODCACHE` / `npm` 缓存指到仓库内 `.cache/`。
-4. **种子账号不能登录。** `db/seed/dev_demo.sql` 的 `password_hash` 是占位串，后端校验的是 `sha256$<salt>$<digest>` 格式，二者对不上。要么注册新账号，要么用开发期身份头 `X-User-Id: 1001`。
+4. **种子账号可直接登录。** `db/seed/dev_demo.sql` 自带合法的 `sha256$<salt>$<digest>` 口令哈希（PR #25 起）：市民 `13800000001` / `demo123456`（user 1001，1200 分），运营管理员 `13800000002` / `admin123456`（user 1002，运营后台 `/admin` 用它登录）。也可注册新账号，或用开发期身份头 `X-User-Id: 1001`。**仅限按 seed 初始化的本地库**：共享库（`docs/dev/shared-db.md`）仍是旧占位哈希且演示用户 id=1，seed 明令禁止在共享库执行，只可按头部说明做定向 UPDATE。
 
 > **团队共享库（ZeroTier 内网）**：连接方式见 [`docs/dev/shared-db.md`](dev/shared-db.md)。
 > 该链路延迟较高，后端启动需带 `HTTP_REQUEST_TIMEOUT=60s`，`DB_DSN` 要加 `timeout/readTimeout/writeTimeout`；
@@ -106,20 +107,21 @@ green-travel-points/
 │       ├── src/
 │       │   ├── main.tsx          应用引导（QueryClientProvider + RouterProvider）
 │       │   ├── routes.tsx        路由表：/login 公开，其余 RequireAuth + AppLayout
-│       │   ├── pages/            9 个页面：Home / Login / Trips / Points / Mall / ProductDetail / Orders / Profile / Placeholder
-│       │   ├── components/       AppLayout（外壳+导航）、RequireAuth（守卫）、CarbonTrendChart（折线图）
-│       │   ├── services/         按域拆的 API 调用：auth / trips / products / points / orders（按生成契约标注传输类型）
-│       │   ├── lib/              http（Envelope 解包、错误、401 处理）、session、validators、format、orderStatus、productCover、queryClient
+│       │   ├── pages/            9 个用户页面（Home / Login / Trips / Points / Mall / ProductDetail / Orders / Profile / Placeholder）+ pages/admin/ 运营后台三屏（商品列表 / 新建商品 / 订单）
+│       │   ├── components/       AppLayout（外壳+导航）、AdminLayout（后台外壳）、RequireAuth（守卫）、CarbonTrendChart（折线图）、AstryxLink
+│       │   ├── services/         按域拆的 API 调用：auth / trips / products / points / orders / admin（按生成契约标注传输类型）
+│       │   ├── lib/              http（Envelope 解包、错误、401 处理）、session、validators、format、orderStatus、productCover、travelMode、queryClient
+│       │   ├── test/             MSW server 与 render 壳（页面测试共用）
 │       │   ├── types/api.ts      由 docs/api/openapi.yaml 生成的 wire 类型（npm run gen:api，勿手改）
 │       │   ├── types/domain.ts   页面视图模型（id 转 string、coverUrl、startedAt 等展示口径）
 │       │   ├── themes/green-travel/  Astryx 品牌子主题（defineTheme 源码 + theme build 产物）
 │       │   ├── astryx-brand.css  品牌 token 覆盖（主色 #177a4d、中文字体栈、页面底色）
 │       │   └── styles.css        全站业务样式（单文件 token 层，零硬编码颜色）
-│       ├── e2e/                  Playwright 主链路用例（真后端，截图落 docs/screenshots/）
+│       ├── e2e/                  Playwright 主链路 + 运营后台用例（真后端；消费者截图落 docs/screenshots/）
 │       ├── scripts/fix-generated.mjs  生成后处理：去掉 @ts-nocheck、加来源说明
 │       └── vite.config.ts        端口 5173 + /api 代理（VITE_API_TARGET 可改目标）
 ├── db/
-│   ├── migrations/               6 组 up/down 迁移（见 §6）
+│   ├── migrations/               7 组 up/down 迁移（见 §6）
 │   └── seed/dev_demo.sql         演示数据：用户 1001、管理员 1002、3 个商品
 ├── deploy/                       docker-compose.yml、Dockerfile.api、Dockerfile.web、nginx.conf
 ├── docs/                         需求规格、设计规格、故事地图/Backlog、实验报告、分工计划、Sprint 0 记录、数据库记录、接口说明、前端接口清单、UML
@@ -189,9 +191,9 @@ domain ◄──────────────────────┘�
 | 认证 | `POST /api/v1/auth/register`、`POST /api/v1/auth/login`、`GET /api/v1/me` | 公开 / 需身份 |
 | 行程 | `POST /api/v1/trips`、`GET /api/v1/trips` | 需身份 |
 | 商品 | `GET /api/v1/products`、`GET /api/v1/products/{id}` | 公开 |
-| 积分 | `GET /api/v1/points/summary`、`GET /api/v1/points/transactions` | 需身份 |
+| 积分 | `GET /api/v1/points/summary`、`GET /api/v1/points/transactions`、`GET /api/v1/points/daily-carbon` | 需身份 |
 | 兑换 | `POST /api/v1/orders`、`GET /api/v1/orders`、`POST /api/v1/orders/{id}/cancel` | 需身份 |
-| 运营 | `GET|POST /api/v1/admin/products`、`PATCH /api/v1/admin/products/{id}`、`PUT /api/v1/admin/skus/{id}/stock`、`GET /api/v1/admin/orders`、`POST /api/v1/admin/orders/{id}/(confirm|ship|complete)`、`GET /api/v1/admin/points/reconcile` | 需 ADMIN |
+| 运营 | `GET|POST /api/v1/admin/products`、`PATCH /api/v1/admin/products/{id}`、`PUT /api/v1/admin/skus/{id}/stock`、`GET /api/v1/admin/orders`、`POST /api/v1/admin/orders/{id}/(confirm|ship|complete)`、`POST /api/v1/admin/points/adjust`、`GET /api/v1/admin/points/reconcile`、`GET /api/v1/admin/audit-logs`、`POST /api/v1/admin/points/expire`、`GET|PUT /api/v1/admin/config`、`PUT /api/v1/admin/travel-modes/{code}` | 需 ADMIN |
 
 身份：优先 `Authorization: Bearer <token>`（登录签发，2 小时过期）；无 token 时回退 `X-User-Id: <id>`（开发便利，生产须关）。运营组再叠加 `RequireAdmin`，越权 403。
 
@@ -219,7 +221,7 @@ domain ◄──────────────────────┘�
 
 ## 6. 数据层
 
-### 表清单（6 组迁移，14 张表）
+### 表清单（7 组迁移，15 张表）
 
 | 迁移 | 表 | 作用 |
 | --- | --- | --- |
@@ -229,18 +231,20 @@ domain ◄──────────────────────┘�
 | `000004` | `user`、`trip_record`、`carbon_record` | 用户、行程、碳记录 |
 | `000005` | `merchant`、`product`、`product_sku`、`redeem_order`、`point_batch` | 商城与兑换（批次用于 FIFO 扣减与过期） |
 | `000006` | `point_batch_txn` | 批次流水（记录每次扣减/退回对应的批次，便于对账与追溯） |
+| `000007` | `audit_log` | 运营审计日志（只追加：调账 / 参数变更 / 出行方式变更，含操作人、前后值、理由） |
 
 ### 不变量（写 SQL 时不能破）
 
 - **流水只追加**：`point_txn` 不更新、不删除；余额变更必须同时写一条流水，`balance_after` 与该次变更后余额一致。
+- **审计只追加**：`audit_log` 不更新、不删除；调账与配置变更的审计写入与业务写在同一事务，调账流水以 `biz_ref_type='audit_log'`、`biz_ref_id=<审计 id>` 回指。
 - **一个业务事务一个事务**：行程上报 = `trip_record` + `carbon_record` + `point_txn` + `point_account` 余额 + `event_outbox`，全在一个 `tx`，任一步失败整体回滚。
-- **扣分按批次 FIFO**：先扣最早的 `point_batch`（`remaining`、`expires_at`），下单与取消都走批次，不直接改余额了事。**现状偏差**：行程发放尚未写 `point_batch`（`GrantPointsWithBatch` 已存在但未接入 `/trips`）；扣减/退款会写 `point_batch_txn`；批次不足时 `consumeBatches` 不报错、只扣可用批次，余额仍减，见 §11。
-- **并发安全**：涉及余额/库存的读改写必须 `SELECT ... FOR UPDATE`（现有实现见 `apps/api/internal/repo/orders.go` 的 `CreateOrder`）。
+- **扣分按批次 FIFO**：先扣最早的 `point_batch`（`remaining`、`expires_at`），下单与取消都走批次，不直接改余额了事。**现状偏差**：行程发放尚未写 `point_batch`（`GrantPointsWithBatch` 已存在但未接入 `/trips`）；扣减/退款会写 `point_batch_txn`；批次不足时 `consumeBatches` 不报错、只扣可用批次，余额仍减；过期清算提供手动接口 `POST /api/v1/admin/points/expire`（无常驻定时任务），对账已有 repo 集成用例，见 §11。
+- **并发安全**：涉及余额/库存的读改写必须 `SELECT ... FOR UPDATE`（现有实现见 `apps/api/internal/repo/orders.go` 的 `CreateOrder`）。账户不存在时先 `INSERT IGNORE INTO point_account` 建空账户，**且必须在事务外**：事务内先拿共享锁再升级排他锁会与并发的同名 INSERT 互等（MySQL 1213），见该文件注释。
 - **幂等**：`POST /orders` 支持 `Idempotency-Key`，命中即返回原订单，不重复扣分。
 
 ### 加一个迁移
 
-1. 新建成对文件，序号连续：`db/migrations/000007_xxx.up.sql` + `000007_xxx.down.sql`。
+1. 新建成对文件，序号连续：`db/migrations/000008_xxx.up.sql` + `000008_xxx.down.sql`。
 2. `up` 用 `CREATE TABLE IF NOT EXISTS`、幂等 `ALTER`；`down` 必须能真正回滚（删表 / 删列 / 删索引）。
 3. 同步更新本节表格与 `README.md` 目录结构里的迁移列表。
 4. 开发阶段**优先直接改已有迁移**并重建库（`DROP DATABASE` 后从空库重跑），不要为旧表结构追加兼容迁移；提交前确认从空库能一路跑到最新。只有在联调 / 共享库上才按「新变更新文件」处理，先看 §2「团队共享库」。
@@ -291,8 +295,10 @@ pages/*.tsx  ──►  services/*.ts  ──►  lib/http.ts  ──►  fetch
 | 层级 | 位置 | 规模 | 特点 |
 | --- | --- | --- | --- |
 | 领域单测 | `apps/api/internal/domain/*_test.go` | 12 个函数 / 45 例 | 表驱动，覆盖边界与非法输入 |
-| HTTP 单测 | `apps/api/internal/httpserver/*_test.go` | 24 例 | 注入假存储，**不连 MySQL**；断言响应壳与错误码 |
-| 启动日志单测 | `apps/api/cmd/server/dbendpoint_test.go` | 1 个函数 / 9 例 | 表驱动：默认 DSN、局域网 / ZeroTier、localhost、IPv6 回环、unix socket、省略地址、非法 DSN |
+| HTTP 单测 | `apps/api/internal/httpserver/*_test.go` | 43 例 | 注入假存储，**不连 MySQL**；断言响应壳与错误码 |
+| 参数校验单测 | `apps/api/internal/app/admin_test.go` | 2 个函数 / 34 例 | `sys_config` 数值规则与 `travel_mode` 更新校验，纯函数表驱动 |
+| repo 集成测试 | `apps/api/internal/repo/orders_test.go`、`audit_test.go` | 10 例（订单 7 + 调账与审计 3） | 真连 MySQL；`REPO_TEST_DSN` 未设置时整包 SKIP；DSN 库名必须以 `_test` 结尾 |
+| 启动日志单测 | `apps/api/cmd/server/dbendpoint_test.go` | 2 个函数 / 15 例 | 表驱动：默认 DSN、局域网 / ZeroTier、localhost、IPv6 回环、unix socket、省略地址、非法 DSN；另测 `WriteTimeout` 跟随请求超时 |
 | 前端单测 | `apps/web/src/lib/*.test.ts` | 2 文件 19 例 | `http.test.ts` 用 `vi.stubGlobal('fetch')` 测解包与错误映射；`validators.test.ts` 测校验规则 |
 | 前端页面测试 | `apps/web/src/pages/*.test.tsx` | 5 文件 16 例 | jsdom + Testing Library + MSW 3 拦截 `fetch`；`src/test/render.tsx` 提供 QueryClient/路由壳，`src/test/http.ts` 造 `{code,message,data}` 壳（测试里也重放后端协议，不是随手 mock） |
 | E2E 主链路 | `apps/web/e2e/*.spec.ts`、`apps/web/e2e/*.e2e.ts` | 2 文件 3 例 | Playwright + Chromium，跑**真实前后端与共享库**，不 mock；消费者主链路每步落截图到 `docs/screenshots/`；运营后台用例依赖本机开发库种子账号 |
@@ -383,12 +389,12 @@ E2E **不在门禁里**：它需要真实后端 + 共享库，CI 没有这些环
 
 | 项 | 现状 | 若要接手 |
 | --- | --- | --- |
-| 积分批次 | 发放端未写 `point_batch`（`GrantPointsWithBatch` 未接入 `/trips`）；扣减/退款已写 `point_batch_txn`；`consumeBatches` 批次不足时不报错、只扣可用批次，余额仍减，余额与批次剩余可能不等 | `/trips` 接入 `GrantPointsWithBatch`；批次不足直接失败或补齐；补过期任务与对账测试 |
+| 积分批次 | 发放端未写 `point_batch`（`GrantPointsWithBatch` 未接入 `/trips`）；扣减/退款已写 `point_batch_txn`；`consumeBatches` 批次不足时不报错、只扣可用批次，余额仍减，余额与批次剩余可能不等。过期清算已有手动接口（`POST /admin/points/expire`），对账有 repo 集成用例，但无常驻定时任务 | `/trips` 接入 `GrantPointsWithBatch`；批次不足直接失败或补齐；补常驻过期任务 |
 | Outbox Worker | 事件只写入 `event_outbox`，**没有消费者**；`internal/eventbus` 只有契约。订单侧已用 `TopicOrderPaid` / `TopicOrderCancelled` 常量；`TopicRedeemOrderPaid` 仍存在但无人使用 | 清理或标注 `TopicRedeemOrderPaid`，再实现轮询 + 退避 + 死信，读 `dispatched_at IS NULL AND available_at <= NOW()` |
 | 密码哈希 | 加盐 SHA-256（`sha256$salt$digest`），注释已标"临时方案" | 换 bcrypt / argon2，并给出存量数据迁移方案 |
 | Token | 自签 HMAC-SHA256 紧凑串，**不是标准 JWT**（无 header 段） | 需要标准 JWT 时统一改签发与校验两端 |
 | sqlc | `apps/api/sqlc.yaml` 已配置但未启用，repo 全是手写 SQL | 启用即要重写 repo 层，别半途混用 |
-| 集成 / E2E | 集成测试未建（计划 testcontainers）；E2E 主链路已建（`apps/web/e2e`，真后端 + 共享库，截图在 `docs/screenshots/`），未进 CI | 集成测试按 testcontainers 补；E2E 若要进 CI，需先给 CI 一个可用的 MySQL 服务容器 |
+| 集成 / E2E | repo 集成测试已建（`apps/api/internal/repo/orders_test.go`、`audit_test.go`，`REPO_TEST_DSN` 门控，默认 SKIP，共 10 例）；E2E 主链路与运营后台已建（真后端 + 共享库），二者均未进 CI | CI 需要 MySQL 服务容器（testcontainers 或 service）后再接入 |
 | 部署 | compose 只有 `mysql` + `api`；`web` 与 nginx 配置就绪但未编入；本机未实跑 docker | 补 web 服务与反向代理，留下实跑证据 |
 | 前端包体 | `vite build` 单包约 540 kB（gzip 163 kB）+ CSS 354 kB（gzip 54 kB）；移除 ECharts 后已从 1.95 MB 降下来，仍略超 500 kB 警告。 | 用路由级 `import()` 分包；预算从 gzip 163 kB 起算 |
 
@@ -431,7 +437,7 @@ E2E **不在门禁里**：它需要真实后端 + 共享库，CI 没有这些环
 2. `git diff` 自查：有没有调试残留、打印、临时注释、被顺手改掉的无关行。
 3. 同步文档（§10），更新 §11 技术债（修掉一项就划掉一项）。
 4. 提交信息：`<type>(<scope>): <中文摘要>`，type 用 `feat|fix|docs|refactor|test|chore`，scope 用 `api|web|db|docs|deploy`。例：`feat(api): 行程上报支持每日积分上限`。
-5. 上传 GitHub：`git switch -c <type>/<主题>` → 提交 → `git push -u origin <分支>` → 开 PR（写清改动与验证方式）→ CI 绿 → 合并到 `main`；合并后切回 `main` 并 `git pull`，删掉已合并的本地分支。**不直接推 `main`。**
+5. 上传 GitHub：`git switch -c <type>/<主题>` → 提交 → `git push -u origin <分支>` → 开 PR（写清改动与验证方式）→ CI 绿 → 合并到 `main`；合并后切回 `main` 并 `git pull`，删除该分支的本地与远程引用（`git branch -d <分支>`、`git push origin --delete <分支>`）。**不直接推 `main`。**
 
 **不要做**
 

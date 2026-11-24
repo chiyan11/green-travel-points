@@ -1,0 +1,33 @@
+@startuml 图2-15 活动图：发放积分与批次写入
+' 依据：设计说明书 2.2.2；目标设计，代码当前未接 GrantPointsWithBatch
+skinparam defaultFontName "Microsoft YaHei"
+skinparam dpi 150
+skinparam shadowing false
+
+|#F5F9FF|TripHandler|
+start
+:校验距离/时间/幂等;
+:计算 carbonSavedG;
+:raw = floor(carbonSavedG / 100);
+:granted = min(raw, dailyCap − alreadyToday);
+
+if (granted > 0?) then (是)
+  :BEGIN;
+  :INSERT point_txn(TRAVEL, +granted);
+  :UPDATE point_account\n(balance, total_saved_g, version);
+  :INSERT point_batch\n(granted_amount=granted,\n remaining=granted,\n expires_at=now+days);
+  :UPDATE point_batch\nSET grant_txn_id = txn.id;
+  :INSERT event_outbox(PointsGranted);
+  :COMMIT;
+else (否)
+  :不写流水 / 不写批次;
+endif
+stop
+
+note right
+  发放与扣减必须对称：
+  每笔 TRAVEL 流水有且仅有 1 条 point_batch；
+  日上限只影响 granted，不改变余额/批次一致性。
+  当前 /trips 未接 GrantPointsWithBatch，属 DEV-03。
+end note
+@enduml

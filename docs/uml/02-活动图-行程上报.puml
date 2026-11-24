@@ -1,4 +1,4 @@
-@startuml 图1-2 上报出行行程 活动图
+@startuml 图1-5 上报出行行程 活动图
 ' 依据：docs/需求规格说明书.md §2.3.2 UC-02 事件流 + BR-01~BR-06
 ' 泳道划分对应代码分层：接口层 httpserver → 领域层 domain → 仓储层 repo → 事件总线 eventbus
 

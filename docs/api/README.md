@@ -72,6 +72,7 @@ npm run gen:api     # 读 ../../docs/api/openapi.yaml，生成 src/types/api.ts�
 下单请求：`{"productId": 1001, "receiver": "本人"}`（`skuId` 可选，缺省由后端挑第一个有库存的 SKU）。
 
 事务步骤（与 `docs/uml/10-序列图-兑换下单.puml` 一致）：
+0. 事务外先 `INSERT IGNORE INTO point_account` 建空账户——事务内先取共享锁再升排他锁会与并发的同名 INSERT 互等（MySQL 1213），见 `apps/api/internal/repo/orders.go` 注释；
 1. 幂等键命中 → 返回原订单；
 2. `point_account` 行锁 → `product_sku` 行锁（固定顺序防死锁）；
 3. 锁后复核：商品在线 / 库存 > 0 / `balance - frozen ≥ 价格` / 未超 `limit_per_user`；

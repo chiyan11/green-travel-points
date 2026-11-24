@@ -1,0 +1,30 @@
+@startuml 图2-13 序列图：参数配置（UC-14 用例实现 · 目标态）
+skinparam defaultFontName "Microsoft YaHei"
+skinparam dpi 150
+skinparam shadowing false
+autonumber
+
+actor "运营管理员" as A
+participant "运营后台\n（目标态，当前未实现）" as FE
+participant "AdminHandler\n(httpserver/admin.go)" as H
+database "MySQL\nsys_config" as DB
+
+A -> FE : 修改排放因子 / 积分规则
+FE -> H : PUT /api/v1/admin/config/{key}
+H -> H : RequireAdmin + 参数校验
+H -> DB : UPDATE sys_config\nSET config_value = ? WHERE config_key = ?
+DB --> H : affected rows
+H -> DB : INSERT audit_log（目标态）
+H --> FE : 200 新配置
+FE --> A : 提示“下一条行程生效”
+
+note over H
+  UC-14 目前只有 sys_config 表与读取逻辑，
+  管理接口/运营后台尚未实现；本图是目标设计，
+  不写成已实现。
+end note
+note over DB
+  因子变更必须留审计；
+  已发生的 carbon_record 保留因子快照，不回溯重算。
+end note
+@enduml

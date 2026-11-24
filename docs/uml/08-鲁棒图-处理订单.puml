@@ -1,7 +1,7 @@
-@startuml 图2-5 鲁棒图：处理兑换订单（UC-12 用例实现 · 参与者：运营管理员）
+@startuml 图2-12 鲁棒图：处理兑换订单（UC-12 用例实现 · 参与者：运营管理员）
 ' 依据：设计说明书 2.2.1（用例实现 · 设计模型）
 ' 拆分口径：一个参与者一张鲁棒图。本图只画运营管理员（UC-12 处理兑换订单）；
-'           市民侧（UC-08 兑换商品）见图2-4。
+'           市民侧（UC-08 兑换商品）见图2-9。
 ' 鲁棒图约定（UML 非标准图，需在报告中说明）：
 '   边界类 boundary —— 只与 actor 或控制类相连
 '   控制类 control  —— 居中，承载用例流程
@@ -20,7 +20,7 @@ actor "运营管理员" as A
 
 boundary "运营-订单管理页\nOrderAdminPage" as B4
 
-control "兑换用例控制器\nRedeemOrderController" as C1
+control "订单管理控制器\nOrderAdminController" as C1
 control "订单状态机\nOrderStateMachine" as C4
 
 entity "兑换订单 RedeemOrder" as E5
@@ -35,7 +35,7 @@ C4 --> E5 : 状态跃迁（校验合法性）
 C4 --> E6 : 写入 OrderShipped / OrderCompleted
 
 note bottom of C4
-  **状态机口径**（详见 图2-8 状态图）
+  **状态机口径**（详见 图2-16 状态图）
   PENDING → PAID | CANCELLED；
   PAID → SHIPPED | CANCELLED；
   SHIPPED → COMPLETED | CANCELLED；
@@ -50,7 +50,7 @@ end note
 legend right
   **设计类清单·本图**（填入报告表 2-1）
   边界类：B4　控制类：C1、C4　实体类：E5、E6
-  与图2-4 共用：C1 / E5 / E6
+  与图2-9 共用：E5 / E6；控制器不同（本图 C1=OrderAdminController）
 endlegend
 
 @enduml

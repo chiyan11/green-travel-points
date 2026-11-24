@@ -8,7 +8,7 @@ Project-specific guidance for AI coding agents.
 
 - **样式分层不变**：全站业务样式只写在 `src/styles.css`，它自带设计 token（第 1 节 `:root` 的 `--green-*` / `--amber-*` / `--ink-*` / `--fs-*` / `--sp-*` / `--r-*` / `--shadow`），页面类名只用这些变量、不写字面量。不要新建按页面拆分的 css；第 18 节「兼容层」是给运营后台 `/admin` 的旧类名用的，新页面不要再往这一层加东西。
 - **不引入 StyleX / Tailwind 编译器**：禁止 `stylex.create()`、`xstyle`、utility class。
-- **用户端页面用语义 HTML + 自有类名**：用户端 7 个页面（首页 / 行程 / 积分 / 商城 / 详情 / 兑换记录 / 登录）已经是「语义标签 + `styles.css` 类名」的形态，只有少量控件（如 `Theme`、`LinkProvider`）来自 Astryx；后台 `/admin` 仍用 Astryx 的 `Button` / `Badge` / `Table` 等组件与旧类名。改用户端页面时保持这个分工，不要把整页换回 Astryx 组件、也不要为了一个控件新建依赖。
+- **用户端页面用语义 HTML + 自有类名**：用户端 8 个页面（首页 / 行程 / 积分 / 商城 / 详情 / 兑换记录 / 我的 / 登录）+ 后台 3 屏（商品列表 / 新建商品 / 订单）已经是「语义标签 + `styles.css` 类名」的形态，只有少量控件（如 `Theme`、`LinkProvider`）来自 Astryx；后台 `/admin` 仍用 Astryx 的 `Button` / `Badge` / `Table` 等组件与旧类名。改用户端页面时保持这个分工，不要把整页换回 Astryx 组件、也不要为了一个控件新建依赖。
 - **图标手写、图表用 CSS**：`src/components/icons.tsx` 存 24×24 单色线性 SVG（`currentColor` / `strokeWidth=1.75`）；近 7 日碳减排是 CSS 柱状图。**不引入图标库、图表库**。
 - **测试契约是硬约束**：页面测试（`src/pages/*.test.tsx`）与 E2E（`e2e/main-flow.spec.ts`、`e2e/admin-console.e2e.ts`）依赖的 label、文案、`data-testid`、`.stat-card` / `.product-card` 等选择器，改页面时必须保住；改文案要同步改测试。
 - **主题只有一个**：品牌子主题在 `src/themes/green-travel/greenTravelTheme.ts`（`defineTheme({ extends: neutralTheme })`，品牌绿 `#177a4d` + 中文字体回退），产物 `green-travel.js` 与 `greenTravelTheme.css` 一起提交；改完必须重跑 `npx astryx theme build src/themes/green-travel/greenTravelTheme.ts`。`src/main.tsx` 里 `<Theme theme={greenTravelTheme} mode="light">`，`mode` 必须显式 `light`（默认 `system` 会跟随系统渲染成暗色）；样式表导入顺序（fonts → reset → astryx → 主题 css → styles.css）不要改。

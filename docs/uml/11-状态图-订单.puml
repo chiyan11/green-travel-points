@@ -1,4 +1,4 @@
-@startuml 图2-8 状态图：兑换订单生命周期
+@startuml 图2-16 状态图：兑换订单生命周期
 ' 依据：需求规格说明书 BR-10；db/migrations/000001_init.up.sql 中 redeem_order.status
 ' 用途：订单状态机单测的用例来源（非法跃迁必须被拒）
 

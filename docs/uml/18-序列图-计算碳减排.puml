@@ -1,0 +1,27 @@
+@startuml 图2-5 序列图：计算碳减排量（UC-04 用例实现）
+skinparam defaultFontName "Microsoft YaHei"
+skinparam dpi 150
+skinparam shadowing false
+autonumber
+
+actor "定时任务 / 系统" as S
+participant "TripHandler\n(httpserver/trips.go)" as H
+participant "domain\n(carbon.go)" as D
+database "MySQL\ntravel_mode / carbon_record" as DB
+
+S -> H : 行程已通过距离/时间校验
+H -> DB : SELECT ef_base, ef_actual\nFROM travel_mode WHERE code = ?
+DB --> H : factors
+H -> D : CalculateCarbonSaved(distanceKm, factors)
+activate D
+D -> D : saved = max(0, d × (ef_base − ef_actual))
+D --> H : carbonSavedG
+deactivate D
+H -> DB : INSERT carbon_record\n(trip_id, ef_base, ef_actual, carbon_saved_g)
+H --> S : 碳减排量（克）
+
+note over D
+  纯函数：不读库、不读全局变量；
+  边界 0.1–100 km 由 ValidateDistance 先校验。
+end note
+@enduml

@@ -1,0 +1,33 @@
+@startuml 图2-6 序列图：核发碳积分（UC-05 用例实现）
+skinparam defaultFontName "Microsoft YaHei"
+skinparam dpi 150
+skinparam shadowing false
+autonumber
+
+actor "定时任务 / 系统" as S
+participant "TripHandler\n(httpserver/trips.go)" as H
+participant "domain\n(points.go)" as D
+database "MySQL\npoint_account / point_txn / point_batch" as DB
+
+S -> H : carbonSavedG + 当日已发积分
+H -> DB : SELECT COALESCE(SUM(amount),0)\nFROM point_txn ... 当日 TRAVEL
+DB --> H : alreadyToday
+H -> D : GrantPoints(carbonSavedG, rule, alreadyToday)
+activate D
+D -> D : raw = floor(carbonSavedG / 100)
+D -> D : granted = min(raw, dailyCap − alreadyToday)
+D --> H : {raw, granted, capped}
+deactivate D
+H -> DB : BEGIN
+H -> DB : INSERT point_txn(TRAVEL, +granted)
+H -> DB : UPDATE point_account\n(balance, total_saved_g, version)
+H -> DB : INSERT point_batch\n(granted, remaining, expires_at)
+H -> DB : COMMIT
+H --> S : 本次积分 + 是否触顶
+
+note over DB
+  当前实现只写 point_txn / point_account，
+  未写 point_batch；图2-15 是目标设计，
+  代码未改前属 DEV-03。
+end note
+@enduml

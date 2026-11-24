@@ -1,0 +1,43 @@
+@startuml 图1-3 用例图：积分与商城（模块 B）
+' 依据：需求规格说明书 §2.3.1 分区原则；与图1-1 总览一致
+skinparam defaultFontName "Microsoft YaHei"
+skinparam dpi 150
+skinparam shadowing false
+left to right direction
+skinparam usecase {
+  BackgroundColor #F5F9FF
+  BorderColor #2E5C8A
+}
+
+actor "市民\n（出行用户）" as R1
+actor "运营管理员" as R2
+actor "商户" as R3
+
+rectangle "B. 积分与商城" {
+  usecase "UC-07 浏览积分商城商品" as UC07
+  usecase "UC-08 兑换商品" as UC08
+  usecase "UC-09 查看我的订单与核销码" as UC09
+  usecase "UC-10 撤销行程与积分申诉" as UC10
+  usecase "UC-11 商品与 SKU 管理" as UC11
+  usecase "UC-12 处理兑换订单" as UC12
+  usecase "UC-13 商户入驻与结算" as UC13
+}
+
+R1 --> UC07
+R1 --> UC08
+R1 --> UC09
+R1 --> UC10
+R2 --> UC11
+R2 --> UC12
+R2 --> UC13
+R3 --> UC13
+
+note right of UC08
+  “校验积分与库存”是锁后复核的内部活动，
+  不单列为用例，避免伪用例。
+end note
+note bottom of UC10
+  申诉成立后的调账见模块 C 的 UC-15；
+  跨模块关系不在本图重复画线。
+end note
+@enduml

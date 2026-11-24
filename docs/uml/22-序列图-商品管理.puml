@@ -1,0 +1,32 @@
+@startuml 图2-11 序列图：商品与 SKU 管理（UC-11 用例实现）
+skinparam defaultFontName "Microsoft YaHei"
+skinparam dpi 150
+skinparam shadowing false
+autonumber
+
+actor "运营管理员" as A
+participant "运营后台\n（未实现，当前用 HTTP 客户端）" as FE
+participant "AdminHandler\n(httpserver/admin.go)" as H
+database "MySQL\nproduct / product_sku" as DB
+
+A -> FE : 新建/编辑商品
+FE -> H : POST /api/v1/admin/products\nPATCH /api/v1/admin/products/{id}
+H -> DB : INSERT/UPDATE product\n(name, category, status, limit_per_user)
+DB --> H : productID
+H --> FE : 201/200 商品
+
+A -> FE : 调整 SKU 库存
+FE -> H : PUT /api/v1/admin/skus/{id}/stock
+H -> DB : UPDATE product_sku SET stock = ?\nWHERE id = ?
+DB --> H : affected rows
+H --> FE : 200 新库存
+
+note over FE
+  运营后台前端尚未实现；
+  当前只能通过 HTTP 客户端/测试调用这些接口。
+end note
+note over H
+  写操作要求 ADMIN 角色；
+  非管理员由 RequireAdmin 返回 403。
+end note
+@enduml
