@@ -19,6 +19,7 @@ type adminHandler struct {
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
+	dec.DisallowUnknownFields() // 多余字段直接 400，避免前后端字段漂移悄悄通过
 	if err := dec.Decode(dst); err != nil {
 		Fail(w, http.StatusBadRequest, CodeInvalidArgument, "请求体不是合法 JSON")
 		return false
@@ -165,4 +166,63 @@ func (h adminHandler) reconcile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	OK(w, res)
+}
+
+// listConfig 系统参数列表：GET /api/v1/admin/config
+// 返回 sys_config 全部参数（键 / 值 / 值类型 / 说明），值一律为字符串。
+func (h adminHandler) listConfig(w http.ResponseWriter, r *http.Request) {
+	items, err := h.store.ListConfig(r.Context())
+	if err != nil {
+		failFromStore(w, h.logger, err)
+		return
+	}
+	OK(w, items)
+}
+
+// updateConfig 批量修改系统参数：PUT /api/v1/admin/config
+// 请求体 {"items":[{"key":"daily_points_cap","value":"10"}]}，整批要么全成、要么全回滚；
+// 返回更新后的全量参数，调用方可直接刷新界面。
+func (h adminHandler) updateConfig(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Items []app.ConfigUpdate `json:"items"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if len(req.Items) == 0 {
+		Fail(w, http.StatusBadRequest, CodeInvalidArgument, "items 不能为空")
+		return
+	}
+	for _, it := range req.Items {
+		if strings.TrimSpace(it.Key) == "" || strings.TrimSpace(it.Value) == "" {
+			Fail(w, http.StatusBadRequest, CodeInvalidArgument, "key / value 不能为空")
+			return
+		}
+	}
+	res, err := h.store.UpdateConfig(r.Context(), req.Items)
+	if err != nil {
+		failFromStore(w, h.logger, err)
+		return
+	}
+	OK(w, res)
+}
+
+// updateTravelMode 更新出行方式：PUT /api/v1/admin/travel-modes/{code}
+// 可改 name / efBase / efActual / enabled；nil 字段不动。
+func (h adminHandler) updateTravelMode(w http.ResponseWriter, r *http.Request) {
+	var req app.TravelModeUpdate
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := app.ValidateTravelModeUpdate(req); err != nil {
+		Fail(w, http.StatusBadRequest, CodeInvalidArgument,
+			"至少要改一个字段；name 不能为空；efBase > 0；efActual ≥ 0")
+		return
+	}
+	mode, err := h.store.UpdateTravelMode(r.Context(), chi.URLParam(r, "code"), req)
+	if err != nil {
+		failFromStore(w, h.logger, err)
+		return
+	}
+	OK(w, mode)
 }
