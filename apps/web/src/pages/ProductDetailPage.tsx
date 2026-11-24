@@ -45,9 +45,14 @@ export function ProductDetailPage(): ReactNode {
     setPending(true)
     try {
       const order = await createOrder(product.id, receiver)
-      // 先等余额重新取回来再跳转：顶栏余额和兑换页读的是同一个 summary，
-      // 直接 void 掉会在跳转后才刷新，用户会先看到兑换前的余额。
-      await queryClient.invalidateQueries({ queryKey: ['summary'] })
+      // 下单事务里已经扣分并占了库存，所以余额、库存、订单三处都要失效：
+      // 余额先 await（顶栏和本页读同一份 summary，否则会先看到兑换前的数字），
+      // 商品列表与详情的库存同样要等刷新完再跳，否则回商城还是旧库存。
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['summary'] }),
+        queryClient.invalidateQueries({ queryKey: ['products'] }),
+        queryClient.invalidateQueries({ queryKey: ['product', product.id] }),
+      ])
       void queryClient.invalidateQueries({ queryKey: ['orders'] })
       navigate(`/orders?created=${order.id}`)
     } catch (err) {

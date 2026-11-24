@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 
 /**
- * M8 运营后台主链路（P5-3）：建商品 → 上架 → 消费者下单 → 后台看订单并确认收款。
+ * M8 运营后台主链路（P5-3）：建商品 → 上架 → 消费者下单 → 后台看订单并确认接单。
  *
  * 账号默认来自本机开发库（scripts 之外的本地操作，不改 db/seed）：
  *   - 管理员 13800000002（user 1002，role=ADMIN）
@@ -46,7 +46,7 @@ async function login(page: Page, account: string, password: string) {
   await expect(page.getByRole('heading', { name: '绿行积分' })).toBeVisible()
 }
 
-test('建商品 → 上架 → 下单 → 后台看订单并确认收款', async ({ page, browser }) => {
+test('建商品 → 上架 → 下单 → 后台看订单并确认接单', async ({ page, browser }) => {
   test.skip(Boolean(skipReason), skipReason)
 
   const productName = `E2E环保水杯-${Date.now()}`
@@ -106,17 +106,17 @@ test('建商品 → 上架 → 下单 → 后台看订单并确认收款', async
   })
   await citizenContext.close()
 
-  // 4. 后台订单列表：看到该订单（待支付）→ 确认收款（PENDING → PAID）
+  // 4. 后台订单列表：看到该订单（待商户确认）→ 确认接单（PENDING → PAID）
   await page.goto('/admin/orders')
   const orderRow = page.getByRole('row', { name: new RegExp(productName) })
   await expect(orderRow).toBeVisible()
-  await expect(orderRow.getByText('待支付')).toBeVisible()
+  await expect(orderRow.getByText('待商户确认')).toBeVisible()
 
   await page.getByRole('row', { name: new RegExp(productName) })
     .getByRole('button', { name: '确认收款' })
     .click()
   await expect(
-    page.getByRole('row', { name: new RegExp(productName) }).getByText('已支付'),
+    page.getByRole('row', { name: new RegExp(productName) }).getByText(/已确认/),
   ).toBeVisible()
 
   await page.screenshot({
