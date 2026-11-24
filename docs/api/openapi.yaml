@@ -560,6 +560,23 @@ paths:
                 $ref: '#/components/schemas/ReconcileResponse'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /api/v1/admin/points/expire:
+    post:
+      tags: [admin]
+      summary: 手动触发积分过期清算（P3-3）
+      description: |
+        把 `status='ACTIVE'` 且 `expires_at <= NOW()` 的批次置为 `EXPIRED`，
+        写 `EXPIRE` 反向流水、扣减账户余额，并在 `point_batch_txn` 记一笔负明细。
+        每批次最多一条 `EXPIRE` 流水（`uk_point_txn_biz` 兜底），重复调用第二次返回全 0。
+      responses:
+        '200':
+          description: 清算结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpireResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /api/v1/admin/config:
     get:
       tags: [admin]
@@ -1555,3 +1572,31 @@ components:
           type: string
         data:
           $ref: '#/components/schemas/AdminTravelMode'
+    ExpireResult:
+      type: object
+      description: 一次积分过期清算的结果
+      required: [batches, points, accounts]
+      properties:
+        batches:
+          type: integer
+          format: int64
+          description: 被置为 EXPIRED 的批次数
+        points:
+          type: integer
+          format: int64
+          description: 实际过期扣减的积分总数
+        accounts:
+          type: integer
+          format: int64
+          description: 余额发生变化的账户数
+    ExpireResponse:
+      type: object
+      required: [code, message, data]
+      properties:
+        code:
+          type: string
+          enum: [OK]
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/ExpireResult'

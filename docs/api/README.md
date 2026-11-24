@@ -174,6 +174,7 @@ curl -X POST -H "Content-Type: application/json" `
 | POST | `/api/v1/admin/orders/{id}/ship` | `PAID → SHIPPED`（发货） |
 | POST | `/api/v1/admin/orders/{id}/complete` | `SHIPPED → COMPLETED`（核销完成） |
 | GET | `/api/v1/admin/points/reconcile` | 全量积分对账：`balance == Σ(txn)`，返回不一致账户（BR-07 证据） |
+| POST | `/api/v1/admin/points/expire` | 手动触发积分过期清算：到期批次置 `EXPIRED`、写 `EXPIRE` 流水、扣余额 |
 | GET | `/api/v1/admin/config` | 系统参数列表（UC-14）：键 / 值 / 值类型 / 说明 |
 | PUT | `/api/v1/admin/config` | 批量修改系统参数，整批原子生效；任一项非法则全部回滚 |
 | PUT | `/api/v1/admin/travel-modes/{code}` | 更新出行方式名称 / 排放因子 / 启用状态 |
@@ -252,6 +253,47 @@ curl -X POST -H "Content-Type: application/json" `
 
 验收示例（P3-2）：把 `daily_points_cap` 改成 `10` 后上报 10 km 公交
 （碳减排 `10 × (192 − 68) = 1240 g`，按 100 g/分应得 12 分），实际 `grantedPoints = 10`。
+
+### 6.2 积分过期清算（P3-3）
+
+`POST /api/v1/admin/points/expire` 手动触发（没有常驻定时任务，演示与运维都用它），返回：
+
+```json
+{"batches": 1, "points": 1200, "accounts": 1}
+```
+
+- `batches`：被置为 `EXPIRED` 的批次数；`points`：实际过期扣掉的积分；`accounts`：余额发生变化的账户数。
+
+处理规则：
+
+| 项 | 规则 |
+| --- | --- |
+| 选取范围 | `point_batch.status='ACTIVE' AND remaining>0 AND expires_at <= NOW()`，按 `expires_at, id` 升序（与 FIFO 口径一致） |
+| 写流水 | `point_txn(txn_type='EXPIRE', amount<0, balance_after=扣除后余额)`，`biz_ref_type='point_batch'`、`biz_ref_id=batch_id` |
+| 幂等 | `uk_point_txn_biz(biz_ref_type, biz_ref_id, txn_type)` 保证每批次最多一条 `EXPIRE` 流水；重复调用第二次返回全 0 |
+| 批次 | 置 `status='EXPIRED'`、`remaining=0`；同时在 `point_batch_txn` 记一笔负明细，避免取消订单时把已过期的量回填成可用积分 |
+| 余额 | `point_account.balance` 扣减并 `version+1`，全程单事务；锁顺序 `account → batch`（与下单一致，避免死锁） |
+| 账实不符 | 若历史数据里余额小于批次余量，只扣得动的部分（`min(remaining, balance)`），批次仍归零置 `EXPIRED`，差额由 `/admin/points/reconcile` 暴露 |
+| 不变量 | 正常数据下结束后仍满足 `Σ(point_account.balance) − Σ(point_batch.remaining WHERE status='ACTIVE') = 0` |
+
+演示步骤（本地库）：
+
+```powershell
+# 1) 把某条批次改成已过期（造数据）
+mysql --user=greentravel --password=greentravel --host=127.0.0.1 green_travel_points `
+  -e "UPDATE point_batch SET expires_at = NOW(3) - INTERVAL 1 DAY WHERE id = 1001;"
+
+# 2) 触发清算（1002 是 ADMIN）
+curl -X POST -H "X-User-Id: 1002" http://127.0.0.1:8080/api/v1/admin/points/expire
+# → {"batches":1,"points":1200,"accounts":1}
+
+# 3) 复核：余额归零、批次 EXPIRED、账本仍平
+#    GET /api/v1/admin/points/reconcile → {"ok":true,"mismatches":[]}
+#    GET /api/v1/points/transactions?type=EXPIRE → 能看到「积分过期」流水
+```
+
+> 已知前提：行程发分侧尚未写 `point_batch`（P2 待接 `GrantPointsWithBatch`），所以本地库里
+> 「行程发的分」没有批次，过期清算只会动到批次里真实存在的量；批次对账差值不是本接口引入的。
 
 ## 7. 测试
 

@@ -155,6 +155,32 @@ export interface ErrorEnvelope {
   message: string;
 }
 
+export interface ExpireResponse {
+  code: "OK";
+  /** 一次积分过期清算的结果 */
+  data: ExpireResult;
+  message: string;
+}
+
+/** 一次积分过期清算的结果 */
+export interface ExpireResult {
+  /**
+   * 余额发生变化的账户数
+   * @format int64
+   */
+  accounts: number;
+  /**
+   * 被置为 EXPIRED 的批次数
+   * @format int64
+   */
+  batches: number;
+  /**
+   * 实际过期扣减的积分总数
+   * @format int64
+   */
+  points: number;
+}
+
 export interface HealthResponse {
   code: "OK";
   data: HealthResult;
