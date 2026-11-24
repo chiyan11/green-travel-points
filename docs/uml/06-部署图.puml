@@ -61,7 +61,7 @@ end note
 note bottom of mysql
   数据卷：mysql-data
   账号：greentravel（仅本库）
-  迁移：db/migrations 6 组，启动前执行
+  迁移：db/migrations 7 组，启动前执行
 end note
 
 note bottom of compose

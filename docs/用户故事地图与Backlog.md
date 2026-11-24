@@ -85,17 +85,17 @@
 | US-25 | R1 | 作为市民，兑换成功后拿到核销码 | 返回 `orderNo`/`redeemCode`；订单 `PENDING` | P0 | 2 | S4 | 已实现 |
 | US-26 | R1 | 作为市民，我要看我的订单与状态 | `GET /orders` 分页；状态/金额/商品快照正确 | P0 | 2 | S4 | 已实现 |
 | US-27 | R1 | 作为市民，我要取消待支付订单并退分 | `POST /orders/{id}/cancel` 仅 PENDING；补 REFUND、退余额、回补库存 | P1 | 3 | S4 | 已实现 |
-| US-28 | R2 | 作为运营，我要确认/发货/完成订单 | `confirm/ship/complete` 按状态机流转；非法跃迁 409 | P1 | 3 | S5 | 部分（API 有，后台前端无） |
+| US-28 | R2 | 作为运营，我要确认/发货/完成订单 | `confirm/ship/complete` 按状态机流转；非法跃迁 409 | P1 | 3 | S5 | 已实现（API + 后台订单页确认/发货/核销） |
 | US-29 | R3 | 作为商户，我要核销并看结算明细 | 核销码校验；订单 `COMPLETED`；商户结算列表 | P2 | 5 | S5 | 未开始 |
-| US-30 | R2 | 作为运营，我要维护商品 | 新建/编辑/列表；字段校验；商品名商户内唯一 | P0 | 3 | S5 | 部分（无删除/后台前端） |
-| US-31 | R2 | 作为运营，我要上下架商品 | `PATCH /admin/products/{id}` 改 status；下架后不可兑 | P0 | 2 | S5 | 部分（API 有，后台前端无） |
-| US-32 | R2 | 作为运营，我要调 SKU 库存 | `PUT /admin/skus/{id}/stock`；负数 400；库存变更可追溯 | P0 | 2 | S5 | 部分（API 有，无审计） |
+| US-30 | R2 | 作为运营，我要维护商品 | 新建/编辑/列表；字段校验；商品名商户内唯一 | P0 | 3 | S5 | 部分（后台新建/列表/上下架已建；字段编辑与删除未做） |
+| US-31 | R2 | 作为运营，我要上下架商品 | `PATCH /admin/products/{id}` 改 status；下架后不可兑 | P0 | 2 | S5 | 已实现（API + 后台商品页上下架） |
+| US-32 | R2 | 作为运营，我要调 SKU 库存 | `PUT /admin/skus/{id}/stock`；负数 400；库存变更可追溯 | P0 | 2 | S5 | 部分（API + 后台改库存已建；库存变更无审计） |
 | US-33 | R2 | 作为运营，我要按状态查订单 | `GET /admin/orders` 分页/筛选；含用户与商品快照 | P1 | 2 | S5 | 已实现（API） |
-| US-34 | R2 | 作为运营，我要配置因子与积分规则 | 改 `sys_config`/`travel_mode` 后新行程按新规则；旧记录保留快照 | P1 | 3 | S5 | 未开始 |
+| US-34 | R2 | 作为运营，我要配置因子与积分规则 | 改 `sys_config`/`travel_mode` 后新行程按新规则；旧记录保留快照 | P1 | 3 | S5 | 部分（GET/PUT config、PUT travel-modes 接口已实现；后台页面未做） |
 | US-35 | R2/R4 | 作为运营，我要对账并导出差异 | `GET /admin/points/reconcile` 返回差异；无差异时为空 | P0 | 3 | S5 | 部分（HTTP 假存储用例 + repo 集成用例 `TestReconcileAfterOrderAndCancel`；导出与页面未做） |
-| US-36 | R2/R4 | 作为审计，我要查关键操作 | 配置变更/调账/状态流转写审计；按人/对象/时间检索 | P1 | 5 | S6 | 未开始（无 audit_log 表） |
+| US-36 | R2/R4 | 作为审计，我要查关键操作 | 配置变更/调账/状态流转写审计；按人/对象/时间检索 | P1 | 5 | S6 | 部分（audit_log + 调账/参数/出行方式审计 + 查询接口；页面未做） |
 | US-37 | R4 | 作为风控，我要重放死信 | 查看失败事件、手动重放、标记死信 | P2 | 5 | S6 | 未开始（Worker 未做） |
-| US-38 | P1–P5 | 作为团队，我要有可重复的测试 | domain/HTTP/前端单测通过；集成/E2E 覆盖主链路；覆盖率门槛 | P0 | 8 | S6 | 部分（domain/HTTP/app 单测 + repo 集成 7 例 + E2E 主链路；覆盖率门槛未做，E2E 未进 CI） |
+| US-38 | P1–P5 | 作为团队，我要有可重复的测试 | domain/HTTP/前端单测通过；集成/E2E 覆盖主链路；覆盖率门槛 | P0 | 8 | S6 | 部分（domain/HTTP/app 单测 + repo 集成 10 例 + E2E 主链路；覆盖率门槛未做，E2E 未进 CI） |
 | US-39 | P5 | 作为团队，我要一条命令部署 | `docker compose up -d` 拉起 mysql+api+web+nginx；有访问 URL | P1 | 5 | S6 | 未满足（compose 仅 mysql+api） |
 | US-40 | P1 | 作为团队，我要可提交的报告 | 五章报告 + 表5-1 + AI 记录 + UML 成图 + 演示脚本 | P0 | 5 | S6 | 部分（本文件所在批次补齐） |
 

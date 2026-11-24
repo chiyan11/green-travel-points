@@ -28,7 +28,7 @@ package "apps/api　后端（Go 1.24+）" as api {
   package "internal/config\n环境变量 → Config" as config
 }
 
-database "MySQL 8.0\nInnoDB（14 张表）" as db
+database "MySQL 8.0\nInnoDB（15 张表）" as db
 
 package "外部" as ext {
   package "模拟数据源\n（行程生成器）" as sim
