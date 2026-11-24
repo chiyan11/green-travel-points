@@ -28,27 +28,31 @@ export function MallPage(): ReactNode {
         <span className="price-chip">我的余额 {formatPoints(summary?.balance ?? 0)} 分</span>
       </div>
 
-      <div className="grid product-grid">
-        {products.map((p) => (
-          <div key={p.id} className="card product-card">
-            <div className="product-cover" aria-hidden="true">
-              {p.coverUrl ? <img src={p.coverUrl} alt="" /> : productCoverIcon(p.category)}
-            </div>
-            <div className="product-body">
-              {p.category && <span className="chip chip--tiny">{p.category}</span>}
-              <h3>{p.name}</h3>
-              <p className="muted" style={{ margin: 0 }}>{p.description}</p>
-              <div className="product-meta">
-                <span className="price-chip">{formatPoints(p.pointsPrice)} 分</span>
-                <span className="muted" style={{ margin: 0 }}>库存 {p.stock}</span>
+      {products.length === 0 ? (
+        <p className="empty-state">暂无在售商品，等上架后再来看看。</p>
+      ) : (
+        <div className="grid product-grid">
+          {products.map((p) => (
+            <div key={p.id} className="card product-card">
+              <div className="product-cover" aria-hidden="true">
+                {p.coverUrl ? <img src={p.coverUrl} alt="" /> : productCoverIcon(p.category)}
               </div>
-              <Link to={`/mall/${p.id}`} className="btn btn--ghost">
-                查看详情
-              </Link>
+              <div className="product-body">
+                {p.category && <span className="chip chip--tiny">{p.category}</span>}
+                <h3>{p.name}</h3>
+                <p className="muted" style={{ margin: 0 }}>{p.description}</p>
+                <div className="product-meta">
+                  <span className="price-chip">{formatPoints(p.pointsPrice)} 分</span>
+                  <span className="muted" style={{ margin: 0 }}>库存 {p.stock}</span>
+                </div>
+                <Link to={`/mall/${p.id}`} className="btn btn--ghost">
+                  查看详情
+                </Link>
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </>
   )
 }

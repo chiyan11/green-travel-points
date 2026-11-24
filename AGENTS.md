@@ -280,12 +280,15 @@ pages/*.tsx  ──►  services/*.ts  ──►  lib/http.ts  ──►  fetch
 | HTTP 单测 | `apps/api/internal/httpserver/*_test.go` | 24 例 | 注入假存储，**不连 MySQL**；断言响应壳与错误码 |
 | 启动日志单测 | `apps/api/cmd/server/dbendpoint_test.go` | 1 个函数 / 9 例 | 表驱动：默认 DSN、局域网 / ZeroTier、localhost、IPv6 回环、unix socket、省略地址、非法 DSN |
 | 前端单测 | `apps/web/src/lib/*.test.ts` | 2 文件 19 例 | `http.test.ts` 用 `vi.stubGlobal('fetch')` 测解包与错误映射；`validators.test.ts` 测校验规则 |
+| 前端页面测试 | `apps/web/src/pages/*.test.tsx` | 5 文件 16 例 | jsdom + Testing Library + MSW 3 拦截 `fetch`；`src/test/render.tsx` 提供 QueryClient/路由壳，`src/test/http.ts` 造 `{code,message,data}` 壳（测试里也重放后端协议，不是随手 mock） |
 
 ### 新增功能的底线
 
 - 新的领域规则 → 至少 1 组表驱动用例，含边界值与非法输入。
 - 新的 HTTP 端点 → `api_test.go` 加用例：正常路径 + 至少一个错误路径（参数错 / 未授权 / 冲突），断言 `code` 与状态码。
 - 新的前端校验或解包逻辑 → `vitest` 用例；纯展示改动不强制。
+- **新页面 / 页面新交互 → 至少 1 个 `src/pages/*.test.tsx` 用例**：用 MSW 声明端点，断言用户看到的结果（成功态与至少一个失败态），不要 mock service 函数。
+- MSW 的 `onUnhandledFrame: 'error'` 是硬开关：新增接口时忘了补 handler，测试会直接失败，照提示补上即可。
 - 不加「只为了覆盖率」的空测试；不为通过而放宽断言。
 
 ### 命令

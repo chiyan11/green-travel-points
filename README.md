@@ -123,7 +123,7 @@ flowchart LR
 | 事件 | 事务性 Outbox 表 + 轮询 Worker | — | 不引入 Kafka / Redis，仍在关系库里保证"业务成功 ⇒ 事件必达"；**Worker 尚未实现**（见「系统架构」实现现状） |
 | 前端 | React + TypeScript 7 + Vite + TanStack Query | 19.3 / 7.0.2 / 8.3 / 5.104 | TS7 原生编译器（Go 实现），构建快；Query 统一服务端状态 |
 | 接口契约 | OpenAPI 3.1 + swagger-typescript-api（devDependency） | 13.15 | `docs/api/openapi.yaml` 是唯一契约，`npm run gen:api` 生成 `apps/web/src/types/api.ts`，门禁校验生成物与 yaml 一致 |
-| 测试 | Go `testing` / Vitest / Playwright / k6 | — | 前两层已落地；集成测试、E2E、性能压测待建 |
+| 测试 | Go `testing` / Vitest + Testing Library + MSW / Playwright / k6 | — | 单测与页面测试已落地；集成测试、E2E、性能压测待建 |
 | 数据库 | MySQL | 8.4+（本机 9.7） | `utf8mb4_0900_ai_ci`、`DATETIME(3)`、JSON 存事件负载 |
 | 部署 | Docker Compose + Nginx + GitHub Actions | — | 一条命令起全栈，CI 双 job 门禁 |
 
@@ -333,6 +333,7 @@ pwsh -File .\scripts\verify.ps1
 | 单元测试（Go · http） | 路由、中间件、认证、各 handler（假存储，不连库） | `go test ./internal/httpserver -v` | 24 个用例，全绿 |
 | 单元测试（Go · cmd/server） | 启动日志的 DSN 目标判定：本机 / 局域网 / ZeroTier / socket / 非法 DSN | `go test ./cmd/server -v` | 1 个函数 / 9 个用例 |
 | 单元测试（前端） | Envelope 解包、错误映射、表单校验 | `npx vitest run` | 2 个文件 19 例（http 5 + validators 14） |
+| 页面测试（前端） | 登录失败态、行程上报与重复提交、商城空态/库存不足、订单取消 | `npx vitest run src/pages` | 5 个文件 16 例，jsdom + Testing Library + MSW |
 | 类型检查 | 前端全量 | `npx tsc --noEmit` | 零错误 |
 | 契约一致性 | `docs/api/openapi.yaml` ↔ `apps/web/src/types/api.ts` | `npm run gen:api` 后 `git diff --exit-code` | 已接入 `verify.ps1` 与 CI |
 | 集成测试 | API + MySQL | 待建（testcontainers） | 未建：原计划 S2 已过，随 S4 补 |
