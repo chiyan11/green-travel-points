@@ -8,7 +8,7 @@
  * 积分与碳减排一律以后端 domain.EvaluateTrip 为准，前端不再本地计算。
  */
 import { api } from '@/lib/http'
-import type { Trip as WireTrip, TripPage } from '@/types/api'
+import type { Trip as WireTrip, TripPage, TripStatus as WireTripStatus } from '@/types/api'
 import type { TravelMode, TripRecord, TripStatus } from '@/types/domain'
 
 export interface SubmitTripInput {
@@ -18,8 +18,9 @@ export interface SubmitTripInput {
   startedAt: string
 }
 
-function normalizeStatus(status: TripStatus): TripStatus {
-  // 早期实现曾返回 "VERIFIED" / "REJECTED"，这里统一收敛到 trip_record.status 的两个枚举值。
+function normalizeStatus(status: WireTripStatus): TripStatus {
+  // POST /api/v1/trips 目前硬编码返回 "VERIFIED"（见 openapi.yaml 的 TripStatus 说明），
+  // 列表返回库里的 VALID / REVOKED；这里收敛到 trip_record.status 的两个枚举值。
   return status === 'REVOKED' ? 'REVOKED' : 'VALID'
 }
 

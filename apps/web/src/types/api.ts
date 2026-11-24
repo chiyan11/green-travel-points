@@ -439,6 +439,11 @@ export interface Trip {
   mode: TravelMode;
   /** @format int64 */
   rawPoints: number;
+  /**
+   * 行程状态。`POST /api/v1/trips` 目前硬编码返回 `VERIFIED`（历史遗留），
+   * 而 `GET /api/v1/trips` 返回库里的 `VALID` / `REVOKED`；前端 service 层
+   * 已把 `VERIFIED` 归一成 `VALID`。三个值都列在这里，避免契约与实现打架。
+   */
   status: TripStatus;
   /** @format date-time */
   traveledAt: string;
@@ -476,4 +481,9 @@ export interface TripResponse {
   message: string;
 }
 
-export type TripStatus = "VALID" | "REVOKED";
+/**
+ * 行程状态。`POST /api/v1/trips` 目前硬编码返回 `VERIFIED`（历史遗留），
+ * 而 `GET /api/v1/trips` 返回库里的 `VALID` / `REVOKED`；前端 service 层
+ * 已把 `VERIFIED` 归一成 `VALID`。三个值都列在这里，避免契约与实现打架。
+ */
+export type TripStatus = "VALID" | "VERIFIED" | "REVOKED";

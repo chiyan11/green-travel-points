@@ -678,7 +678,11 @@ components:
       enum: [DRAFT, ONLINE, OFFLINE]
     TripStatus:
       type: string
-      enum: [VALID, REVOKED]
+      description: |
+        行程状态。`POST /api/v1/trips` 目前硬编码返回 `VERIFIED`（历史遗留），
+        而 `GET /api/v1/trips` 返回库里的 `VALID` / `REVOKED`；前端 service 层
+        已把 `VERIFIED` 归一成 `VALID`。三个值都列在这里，避免契约与实现打架。
+      enum: [VALID, VERIFIED, REVOKED]
     TravelMode:
       type: string
       description: 出行方式代码，与 travel_mode 表种子一致
