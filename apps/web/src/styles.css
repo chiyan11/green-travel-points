@@ -1266,15 +1266,24 @@ textarea.native-input {
 
 .segmented {
   display: inline-flex;
+  max-width: 100%;
   gap: 2px;
   padding: 3px;
+  overflow-x: auto;
   border: 1px solid var(--line);
   border-radius: var(--r-pill);
   background: var(--surface-2);
+  scrollbar-width: none;
+}
+
+.segmented::-webkit-scrollbar {
+  display: none;
 }
 
 .segmented__btn {
+  flex: 0 0 auto;
   padding: 0.375rem 0.875rem;
+  white-space: nowrap;
   border: none;
   border-radius: var(--r-pill);
   background: transparent;
