@@ -29,6 +29,11 @@ node_modules/
 # ---- 本机沙箱缓存重定向（见 scripts/dev-env.ps1，勿提交） ----
 .cache/
 
+# ---- Playwright 运行产物（截图证据在 docs/screenshots/，是有意入库的交付物） ----
+apps/web/test-results/
+apps/web/playwright-report/
+apps/web/blob-report/
+
 # ---- IDE ----
 .idea/
 .vscode/*

@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:e2e": "playwright test",
     "gen:api": "swagger-typescript-api generate -p ../../docs/api/openapi.yaml -o ./src/types --no-client --enum-style union --sort-types -n api.ts && node ./scripts/fix-generated.mjs"
   },
   "dependencies": {
@@ -19,6 +20,7 @@
     "react-router-dom": "^7.18.4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.1",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/jest-dom": "^8.0.0",
     "@testing-library/react": "^16.3.3",

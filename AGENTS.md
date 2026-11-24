@@ -113,12 +113,16 @@ green-travel-points/
 │       │   ├── types/api.ts      由 docs/api/openapi.yaml 生成的 wire 类型（npm run gen:api，勿手改）
 │       │   ├── types/domain.ts   页面视图模型（id 转 string、coverUrl、startedAt 等展示口径）
 │       │   └── styles.css        全站样式（单文件，无 CSS 框架）
-│       └── vite.config.ts        端口 5173 + /api 代理
+│       ├── e2e/                  Playwright 主链路用例（真后端，截图落 docs/screenshots/）
+│       ├── scripts/fix-generated.mjs  生成后处理：去掉 @ts-nocheck、加来源说明
+│       └── vite.config.ts        端口 5173 + /api 代理（VITE_API_TARGET 可改目标）
 ├── db/
 │   ├── migrations/               5 组 up/down 迁移（见 §6）
 │   └── seed/dev_demo.sql         演示数据：用户 1001、管理员 1002、3 个商品
 ├── deploy/                       docker-compose.yml、Dockerfile.api、Dockerfile.web、nginx.conf
 ├── docs/                         需求规格、分工计划、Sprint 0 记录、数据库记录、接口说明、前端接口清单、UML
+│   ├── api/openapi.yaml          机器可读契约（生成 types/api.ts 的唯一来源）
+│   └── screenshots/              E2E 跑出来的验收截图（改主链路后必须更新）
 ├── scripts/                      dev-env.ps1（缓存重定向）、verify.ps1（一键门禁）、uml-export.ps1、toc_pages.py、build_team_docx.py
 ├── .github/workflows/ci.yml      Go job + Web job
 └── README.md                     面向人的总览（本文是面向干活的细节补充）
@@ -281,6 +285,7 @@ pages/*.tsx  ──►  services/*.ts  ──►  lib/http.ts  ──►  fetch
 | 启动日志单测 | `apps/api/cmd/server/dbendpoint_test.go` | 1 个函数 / 9 例 | 表驱动：默认 DSN、局域网 / ZeroTier、localhost、IPv6 回环、unix socket、省略地址、非法 DSN |
 | 前端单测 | `apps/web/src/lib/*.test.ts` | 2 文件 19 例 | `http.test.ts` 用 `vi.stubGlobal('fetch')` 测解包与错误映射；`validators.test.ts` 测校验规则 |
 | 前端页面测试 | `apps/web/src/pages/*.test.tsx` | 5 文件 16 例 | jsdom + Testing Library + MSW 3 拦截 `fetch`；`src/test/render.tsx` 提供 QueryClient/路由壳，`src/test/http.ts` 造 `{code,message,data}` 壳（测试里也重放后端协议，不是随手 mock） |
+| E2E 主链路 | `apps/web/e2e/*.spec.ts` | 1 文件 2 例 | Playwright + Chromium，跑**真实前后端与共享库**，不 mock；每步落截图到 `docs/screenshots/` |
 
 ### 新增功能的底线
 
@@ -289,6 +294,8 @@ pages/*.tsx  ──►  services/*.ts  ──►  lib/http.ts  ──►  fetch
 - 新的前端校验或解包逻辑 → `vitest` 用例；纯展示改动不强制。
 - **新页面 / 页面新交互 → 至少 1 个 `src/pages/*.test.tsx` 用例**：用 MSW 声明端点，断言用户看到的结果（成功态与至少一个失败态），不要 mock service 函数。
 - MSW 的 `onUnhandledFrame: 'error'` 是硬开关：新增接口时忘了补 handler，测试会直接失败，照提示补上即可。
+- 改主链路（登录 / 上报 / 兑换 / 取消）后重跑 `npm run test:e2e` 并提交新的 `docs/screenshots/`：截图是验收证据，过期截图比没有更糟。
+- E2E 用真实后端，断言里不要写死共享库里的历史余额；用例自己注册新手机号造数据。
 - 不加「只为了覆盖率」的空测试；不为通过而放宽断言。
 
 ### 命令
@@ -298,7 +305,18 @@ cd apps/api; go test ./... -count=1              # 全量
 cd apps/api; go test ./internal/domain -run TestCarbon -v
 cd apps/web; npx vitest run                      # 全量
 cd apps/web; npx vitest run src/lib/http.test.ts # 单文件
+cd apps/web; npm run test:e2e                    # E2E（需要先起后端；见下）
 ```
+
+E2E 前置：后端在跑，且**把前端代理指到它**。默认代理 `127.0.0.1:8080`；后端不在 8080 时用环境变量改：
+
+```powershell
+cd apps/web
+$env:E2E_API_TARGET = 'http://127.0.0.1:18080'   # Playwright 启动 vite 时注入 VITE_API_TARGET
+npm run test:e2e
+```
+
+共享库跨 ZeroTier：写接口单次 10–20s、读接口 1–5s，所以 `playwright.config.ts` 的 `timeout` 是 180s、`expect.timeout` 是 30s，不要按常规项目压到 5–10s。
 
 ---
 
@@ -322,6 +340,8 @@ pwsh -File .\scripts\verify.ps1
 | 8 | `vite build` | 仅构建期才暴露的引用错误 |
 
 CI（`.github/workflows/ci.yml`）两个 job 与本地一致，差异：CI 用 `go test -race -coverprofile`、`npm ci`。
+
+E2E **不在门禁里**：它需要真实后端 + 共享库，CI 没有这些环境。提交涉及主链路的改动时手动跑 `npm run test:e2e`，并把截图一起提交。
 
 ---
 
@@ -348,7 +368,7 @@ CI（`.github/workflows/ci.yml`）两个 job 与本地一致，差异：CI 用 `
 | 密码哈希 | 加盐 SHA-256（`sha256$salt$digest`），注释已标"临时方案" | 换 bcrypt / argon2，并给出存量数据迁移方案 |
 | Token | 自签 HMAC-SHA256 紧凑串，**不是标准 JWT**（无 header 段） | 需要标准 JWT 时统一改签发与校验两端 |
 | sqlc | `apps/api/sqlc.yaml` 已配置但未启用，repo 全是手写 SQL | 启用即要重写 repo 层，别半途混用 |
-| 集成 / E2E | 均未建（计划 testcontainers + Playwright） | 先补「上报 → 得分 → 兑换 → 核销」主链路 |
+| 集成 / E2E | 集成测试未建（计划 testcontainers）；E2E 主链路已建（`apps/web/e2e`，真后端 + 共享库，截图在 `docs/screenshots/`），未进 CI | 集成测试按 testcontainers 补；E2E 若要进 CI，需先给 CI 一个可用的 MySQL 服务容器 |
 | 部署 | compose 只有 `mysql` + `api`；`web` 与 nginx 配置就绪但未编入；本机未实跑 docker | 补 web 服务与反向代理，留下实跑证据 |
 | 前端包体 | `vite build` 单包约 1.49 MB（gzip 489 kB），已触发 500 kB 警告 | 用路由级 `import()` 分包，图表库按需加载 |
 

@@ -15,7 +15,7 @@
 **当前进度：Sprint 0 工程骨架 + 实验一需求建模（全套 UML）已完成；后端 M1–M8 主要接口与前端用户端页面均已实现并通过一键校验。**
 
 已实现：认证 / 行程上报与碳核算 / 积分账本与查询 / 商品目录 / 兑换订单与状态机 / 运营后台（含积分对账）；
-待补齐：Outbox Worker（事件只落库、暂无消费者）、集成测试与 E2E、Docker 编排实跑；前端五个 service 均已联调真实接口。
+待补齐：Outbox Worker（事件只落库、暂无消费者）、集成测试、Docker 编排实跑；前端五个 service 均已联调真实接口，主链路 E2E 与验收截图已落地。
 
 进度与偏差详见 [Sprint 0 骨架说明](docs/Sprint0-骨架说明.md)，分工详见 [项目分工与迭代计划](docs/项目分工与迭代计划.md)，接口细节见 [P3 接口说明](docs/api/README.md)。
 
@@ -123,7 +123,7 @@ flowchart LR
 | 事件 | 事务性 Outbox 表 + 轮询 Worker | — | 不引入 Kafka / Redis，仍在关系库里保证"业务成功 ⇒ 事件必达"；**Worker 尚未实现**（见「系统架构」实现现状） |
 | 前端 | React + TypeScript 7 + Vite + TanStack Query | 19.3 / 7.0.2 / 8.3 / 5.104 | TS7 原生编译器（Go 实现），构建快；Query 统一服务端状态 |
 | 接口契约 | OpenAPI 3.1 + swagger-typescript-api（devDependency） | 13.15 | `docs/api/openapi.yaml` 是唯一契约，`npm run gen:api` 生成 `apps/web/src/types/api.ts`，门禁校验生成物与 yaml 一致 |
-| 测试 | Go `testing` / Vitest + Testing Library + MSW / Playwright / k6 | — | 单测与页面测试已落地；集成测试、E2E、性能压测待建 |
+| 测试 | Go `testing` / Vitest + Testing Library + MSW / Playwright / k6 | 1.65 | 单测、页面测试、E2E 主链路已落地；集成测试与性能压测待建 |
 | 数据库 | MySQL | 8.4+（本机 9.7） | `utf8mb4_0900_ai_ci`、`DATETIME(3)`、JSON 存事件负载 |
 | 部署 | Docker Compose + Nginx + GitHub Actions | — | 一条命令起全栈，CI 双 job 门禁 |
 
@@ -166,7 +166,8 @@ green-travel-points/
 │   │       ├── httpserver/           # 路由、中间件、统一响应壳、各业务 handler（24 个用例）
 │   │       └── repo/                 # 手写 SQL：连接池、商品、积分、订单、运营后台
 │   └── web/                          # React 用户端：9 个页面组件（含登录与占位页）+ 布局组件 + 碳减排趋势图
-│       └── src/{pages,components,services,lib,types,mock}/
+│       ├── src/{pages,components,services,lib,types}/ + types/api.ts（生成契约）
+│       └── e2e/                      # Playwright 主链路用例，截图落 docs/screenshots/
 ├── db/
 │   ├── migrations/                   # 5 组 up/down：参数与出行方式 / 发件箱 / 账本 / 用户行程碳记录 / 商城订单
 │   └── seed/dev_demo.sql             # 演示数据：用户 1001（1200 分）+ 3 个上架商品
@@ -334,10 +335,10 @@ pwsh -File .\scripts\verify.ps1
 | 单元测试（Go · cmd/server） | 启动日志的 DSN 目标判定：本机 / 局域网 / ZeroTier / socket / 非法 DSN | `go test ./cmd/server -v` | 1 个函数 / 9 个用例 |
 | 单元测试（前端） | Envelope 解包、错误映射、表单校验 | `npx vitest run` | 2 个文件 19 例（http 5 + validators 14） |
 | 页面测试（前端） | 登录失败态、行程上报与重复提交、商城空态/库存不足、订单取消 | `npx vitest run src/pages` | 5 个文件 16 例，jsdom + Testing Library + MSW |
+| E2E（前端） | 注册 → 上报两笔行程 → 积分到账 → 商城兑换 → 取消返还；登录失败提示 | `npm run test:e2e` | Playwright + 真后端 + 共享库，2 例全绿，11 张截图存 `docs/screenshots/` |
 | 类型检查 | 前端全量 | `npx tsc --noEmit` | 零错误 |
 | 契约一致性 | `docs/api/openapi.yaml` ↔ `apps/web/src/types/api.ts` | `npm run gen:api` 后 `git diff --exit-code` | 已接入 `verify.ps1` 与 CI |
 | 集成测试 | API + MySQL | 待建（testcontainers） | 未建：原计划 S2 已过，随 S4 补 |
-| E2E | 上报 → 得积分 → 兑换 → 核销 | 待建（Playwright） | 未建：原计划 S3 已过，随 S4 补 |
 | 性能 | 行程上报、兑换并发 | 待建（k6） | Sprint 4 起 |
 
 指导书要求的**基本路径法**（组件测试）与**等价类划分法**（功能测试）用例表，在 Sprint 3–4 补齐并写入测试报告。
@@ -446,6 +447,7 @@ icacls "D:\coding\green-travel-points" /grant "$env:USERNAME:(OI)(CI)F" /T /C
 | [AGENTS.md](AGENTS.md) | 代理 / 新人作业手册：分层与依赖方向、领域规则、迁移与测试要求、门禁与排错 |
 | [P3 接口说明](docs/api/README.md) | M5–M8 端点、字段口径、事务步骤、业务错误码、联调步骤 |
 | [OpenAPI 契约](docs/api/openapi.yaml) | 全部端点的机器可读契约（3.1），前端类型由它生成 |
+| [E2E 验收截图](docs/screenshots) | 主链路 11 张截图：登录 / 注册 / 首页 / 行程 / 积分 / 商城 / 商品详情 / 订单 / 取消 / 登录失败 |
 | [前端接口需求清单](docs/前端接口需求清单.md) | 页面 ↔ 端点对照、字段与错误码需求（P4 → P2/P3） |
 | [UML 源图与导出](docs/uml) | 12 个 `.puml`：用例图、2 张活动图、域模型、包图、部署图、2 张鲁棒图（市民 / 运营管理员各一张）、2 张序列图、2 张状态图；`out/` 下为 12 张 PNG |
 
