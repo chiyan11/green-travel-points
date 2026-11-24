@@ -130,7 +130,7 @@ Get-ChildItem db/migrations/*.up.sql | Sort-Object Name | ForEach-Object {
   Get-Content $_ -Raw | mysql --user=greentravel --host=127.0.0.1 --default-character-set=utf8mb4 green_travel_points
 }
 
-# 2) 导入演示数据（user_id = 1001，1200 积分，3 个商品）
+# 2) 导入演示数据（1001 演示用户 1200 积分 / 1002 运营管理员 / 3 个商品）
 $env:MYSQL_PWD="greentravel"
 cmd /c "mysql --user=greentravel --host=127.0.0.1 --default-character-set=utf8mb4 green_travel_points < db/seed/dev_demo.sql"
 
@@ -140,6 +140,20 @@ cd apps/api; go run ./cmd/server
 # 4) 冒烟
 curl http://127.0.0.1:8080/api/v1/products
 curl -H "X-User-Id: 1001" http://127.0.0.1:8080/api/v1/points/summary
+```
+
+种子账号可直接登录，不需要再靠 `X-User-Id` 回退（口令与 `apps/web/e2e` 的默认值一致）：
+
+| 账号 | 手机号 | 口令 | 角色 | 用途 |
+| --- | --- | --- | --- | --- |
+| 演示用户 | `13800000001` | `demo123456` | CITIZEN | 用户端：上报 / 兑换 / 取消 |
+| 运营管理员 | `13800000002` | `admin123456` | ADMIN | 运营后台 `/admin`：确认 → 发货 → 核销 |
+
+```powershell
+# 登录并拿 token（前端就是这么做的）
+curl -X POST -H "Content-Type: application/json" `
+  --data-binary '{"account":"13800000002","password":"admin123456"}' `
+  http://127.0.0.1:8080/api/v1/auth/login
 ```
 
 > ⚠️ Windows 下用 curl 传中文 JSON 时，命令行参数可能被转成 GBK 导致入库乱码；
