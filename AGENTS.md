@@ -256,6 +256,7 @@ pages/*.tsx  ──►  services/*.ts  ──►  lib/http.ts  ──►  fetch
 - **会话存 `localStorage` 的 `gtp_session`**（`lib/session.ts`）；不要另起 key。
 - **路由守卫**：`routes.tsx` 里 `/login` 公开，其余包 `RequireAuth` + `AppLayout`；新增页面挂到对应子路由下。
 - **样式**：全站单文件 `styles.css`，用现有类名（`btn` / `card` / `field-error` / `badge--ok` 等）；不引入 CSS 框架，不写内联大段样式。
+- **Astryx 底座**：依赖已在 `apps/web/package.json`（`@astryxdesign/core`、`theme-neutral` 0.7.17，`cli` 为 devDep）。`apps/web/src/main.tsx` 负责按层导入 4 份样式表（`theme-neutral/fonts.css` → `core/reset.css` → `core/astryx.css` → `themes/green-travel/greenTravelTheme.css`，最后才是自有 `styles.css`）并挂 `Theme` + `LinkProvider`（`components/AstryxLink.tsx` 把 href 接到 react-router）。**导入顺序不要改**。品牌主题源码在 `apps/web/src/themes/green-travel/greenTravelTheme.ts`，改完必须重跑 `npx astryx theme build src/themes/green-travel/greenTravelTheme.ts --out src/themes/green-travel/greenTravelTheme.css` 重建（CLI 需设 `LOCALAPPDATA`/`APPDATA` 到可写目录）。要用 Astryx 组件写页面时，先读 `apps/web/AGENTS.md`；页面是否迁移由任务明确授权，不要顺手改。
 - **类型**：`tsc --noEmit` 必须零错误；不用 `any` 绕过（确需时先说明）。
 
 ### 界面文案与信息密度
@@ -342,7 +343,7 @@ CI（`.github/workflows/ci.yml`）两个 job 与本地一致，差异：CI 用 `
 | sqlc | `apps/api/sqlc.yaml` 已配置但未启用，repo 全是手写 SQL | 启用即要重写 repo 层，别半途混用 |
 | 集成 / E2E | 均未建（计划 testcontainers + Playwright） | 先补「上报 → 得分 → 兑换 → 核销」主链路 |
 | 部署 | compose 只有 `mysql` + `api`；`web` 与 nginx 配置就绪但未编入；本机未实跑 docker | 补 web 服务与反向代理，留下实跑证据 |
-| 前端包体 | `vite build` 单包约 1.49 MB（gzip 489 kB），已触发 500 kB 警告 | 用路由级 `import()` 分包，图表库按需加载 |
+| 前端包体 | `vite build` 单包 1.63 MB（gzip 532 kB）+ CSS 352 kB（gzip 55 kB），已触发 500 kB 警告。其中 Astryx 底座贡献约 140 kB JS 与约 320 kB CSS（`@astryxdesign/core/astryx.css` 是全组件样式，无法按组件裁剪） | 用路由级 `import()` 分包，图表库按需加载；若长期不使用 Astryx 组件，可把 4 份样式表与 `Theme` 一并撤掉，包体即回到 1.49 MB / 489 kB |
 
 ---
 

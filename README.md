@@ -122,6 +122,7 @@ flowchart LR
 | 迁移 | golang-migrate 风格的 `db/migrations` | — | up / down 成对，可回滚 |
 | 事件 | 事务性 Outbox 表 + 轮询 Worker | — | 不引入 Kafka / Redis，仍在关系库里保证"业务成功 ⇒ 事件必达"；**Worker 尚未实现**（见「系统架构」实现现状） |
 | 前端 | React + TypeScript 7 + Vite + TanStack Query | 19.3 / 7.0.2 / 8.3 / 5.104 | TS7 原生编译器（Go 实现），构建快；Query 统一服务端状态 |
+| 设计系统 | [Astryx](https://astryx.design)（`@astryxdesign/core` + `theme-neutral`） | 0.7.17 | 已接入底座：`main.tsx` 按层导入 4 份样式表并挂 `Theme` + `LinkProvider`，品牌主题在 `apps/web/src/themes/green-travel/`；页面仍用自有 CSS，尚未迁移到 Astryx 组件 |
 | 测试 | Go `testing` / Vitest / Playwright / k6 | — | 前两层已落地；集成测试、E2E、性能压测待建 |
 | 数据库 | MySQL | 8.4+（本机 9.7） | `utf8mb4_0900_ai_ci`、`DATETIME(3)`、JSON 存事件负载 |
 | 部署 | Docker Compose + Nginx + GitHub Actions | — | 一条命令起全栈，CI 双 job 门禁 |
@@ -165,7 +166,8 @@ green-travel-points/
 │   │       ├── httpserver/           # 路由、中间件、统一响应壳、各业务 handler（24 个用例）
 │   │       └── repo/                 # 手写 SQL：连接池、商品、积分、订单、运营后台
 │   └── web/                          # React 用户端：9 个页面组件（含登录与占位页）+ 布局组件 + 碳减排趋势图
-│       └── src/{pages,components,services,lib,types,mock}/
+│       ├── AGENTS.md                 # 前端专项代理指南（Astryx 工作流与规则，由 astryx init 维护）
+│       └── src/{pages,components,services,lib,themes,types}/  # themes/ = Astryx 品牌主题（green-travel）
 ├── db/
 │   ├── migrations/                   # 5 组 up/down：参数与出行方式 / 发件箱 / 账本 / 用户行程碳记录 / 商城订单
 │   └── seed/dev_demo.sql             # 演示数据：用户 1001（1200 分）+ 3 个上架商品
