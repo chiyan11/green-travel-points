@@ -45,7 +45,9 @@ export function ProductDetailPage(): ReactNode {
     setPending(true)
     try {
       const order = await createOrder(product.id, receiver)
-      void queryClient.invalidateQueries({ queryKey: ['summary'] })
+      // 先等余额重新取回来再跳转：顶栏余额和兑换页读的是同一个 summary，
+      // 直接 void 掉会在跳转后才刷新，用户会先看到兑换前的余额。
+      await queryClient.invalidateQueries({ queryKey: ['summary'] })
       void queryClient.invalidateQueries({ queryKey: ['orders'] })
       navigate(`/orders?created=${order.id}`)
     } catch (err) {

@@ -24,7 +24,7 @@ export function AppLayout() {
   const session = getSession()
 
   const { data: summary } = useQuery({
-    queryKey: ['points', 'summary'],
+    queryKey: ['summary'],
     queryFn: getSummary,
     enabled: Boolean(session),
   })

@@ -25,7 +25,10 @@ export function OrdersPage(): ReactNode {
   const [filter, setFilter] = useState<OrderStatus | 'ALL'>('ALL')
   const [error, setError] = useState('')
 
-  const { data: orders = [] } = useQuery({ queryKey: ['orders'], queryFn: () => listOrders() })
+  const { data: orders = [], isPending: ordersPending } = useQuery({
+    queryKey: ['orders'],
+    queryFn: () => listOrders(),
+  })
   const visible = filter === 'ALL' ? orders : orders.filter((o) => o.status === filter)
 
   const onCancel = async (id: string) => {
@@ -69,10 +72,25 @@ export function OrdersPage(): ReactNode {
           <h2 className="card__title">
             {filter === 'ALL' ? '全部订单' : `${FILTERS.find((f) => f.value === filter)?.label ?? ''}订单`}
           </h2>
-          <span className="muted">共 {visible.length} 条</span>
+          <span className="muted">{ordersPending ? '加载中…' : `共 ${visible.length} 条`}</span>
         </div>
 
-        {visible.length === 0 ? (
+        {ordersPending ? (
+          <div className="order-list">
+            {[0, 1].map((i) => (
+              <div className="order-card" key={i}>
+                <div>
+                  <span className="skeleton skeleton--line" style={{ width: 60 }} />
+                  <span className="skeleton skeleton--line" style={{ width: 160, height: 18, marginTop: 8 }} />
+                </div>
+                <div>
+                  <span className="skeleton skeleton--line" style={{ width: 120 }} />
+                  <span className="skeleton skeleton--line" style={{ width: 180, marginTop: 8 }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : visible.length === 0 ? (
           <div className="empty">
             <span className="empty__art">
               <IconEmptyRoute size={44} />
