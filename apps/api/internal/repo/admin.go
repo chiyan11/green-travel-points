@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"strconv"
 	"strings"
 
 	"greentravelpoints/internal/app"
@@ -343,6 +345,173 @@ func (s *Store) ReconcilePoints(ctx context.Context) (app.ReconcileResult, error
 	}
 	out.OK = len(out.Mismatches) == 0
 	return out, nil
+}
+
+// ListConfig 读取全部系统参数（UC-14：运营可调，改完立即生效，无需发版）。
+func (s *Store) ListConfig(ctx context.Context) ([]app.ConfigItem, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT config_key, config_value, value_type, description FROM sys_config ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]app.ConfigItem, 0, 8)
+	for rows.Next() {
+		var it app.ConfigItem
+		if err := rows.Scan(&it.Key, &it.Value, &it.ValueType, &it.Description); err != nil {
+			return nil, err
+		}
+		items = append(items, it)
+	}
+	return items, rows.Err()
+}
+
+// UpdateConfig 批量修改系统参数：键必须已存在，值按 value_type 与语义约束校验。
+// 整批在一个事务里完成，任一项非法则全部回滚，避免"改一半"。
+// 返回更新后的全量参数，便于调用方直接刷新界面。
+func (s *Store) UpdateConfig(ctx context.Context, updates []app.ConfigUpdate) ([]app.ConfigItem, error) {
+	if len(updates) == 0 {
+		return nil, fmt.Errorf("%w: 至少需要一项参数", app.ErrInvalidInput)
+	}
+	seen := make(map[string]bool, len(updates))
+	normalized := make([]app.ConfigUpdate, 0, len(updates))
+	for _, up := range updates {
+		key := strings.TrimSpace(up.Key)
+		value := strings.TrimSpace(up.Value)
+		if key == "" || value == "" {
+			return nil, fmt.Errorf("%w: key / value 不能为空", app.ErrInvalidInput)
+		}
+		if seen[key] {
+			return nil, fmt.Errorf("%w: 参数键 %s 重复", app.ErrInvalidInput, key)
+		}
+		seen[key] = true
+		normalized = append(normalized, app.ConfigUpdate{Key: key, Value: value})
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	for _, up := range normalized {
+		var valueType string
+		err := tx.QueryRowContext(ctx,
+			`SELECT value_type FROM sys_config WHERE config_key = ? FOR UPDATE`, up.Key).Scan(&valueType)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("%w: 未知参数键 %s", app.ErrInvalidInput, up.Key)
+		}
+		if err != nil {
+			return nil, err
+		}
+		if err := app.ValidateConfigValue(up.Key, valueType, up.Value); err != nil {
+			return nil, fmt.Errorf("%w: %s=%s", app.ErrInvalidInput, up.Key, up.Value)
+		}
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE sys_config SET config_value = ? WHERE config_key = ?`, up.Value, up.Key); err != nil {
+			return nil, err
+		}
+	}
+	if err := checkDistanceRange(ctx, tx); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return s.ListConfig(ctx)
+}
+
+// checkDistanceRange 在事务内复核距离区间 min < max：
+// 区间反了会让所有行程上报被拒（domain.PointsRule.CheckRule 会返回配置错误）。
+func checkDistanceRange(ctx context.Context, tx *sql.Tx) error {
+	read := func(key string) (float64, error) {
+		var raw string
+		err := tx.QueryRowContext(ctx,
+			`SELECT config_value FROM sys_config WHERE config_key = ?`, key).Scan(&raw)
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, fmt.Errorf("%w: 缺少参数 %s", app.ErrInvalidInput, key)
+		}
+		if err != nil {
+			return 0, err
+		}
+		v, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+		if err != nil {
+			return 0, fmt.Errorf("%w: %s 不是合法小数", app.ErrInvalidInput, key)
+		}
+		return v, nil
+	}
+	minKm, err := read("trip_min_distance_km")
+	if err != nil {
+		return err
+	}
+	maxKm, err := read("trip_max_distance_km")
+	if err != nil {
+		return err
+	}
+	if minKm >= maxKm {
+		return fmt.Errorf("%w: trip_min_distance_km(%v) 必须小于 trip_max_distance_km(%v)",
+			app.ErrInvalidInput, minKm, maxKm)
+	}
+	return nil
+}
+
+// UpdateTravelMode 更新出行方式的名称 / 排放因子 / 启用状态（UC-14）。
+// 实际排放因子必须小于基准因子，否则该方式永远算不出碳减排量。
+func (s *Store) UpdateTravelMode(ctx context.Context, code string, in app.TravelModeUpdate) (app.TravelMode, error) {
+	code = strings.ToLower(strings.TrimSpace(code))
+	if code == "" {
+		return app.TravelMode{}, fmt.Errorf("%w: 出行方式代码不能为空", app.ErrInvalidInput)
+	}
+	if err := app.ValidateTravelModeUpdate(in); err != nil {
+		return app.TravelMode{}, err
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return app.TravelMode{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var cur app.TravelMode
+	var enabled int
+	err = tx.QueryRowContext(ctx,
+		`SELECT code, name, ef_base, ef_actual, enabled FROM travel_mode WHERE code = ? FOR UPDATE`, code,
+	).Scan(&cur.Code, &cur.Name, &cur.EFBase, &cur.EFActual, &enabled)
+	if errors.Is(err, sql.ErrNoRows) {
+		return app.TravelMode{}, app.ErrNotFound
+	}
+	if err != nil {
+		return app.TravelMode{}, err
+	}
+	cur.Enabled = enabled != 0
+
+	if in.Name != nil {
+		cur.Name = strings.TrimSpace(*in.Name)
+	}
+	if in.EFBase != nil {
+		cur.EFBase = *in.EFBase
+	}
+	if in.EFActual != nil {
+		cur.EFActual = *in.EFActual
+	}
+	if in.Enabled != nil {
+		cur.Enabled = *in.Enabled
+	}
+	if cur.EFActual >= cur.EFBase {
+		return app.TravelMode{}, fmt.Errorf("%w: efActual(%v) 必须小于 efBase(%v)",
+			app.ErrInvalidInput, cur.EFActual, cur.EFBase)
+	}
+
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE travel_mode SET name = ?, ef_base = ?, ef_actual = ?, enabled = ?
+		 WHERE code = ?`, cur.Name, cur.EFBase, cur.EFActual, cur.Enabled, cur.Code); err != nil {
+		return app.TravelMode{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return app.TravelMode{}, err
+	}
+	return cur, nil
 }
 
 // getProductAny 读取任意状态的商品（含 SKU 列表），供后台使用。
