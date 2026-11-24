@@ -17,8 +17,11 @@ const BIZ_LABEL: Record<PointBizRefType, string> = {
 /** 我的积分：一张主卡放余额与今日额度，两张副卡放累计减排与本月获得。 */
 export function PointsPage(): ReactNode {
   const { data: summary } = useQuery({ queryKey: ['summary'], queryFn: () => getSummary() })
-  const { data: txns = [] } = useQuery({ queryKey: ['txns'], queryFn: () => listTxns() })
-  const { data: trend = [] } = useQuery({
+  const { data: txns = [], isPending: txnsPending } = useQuery({
+    queryKey: ['txns'],
+    queryFn: () => listTxns(),
+  })
+  const { data: trend = [], isPending: trendPending } = useQuery({
     queryKey: ['carbon-trend-7d'],
     queryFn: () => getCarbonSeries(7),
   })
@@ -45,7 +48,7 @@ export function PointsPage(): ReactNode {
               <p className="stat__label">当前余额</p>
               <p className="stat__value">
                 {formatPoints(balance)}
-                <span className="stat__unit">分</span>
+                <span className="stat__unit"> 分</span>
               </p>
               <p className="stat__note">可兑换商城商品</p>
             </div>
@@ -81,16 +84,32 @@ export function PointsPage(): ReactNode {
           <h2 className="card__title">近 7 日碳减排</h2>
           <span className="muted">单位 gCO₂e</span>
         </div>
-        <CarbonTrendChart data={trend} />
+        {trendPending ? (
+          <span className="skeleton skeleton--block" style={{ width: '100%', height: 180 }} />
+        ) : (
+          <CarbonTrendChart data={trend} />
+        )}
       </section>
 
       <section className="card">
         <div className="card__head">
           <h2 className="card__title">积分流水</h2>
-          <span className="muted">共 {txns.length} 条</span>
+          <span className="muted">{txnsPending ? '加载中…' : `共 ${txns.length} 条`}</span>
         </div>
 
-        {txns.length === 0 ? (
+        {txnsPending ? (
+          <div className="list">
+            {[0, 1, 2].map((i) => (
+              <div className="list__row" key={i}>
+                <span className="skeleton" style={{ width: 36, height: 36, borderRadius: '50%' }} />
+                <div className="list__body">
+                  <span className="skeleton skeleton--line" style={{ width: '28%' }} />
+                  <span className="skeleton skeleton--line" style={{ width: '52%' }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : txns.length === 0 ? (
           <div className="empty">
             <span className="empty__art">
               <IconAward size={40} />

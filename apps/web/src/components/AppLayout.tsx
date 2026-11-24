@@ -24,7 +24,7 @@ export function AppLayout() {
   const session = getSession()
 
   const { data: summary } = useQuery({
-    queryKey: ['points', 'summary'],
+    queryKey: ['summary'],
     queryFn: getSummary,
     enabled: Boolean(session),
   })
@@ -61,8 +61,10 @@ export function AppLayout() {
         </nav>
 
         <div className="app__aside">
-          {summary && (
-            <span className="balance-chip">可用 {formatPoints(summary.balance)} 分</span>
+          {session && (
+            <span className="balance-chip">
+              可用 {summary ? formatPoints(summary.balance) : '—'} 分
+            </span>
           )}
           {session && <span className="muted app__user">{session.nickname}</span>}
           {session && (
