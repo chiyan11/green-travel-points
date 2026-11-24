@@ -3,6 +3,7 @@ package httpserver
 import (
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"greentravelpoints/internal/app"
@@ -44,4 +45,19 @@ func (h pointsHandler) transactions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	OK(w, res)
+}
+
+// dailyCarbon 返回最近 N 天逐日碳减排量：
+// GET /api/v1/points/daily-carbon?days=7
+func (h pointsHandler) dailyCarbon(w http.ResponseWriter, r *http.Request) {
+	days, _ := strconv.Atoi(r.URL.Query().Get("days"))
+	if days <= 0 {
+		days = 7
+	}
+	list, err := h.store.DailyCarbon(r.Context(), UserID(r.Context()), days)
+	if err != nil {
+		failFromStore(w, h.logger, err)
+		return
+	}
+	OK(w, list)
 }

@@ -138,3 +138,9 @@ type OrderQuery struct {
 
 // ErrLimitExceeded 表示超过单用户限兑数量。
 var ErrLimitExceeded = errors.New("app: 超出单用户限兑数量")
+
+// DailyCarbonPoint 是某一天的碳减排量（GET /api/v1/points/daily-carbon）。
+type DailyCarbonPoint struct {
+	Date  string  `json:"date"`
+	Grams float64 `json:"grams"`
+}

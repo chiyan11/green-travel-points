@@ -86,6 +86,7 @@ func NewRouter(opt Options) http.Handler {
 			if opt.Points != nil {
 				r.Get("/points/summary", points.summary)
 				r.Get("/points/transactions", points.transactions)
+				r.Get("/points/daily-carbon", points.dailyCarbon)
 			}
 			if opt.Orders != nil {
 				r.Post("/orders", orders.create)

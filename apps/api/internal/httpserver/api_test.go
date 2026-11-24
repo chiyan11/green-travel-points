@@ -39,6 +39,7 @@ func (f fakeCatalog) GetProduct(context.Context, int64) (app.Product, error) {
 type fakePoints struct {
 	summary app.PointsSummary
 	page    app.Page[app.PointTxn]
+	daily   []app.DailyCarbonPoint
 	err     error
 }
 
@@ -54,6 +55,13 @@ func (f fakePoints) ListTransactions(context.Context, app.TxnQuery) (app.Page[ap
 		return app.Page[app.PointTxn]{}, f.err
 	}
 	return f.page, nil
+}
+
+func (f fakePoints) DailyCarbon(context.Context, int64, int) ([]app.DailyCarbonPoint, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.daily, nil
 }
 
 type fakeOrders struct {
@@ -263,5 +271,25 @@ func TestInternalErrorHidden(t *testing.T) {
 	}
 	if strings.Contains(env.Message, "db down") {
 		t.Fatalf("内部错误细节不应外泄: %s", env.Message)
+	}
+}
+
+func TestPointsDailyCarbon(t *testing.T) {
+	p := fakePoints{daily: []app.DailyCarbonPoint{
+		{Date: "2026-11-23", Grams: 0},
+		{Date: "2026-11-24", Grams: 483.2},
+	}}
+	h := newTestRouter(nil, p, nil)
+	rec, env := doJSON(t, h, http.MethodGet, "/api/v1/points/daily-carbon?days=7", "",
+		map[string]string{"X-User-Id": "7"})
+	if rec.Code != http.StatusOK || env.Code != CodeOK {
+		t.Fatalf("期望 200/OK，实际 %d/%s", rec.Code, env.Code)
+	}
+	var list []app.DailyCarbonPoint
+	if err := json.Unmarshal(env.Data, &list); err != nil {
+		t.Fatalf("解析 data 失败: %v", err)
+	}
+	if len(list) != 2 || list[1].Grams != 483.2 {
+		t.Fatalf("daily-carbon 返回不符: %+v", list)
 	}
 }
