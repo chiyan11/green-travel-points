@@ -28,7 +28,7 @@ const ENTRIES = [
 
 /** 首页：左边一句主张，右边一块实时数据，下面是流程与入口。 */
 export function HomePage(): ReactNode {
-  const { data: summary } = useQuery({ queryKey: ['points', 'summary'], queryFn: getSummary })
+  const { data: summary } = useQuery({ queryKey: ['summary'], queryFn: getSummary })
   const { data: trips } = useQuery({ queryKey: ['trips'], queryFn: listTrips })
 
   const savedGrams = summary?.totalCarbonSavedGrams ?? 0
@@ -67,7 +67,7 @@ export function HomePage(): ReactNode {
             <p className="hero__stat-label">可用积分</p>
             <p className="hero__stat-value hero__stat-value--amber">
               {summary ? formatPoints(summary.balance) : '—'}
-              <span className="hero__stat-unit">分</span>
+              <span className="hero__stat-unit"> 分</span>
             </p>
             <p className="hero__stat-note">本月已获得 {formatPoints(summary?.earnedThisMonth ?? 0)} 分</p>
           </div>

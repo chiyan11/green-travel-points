@@ -85,7 +85,29 @@ npm run gen:api     # 读 ../../docs/api/openapi.yaml，生成 src/types/api.ts�
 - 恒等式：`Σ(point_account.balance) − Σ(point_batch.remaining WHERE status='ACTIVE') = 0`
   （行程发分侧由 `repo.GrantPointsWithBatch` 写批次，P2 的 `/trips` 需接这一行）。
 
-取消订单（BR-12）：补 `point_txn(REFUND)`、退余额、回补库存、生成退款批次（重新计有效期）、订单置 `CANCELLED`、写 `event_outbox(OrderCancelled)`。
+取消订单（BR-12）：补 `point_txn(REFUND)`、退余额、回补库存、把 `point_batch_txn` 里消耗过的量原路回填原批次、订单置 `CANCELLED`、写 `event_outbox(OrderCancelled)`。
+
+### 3.1 订单状态语义（前端文案口径，别写"待支付"）
+
+状态机 `PENDING → PAID → SHIPPED → COMPLETED`，任意非终态可 `CANCELLED`（BR-10，见 `internal/domain/order.go`）：
+
+| status | 含义 | 积分 | 谁能推进 |
+| --- | --- | --- | --- |
+| `PENDING` | **待商户确认**（下单即已扣分、已占库存） | 已扣 | 运营 `POST /admin/orders/{id}/confirm` |
+| `PAID` | 已确认、待发货 | 已扣 | 运营 `POST /admin/orders/{id}/ship` |
+| `SHIPPED` | 已发货、待核销 | 已扣 | 运营 `POST /admin/orders/{id}/complete` |
+| `COMPLETED` | 已核销完成 | 已扣 | 终态 |
+| `CANCELLED` | 已取消（用户或运营） | 已退还 | 终态 |
+
+要点：积分兑换**没有支付环节**——下单事务里已经扣分 + 占库存，所以 `PENDING` 的正确文案是
+「待商户确认 / 待发货」，不是「待支付」；用户端只有「取消」（且仅 `PENDING` 可取消），
+状态推进全部在运营侧。演示时用运营身份（种子 `1002` 是 ADMIN）推进：
+
+```powershell
+curl -X POST -H "X-User-Id: 1002" http://127.0.0.1:8080/api/v1/admin/orders/1/confirm
+curl -X POST -H "X-User-Id: 1002" http://127.0.0.1:8080/api/v1/admin/orders/1/ship
+curl -X POST -H "X-User-Id: 1002" http://127.0.0.1:8080/api/v1/admin/orders/1/complete
+```
 
 ## 4. 业务错误码
 
@@ -108,7 +130,7 @@ Get-ChildItem db/migrations/*.up.sql | Sort-Object Name | ForEach-Object {
   Get-Content $_ -Raw | mysql --user=greentravel --host=127.0.0.1 --default-character-set=utf8mb4 green_travel_points
 }
 
-# 2) 导入演示数据（user_id = 1001，1200 积分，3 个商品）
+# 2) 导入演示数据（1001 演示用户 1200 积分 / 1002 运营管理员 / 3 个商品）
 $env:MYSQL_PWD="greentravel"
 cmd /c "mysql --user=greentravel --host=127.0.0.1 --default-character-set=utf8mb4 green_travel_points < db/seed/dev_demo.sql"
 
@@ -118,6 +140,20 @@ cd apps/api; go run ./cmd/server
 # 4) 冒烟
 curl http://127.0.0.1:8080/api/v1/products
 curl -H "X-User-Id: 1001" http://127.0.0.1:8080/api/v1/points/summary
+```
+
+种子账号可直接登录，不需要再靠 `X-User-Id` 回退（口令与 `apps/web/e2e` 的默认值一致）：
+
+| 账号 | 手机号 | 口令 | 角色 | 用途 |
+| --- | --- | --- | --- | --- |
+| 演示用户 | `13800000001` | `demo123456` | CITIZEN | 用户端：上报 / 兑换 / 取消 |
+| 运营管理员 | `13800000002` | `admin123456` | ADMIN | 运营后台 `/admin`：确认 → 发货 → 核销 |
+
+```powershell
+# 登录并拿 token（前端就是这么做的）
+curl -X POST -H "Content-Type: application/json" `
+  --data-binary '{"account":"13800000002","password":"admin123456"}' `
+  http://127.0.0.1:8080/api/v1/auth/login
 ```
 
 > ⚠️ Windows 下用 curl 传中文 JSON 时，命令行参数可能被转成 GBK 导致入库乱码；

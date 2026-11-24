@@ -5,7 +5,7 @@ import { IconGift, IconPackage, IconTicket } from '@/components/icons'
 import { listProducts } from '@/services/products'
 import { getSummary } from '@/services/points'
 import { formatPoints } from '@/lib/format'
-import { productCoverIcon } from '@/lib/productCover'
+import { productCoverKind } from '@/lib/productCover'
 import type { Product } from '@/types/domain'
 
 /** 按每天能攒的积分粗估「要攒几天」，让价格有可负担性的参照。 */
@@ -13,13 +13,13 @@ const POINTS_PER_DAY_HINT = 75
 
 function coverIcon(category: string | undefined, coverUrl: string | undefined): ReactNode {
   if (coverUrl) return <img src={coverUrl} alt="" />
-  switch (category ? productCoverIcon(category) : '') {
-    case '🚇':
-      return <IconTicket size={56} />
-    case '📓':
-      return <IconPackage size={56} />
+  switch (productCoverKind(category)) {
+    case 'ticket':
+      return <IconTicket size={64} />
+    case 'package':
+      return <IconPackage size={64} />
     default:
-      return <IconGift size={56} />
+      return <IconGift size={64} />
   }
 }
 

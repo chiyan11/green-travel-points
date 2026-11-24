@@ -560,6 +560,75 @@ paths:
                 $ref: '#/components/schemas/ReconcileResponse'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /api/v1/admin/config:
+    get:
+      tags: [admin]
+      summary: 系统参数列表（UC-14）
+      description: 返回 `sys_config` 全量参数，值一律为字符串，按 `valueType` 解析。
+      responses:
+        '200':
+          description: 参数列表
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigListResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    put:
+      tags: [admin]
+      summary: 批量修改系统参数（UC-14）
+      description: |
+        整批在一个事务里写入，任一项非法则全部回滚；成功后返回更新后的全量参数。
+        键必须已存在于 `sys_config`，值按 `valueType` 校验。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfigUpdateInput'
+      responses:
+        '200':
+          description: 更新后的全量参数
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigListResponse'
+        '400':
+          $ref: '#/components/responses/InvalidArgument'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/admin/travel-modes/{code}:
+    put:
+      tags: [admin]
+      summary: 更新出行方式（UC-14）
+      description: |
+        可改 name / efBase / efActual / enabled，缺省字段不动；成功后返回该方式最新值。
+        `efActual` 必须小于 `efBase`；`enabled=false` 后该方式上报行程会被拒绝。
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/TravelMode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TravelModeUpdateInput'
+      responses:
+        '200':
+          description: 更新后的出行方式
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TravelModeResponse'
+        '400':
+          $ref: '#/components/responses/InvalidArgument'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
 components:
   securitySchemes:
     bearerAuth:
@@ -1386,3 +1455,103 @@ components:
           type: string
         data:
           $ref: '#/components/schemas/ReconcileResult'
+    ConfigItem:
+      type: object
+      description: 一条系统参数（`sys_config`）；值一律为字符串，按 `valueType` 解析。
+      required: [key, value, valueType, description]
+      properties:
+        key:
+          type: string
+          example: daily_points_cap
+        value:
+          type: string
+          example: '500'
+        valueType:
+          type: string
+          enum: [string, int, decimal, bool]
+        description:
+          type: string
+    ConfigUpdateItem:
+      type: object
+      required: [key, value]
+      properties:
+        key:
+          type: string
+          description: 必须是 `sys_config` 里已有的参数键
+        value:
+          type: string
+          description: 字符串形态的新值，按该参数的 `valueType` 校验
+    ConfigUpdateInput:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          description: |
+            待修改参数。语义约束：`carbon_per_point > 0`、`points_expire_days > 0`、
+            `trip_min_distance_km > 0`、`trip_max_distance_km > 0`、`daily_points_cap >= 0`（0 = 不限制）；
+            写入后复核 `trip_min_distance_km < trip_max_distance_km`。未知键或非法值返回 400。
+          items:
+            $ref: '#/components/schemas/ConfigUpdateItem'
+    ConfigListResponse:
+      type: object
+      required: [code, message, data]
+      properties:
+        code:
+          type: string
+          enum: [OK]
+        message:
+          type: string
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConfigItem'
+    AdminTravelMode:
+      type: object
+      description: 出行方式与排放因子（`travel_mode`）
+      required: [code, name, efBase, efActual, enabled]
+      properties:
+        code:
+          $ref: '#/components/schemas/TravelMode'
+        name:
+          type: string
+          example: 公交
+        efBase:
+          type: number
+          format: double
+          description: 基准排放因子 gCO2e/km
+          example: 192
+        efActual:
+          type: number
+          format: double
+          description: 该方式实际排放因子 gCO2e/km
+          example: 68
+        enabled:
+          type: boolean
+          description: 停用后该方式上报行程返回 400
+    TravelModeUpdateInput:
+      type: object
+      description: 至少提交一个字段；缺省字段不修改
+      properties:
+        name:
+          type: string
+        efBase:
+          type: number
+          format: double
+        efActual:
+          type: number
+          format: double
+        enabled:
+          type: boolean
+    TravelModeResponse:
+      type: object
+      required: [code, message, data]
+      properties:
+        code:
+          type: string
+          enum: [OK]
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/AdminTravelMode'

@@ -38,6 +38,8 @@ test('主链路：注册 → 上报行程 → 积分到账 → 商城兑换 → 
   // 3. 首页
   await expect(page.getByRole('heading', { name: /把每一次低碳出行/ })).toBeVisible()
   await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible()
+  // 首页右上的碳减排与积分卡依赖 summary 查询，等余额真的取回来再截图，否则会拍到占位符「—」
+  await expect(page.locator('.balance-chip')).toHaveText(/可用\s*\d/, { timeout: 120_000 })
   await shot(page, '03-home.png')
 
   // 4. 上报两笔地铁 50km 行程（每笔 75 分，共 150 分，够换 100 分商品）
@@ -65,6 +67,8 @@ test('主链路：注册 → 上报行程 → 积分到账 → 商城兑换 → 
   await expect(page.getByRole('heading', { name: '我的积分' })).toBeVisible()
   const balanceCard = page.locator('.stat-card', { hasText: '当前余额' })
   await expect(balanceCard).toContainText('150 分', { timeout: 120_000 })
+  // 流水是异步查询，等两笔流水都渲染出来再截图，否则会拍到加载态或空态
+  await expect(page.locator('.list__row')).toHaveCount(2, { timeout: 120_000 })
   await shot(page, '05-points.png')
 
   // 6. 商城列表
@@ -98,6 +102,8 @@ test('主链路：注册 → 上报行程 → 积分到账 → 商城兑换 → 
   await expect(page.getByRole('heading', { name: '兑换记录' })).toBeVisible()
   await expect(page.getByText('共 1 条')).toBeVisible()
   await expect(page.getByRole('button', { name: '取消并返还' })).toBeVisible()
+  // 顶栏余额走的是同一个 summary 查询，等它刷成 50 分再截图，否则会拍到兑换前的 150
+  await expect(page.locator('.balance-chip')).toHaveText(/可用\s*50\s*分/, { timeout: 120_000 })
   await shot(page, '08-orders-created.png')
 
   // 9. 取消订单并返还积分（等取消接口真的回来，再断言状态，否则会和退款竞态）
@@ -110,6 +116,7 @@ test('主链路：注册 → 上报行程 → 积分到账 → 商城兑换 → 
   ])
   expect(cancelResponse.ok(), `取消接口返回 ${cancelResponse.status()}`).toBeTruthy()
   await expect(page.locator('.order-card').first()).toContainText('已取消')
+  await expect(page.locator('.balance-chip')).toHaveText(/可用\s*150\s*分/, { timeout: 120_000 })
   await shot(page, '09-orders-cancelled.png')
 
   // 10. 积分回到 150

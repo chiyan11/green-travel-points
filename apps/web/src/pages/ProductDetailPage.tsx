@@ -6,7 +6,7 @@ import { getProduct } from '@/services/products'
 import { createOrder } from '@/services/orders'
 import { getSummary } from '@/services/points'
 import { formatPoints } from '@/lib/format'
-import { productCoverIcon } from '@/lib/productCover'
+import { productCoverKind } from '@/lib/productCover'
 
 /** 商品详情：价格与「兑换后还剩多少分」是决策信息，放在同一屏内。 */
 export function ProductDetailPage(): ReactNode {
@@ -45,7 +45,9 @@ export function ProductDetailPage(): ReactNode {
     setPending(true)
     try {
       const order = await createOrder(product.id, receiver)
-      void queryClient.invalidateQueries({ queryKey: ['summary'] })
+      // 先等余额重新取回来再跳转：顶栏余额和兑换页读的是同一个 summary，
+      // 直接 void 掉会在跳转后才刷新，用户会先看到兑换前的余额。
+      await queryClient.invalidateQueries({ queryKey: ['summary'] })
       void queryClient.invalidateQueries({ queryKey: ['orders'] })
       navigate(`/orders?created=${order.id}`)
     } catch (err) {
@@ -67,9 +69,9 @@ export function ProductDetailPage(): ReactNode {
 
   const cover = product.coverUrl ? (
     <img src={product.coverUrl} alt="" />
-  ) : productCoverIcon(product.category ?? '') === '🚇' ? (
+  ) : productCoverKind(product.category) === 'ticket' ? (
     <IconTicket size={96} />
-  ) : productCoverIcon(product.category ?? '') === '📓' ? (
+  ) : productCoverKind(product.category) === 'package' ? (
     <IconPackage size={96} />
   ) : (
     <IconGift size={96} />
