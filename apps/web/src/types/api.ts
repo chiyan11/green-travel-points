@@ -30,6 +30,28 @@ export interface AdminSKUInput {
   stock: number;
 }
 
+/** 出行方式与排放因子（`travel_mode`） */
+export interface AdminTravelMode {
+  /** 出行方式代码，与 travel_mode 表种子一致 */
+  code: TravelMode;
+  /**
+   * 该方式实际排放因子 gCO2e/km
+   * @format double
+   * @example 68
+   */
+  efActual: number;
+  /**
+   * 基准排放因子 gCO2e/km
+   * @format double
+   * @example 192
+   */
+  efBase: number;
+  /** 停用后该方式上报行程返回 400 */
+  enabled: boolean;
+  /** @example "公交" */
+  name: string;
+}
+
 export interface AuthSession {
   nickname: string;
   /** Bearer token，2 小时有效 */
@@ -49,6 +71,39 @@ export interface AuthSessionResponse {
 
 export interface CancelOrderInput {
   reason?: string;
+}
+
+/** 一条系统参数（`sys_config`）；值一律为字符串，按 `valueType` 解析。 */
+export interface ConfigItem {
+  description: string;
+  /** @example "daily_points_cap" */
+  key: string;
+  /** @example "500" */
+  value: string;
+  valueType: "string" | "int" | "decimal" | "bool";
+}
+
+export interface ConfigListResponse {
+  code: "OK";
+  data: ConfigItem[];
+  message: string;
+}
+
+export interface ConfigUpdateInput {
+  /**
+   * 待修改参数。语义约束：`carbon_per_point > 0`、`points_expire_days > 0`、
+   * `trip_min_distance_km > 0`、`trip_max_distance_km > 0`、`daily_points_cap >= 0`（0 = 不限制）；
+   * 写入后复核 `trip_min_distance_km < trip_max_distance_km`。未知键或非法值返回 400。
+   * @minItems 1
+   */
+  items: ConfigUpdateItem[];
+}
+
+export interface ConfigUpdateItem {
+  /** 必须是 `sys_config` 里已有的参数键 */
+  key: string;
+  /** 字符串形态的新值，按该参数的 `valueType` 校验 */
+  value: string;
 }
 
 export interface CreateOrderInput {
@@ -426,6 +481,23 @@ export interface SKUStockInput {
 
 /** 出行方式代码，与 travel_mode 表种子一致 */
 export type TravelMode = "walk" | "bike" | "subway" | "bus" | "shared_bike";
+
+export interface TravelModeResponse {
+  code: "OK";
+  /** 出行方式与排放因子（`travel_mode`） */
+  data: AdminTravelMode;
+  message: string;
+}
+
+/** 至少提交一个字段；缺省字段不修改 */
+export interface TravelModeUpdateInput {
+  /** @format double */
+  efActual?: number;
+  /** @format double */
+  efBase?: number;
+  enabled?: boolean;
+  name?: string;
+}
 
 export interface Trip {
   cappedByDaily: boolean;
