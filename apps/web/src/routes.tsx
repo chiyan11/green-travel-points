@@ -12,7 +12,8 @@ import { ProfilePage } from '@/pages/ProfilePage'
 
 /**
  * 路由：/login 公开；其余页面经 RequireAuth 守卫后进入布局。
- * 页面为 MOCK 原型，接口联调后仅替换 src/services/* 的实现。
+ * 8 个页面均已接入真实后端（请求只在 src/services/* 里发）；类型契约仍是手写过渡版，
+ * 见 src/types/domain.ts 头注释。
  */
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },

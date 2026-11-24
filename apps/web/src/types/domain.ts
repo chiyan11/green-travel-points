@@ -1,7 +1,10 @@
 /**
- * 前端领域类型与常量（手写契约版）。
+ * 前端领域类型与常量（手写过渡版）。
  *
- * 后端 OpenAPI（docs/api/openapi.yaml）就绪后，改用 openapi-typescript 生成，本文件仅作过渡期占位。
+ * 现状：后端没有 `docs/api/openapi.yaml`，也没有 openapi-typescript 生成链路，
+ * 所以这里暂时手写；字段口径以 `docs/api/README.md`、`apps/api/internal/app` 的 DTO
+ * 与 `db/migrations` 为准，改动任一侧都要同步本文件。
+ * 待后端产出 OpenAPI 后，改为 `openapi-typescript` 生成 `types/api.ts`，本文件收敛为薄封装。
  * 字段口径已与 db/migrations/000003（积分账本）/000004（用户/行程/碳记录）/000005（商城/订单）逐字段对齐：
  * 枚举值、列名 snake_case→camelCase 映射以后端表结构为准。
  * 常量口径与 apps/api/internal/domain、db/migrations/000001 种子保持一致。
