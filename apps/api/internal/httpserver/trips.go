@@ -16,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"greentravelpoints/internal/domain"
 	"greentravelpoints/internal/eventbus"
+	"greentravelpoints/internal/repo"
 )
 
 type TripHandler struct {
@@ -70,7 +71,7 @@ func (h *TripHandler) Create(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var emission domain.Emission
 	var rule domain.PointsRule
-	var carbonPerPoint, dailyCap int64
+	var carbonPerPoint, dailyCap, pointsExpireDays int64
 	var minDistance, maxDistance float64
 	err = h.db.QueryRowContext(ctx,
 		"SELECT ef_base, ef_actual FROM travel_mode WHERE code = ? AND enabled = TRUE",
@@ -79,7 +80,7 @@ func (h *TripHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Fail(w, http.StatusBadRequest, CodeInvalidArgument, "未知或已停用的出行方式")
 		return
 	}
-	if err = h.loadRule(ctx, &carbonPerPoint, &dailyCap, &minDistance, &maxDistance); err != nil {
+	if err = h.loadRule(ctx, &carbonPerPoint, &dailyCap, &pointsExpireDays, &minDistance, &maxDistance); err != nil {
 		FailInternal(w, h.logger, err)
 		return
 	}
@@ -170,11 +171,23 @@ func (h *TripHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	if grant.GrantedPoints > 0 {
 		balance += grant.GrantedPoints
-		if _, err = tx.ExecContext(ctx, `
+		res, err := tx.ExecContext(ctx, `
 			INSERT INTO point_txn
 				(account_id, txn_type, amount, balance_after, biz_ref_type, biz_ref_id)
 			VALUES (?, 'TRAVEL', ?, ?, 'trip_record', ?)`,
 			accountID, grant.GrantedPoints, balance, tripID); err != nil {
+			_ = tx.Rollback()
+			FailInternal(w, h.logger, err)
+			return
+		}
+		txnID, err := res.LastInsertId()
+		if err != nil {
+			_ = tx.Rollback()
+			FailInternal(w, h.logger, err)
+			return
+		}
+		if err := repo.GrantPointsWithBatch(ctx, tx, accountID, txnID, grant.GrantedPoints,
+			time.Now().AddDate(0, 0, int(pointsExpireDays))); err != nil {
 			_ = tx.Rollback()
 			FailInternal(w, h.logger, err)
 			return
@@ -253,11 +266,11 @@ func (h *TripHandler) List(w http.ResponseWriter, r *http.Request) {
 	OK(w, map[string]any{"items": items, "page": 1, "pageSize": len(items), "total": len(items)})
 }
 
-func (h *TripHandler) loadRule(ctx context.Context, carbonPerPoint, dailyCap *int64, minDistance, maxDistance *float64) error {
+func (h *TripHandler) loadRule(ctx context.Context, carbonPerPoint, dailyCap, pointsExpireDays *int64, minDistance, maxDistance *float64) error {
 	values := map[string]string{}
 	rows, err := h.db.QueryContext(ctx,
-		"SELECT config_key, config_value FROM sys_config WHERE config_key IN (?, ?, ?, ?)",
-		"carbon_per_point", "daily_points_cap", "trip_min_distance_km", "trip_max_distance_km")
+		"SELECT config_key, config_value FROM sys_config WHERE config_key IN (?, ?, ?, ?, ?)",
+		"carbon_per_point", "daily_points_cap", "points_expire_days", "trip_min_distance_km", "trip_max_distance_km")
 	if err != nil {
 		return err
 	}
@@ -278,6 +291,9 @@ func (h *TripHandler) loadRule(ctx context.Context, carbonPerPoint, dailyCap *in
 	}
 	if *dailyCap, parseErr = strconv.ParseInt(values["daily_points_cap"], 10, 64); parseErr != nil {
 		return parseErr
+	}
+	if *pointsExpireDays, parseErr = strconv.ParseInt(values["points_expire_days"], 10, 64); parseErr != nil || *pointsExpireDays <= 0 {
+		return fmt.Errorf("points_expire_days must be a positive integer")
 	}
 	if *minDistance, parseErr = strconv.ParseFloat(values["trip_min_distance_km"], 64); parseErr != nil {
 		return parseErr

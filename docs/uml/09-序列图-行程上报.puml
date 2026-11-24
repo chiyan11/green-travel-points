@@ -76,23 +76,28 @@ end
 deactivate H
 deactivate API
 
-note over DB
-  **事务边界**：trip_record + carbon_record + point_txn
-  + point_account + event_outbox 同一事务，要么全成，要么全不成。
-  **当前缺口**：发放积分时只写 point_txn 与 account，
-  **没有写 point_batch**；批次 FIFO/过期因此没有数据来源（见设计说明书 §4 DEV-03）。
+== 事务提交之后（同一进程内异步，不阻塞响应） ==
+
+W -> DB : SELECT ... FOR UPDATE SKIP LOCKED\nWHERE dispatched_at IS NULL\nAND dead_letter_at IS NULL\nAND available_at <= NOW() LIMIT 50
+DB --> W : events
+W -> W : 按 event_id 幂等消费\n（统计 / 徽章 / 通知）
+W -> DB : 成功：UPDATE dispatched_at\n失败：attempts+1 + 指数退避；超限写 dead_letter_at
+
+note over UC, DB
+  **事务边界**：行程、碳记录、积分账户与流水、积分批次、outbox 的写入在同一事务内，
+  要么全成，要么全不成（BR-07 账本等价的实现基础）。
 end note
 
 note over DB
-  **Outbox 现状：只写不消费**
+  **Outbox 现状**
   event_outbox 实际列为：
   attempts / available_at / dispatched_at / dead_letter_at / last_error，
   **没有 status 列**。
-  规划中的 Worker 轮询条件（尚未实现）：
+  Worker 轮询条件：
   `dispatched_at IS NULL AND available_at <= NOW()
    AND dead_letter_at IS NULL`；
   成功后置 dispatched_at，失败 attempts+1，超限置 dead_letter_at。
-  当前没有 Worker 进程，序列到此为止。
+  Worker 已实现轮询、重试与死信；业务处理器需由对应模块接入。
 end note
 
 @enduml

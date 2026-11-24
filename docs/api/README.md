@@ -83,8 +83,8 @@ npm run gen:api     # 读 ../../docs/api/openapi.yaml，生成 src/types/api.ts�
 - 扣减严格按 `expires_at, id` 升序（真 FIFO），每笔消耗写入 `point_batch_txn`（`amount` 为负）；
 - 取消订单时按 `point_batch_txn` 原路回填到**原批次**（`expires_at` 不变，`amount` 为正）；
   找不到消费明细（历史数据）才按 `points_expire_days` 新建批次；
-- 恒等式：`Σ(point_account.balance) − Σ(point_batch.remaining WHERE status='ACTIVE') = 0`
-  （行程发分侧由 `repo.GrantPointsWithBatch` 写批次，P2 的 `/trips` 需接这一行）。
+- 恒等式：`Σ(point_account.balance) − Σ(point_batch.remaining WHERE status='ACTIVE') = 0`；
+  行程发分在同一事务中写入 `point_txn(TRAVEL)` 与 `point_batch`，有效期取 `points_expire_days`。
 
 取消订单（BR-12）：补 `point_txn(REFUND)`、退余额、回补库存、把 `point_batch_txn` 里消耗过的量原路回填原批次、订单置 `CANCELLED`、写 `event_outbox(OrderCancelled)`。
 
