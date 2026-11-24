@@ -97,7 +97,7 @@ test('主链路：注册 → 上报行程 → 积分到账 → 商城兑换 → 
   ])
   expect(redeemResponse.status(), `兑换接口返回 ${redeemResponse.status()}`).toBe(201)
 
-  // 8. 兑换成功落到兑换记录，新订单是「待支付」
+  // 8. 兑换成功落到兑换记录，新订单是「待商户确认」（下单已扣分并占库存，没有支付环节）
   await expect(page).toHaveURL(/\/orders\?created=/)
   await expect(page.getByRole('heading', { name: '兑换记录' })).toBeVisible()
   await expect(page.getByText('共 1 条')).toBeVisible()
@@ -105,6 +105,16 @@ test('主链路：注册 → 上报行程 → 积分到账 → 商城兑换 → 
   // 顶栏余额走的是同一个 summary 查询，等它刷成 50 分再截图，否则会拍到兑换前的 150
   await expect(page.locator('.balance-chip')).toHaveText(/可用\s*50\s*分/, { timeout: 120_000 })
   await shot(page, '08-orders-created.png')
+
+  // 8.1 库存必须跟着减少：下单事务里已经占库存，回商城看到的数要和接口一致（防前端缓存）
+  const stockRes = await page.request.get('/api/v1/products/1001')
+  const stockJson = (await stockRes.json()) as { data: { stock: number } }
+  const stocked = stockJson.data.stock
+  await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '积分商城' }).click()
+  const clothCard = page.locator('.product-card', { hasText: '环保帆布袋' })
+  await expect(clothCard).toContainText(`库存 ${stocked}`, { timeout: 120_000 })
+  await page.goBack()
+  await expect(page.getByRole('heading', { name: '兑换记录' })).toBeVisible()
 
   // 9. 取消订单并返还积分（等取消接口真的回来，再断言状态，否则会和退款竞态）
   const [cancelResponse] = await Promise.all([

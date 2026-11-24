@@ -34,7 +34,7 @@ function card(): HTMLElement {
 }
 
 describe('OrdersPage', () => {
-  it('取消待支付订单后列表刷新为已取消', async () => {
+  it('取消待商户确认的订单后列表刷新为已取消', async () => {
     let status: OrderStatus = 'PENDING'
     let cancelCalls = 0
     server.use(
@@ -49,7 +49,7 @@ describe('OrdersPage', () => {
     const user = userEvent.setup()
 
     expect(await screen.findByRole('article')).toBeInTheDocument()
-    expect(within(card()).getByText('待支付')).toBeInTheDocument()
+    expect(within(card()).getByText('待商户确认')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: '取消并返还' }))
 
@@ -72,7 +72,7 @@ describe('OrdersPage', () => {
     await user.click(await screen.findByRole('button', { name: '取消并返还' }))
 
     expect(await screen.findByText('订单已发货，不能取消')).toBeInTheDocument()
-    expect(within(card()).getByText('待支付')).toBeInTheDocument()
+    expect(within(card()).getByText('待商户确认')).toBeInTheDocument()
   })
 
   it('筛选已发货时显示对应空态', async () => {

@@ -1,15 +1,18 @@
 import type { OrderStatus, PointTxnType } from '@/types/domain'
 
 /**
- * 订单状态机元数据。口径依据 docs/项目分工与迭代计划.md §2.3：
- * PENDING → PAID → SHIPPED → COMPLETED，任意非终态可 CANCELLED（原型先仅开放 PENDING 取消）。
+ * 订单状态机元数据。口径见 docs/api/README.md §3.1：
+ * PENDING → PAID → SHIPPED → COMPLETED，任意非终态可 CANCELLED（用户端仅 PENDING 可取消）。
+ *
+ * 注意：积分兑换**没有支付环节**——下单事务里已经扣分并占住库存，
+ * 所以 PENDING 的文案是「待商户确认」，不要写「待支付」。
  */
 export const ORDER_STATUS_META: Record<
   OrderStatus,
   { label: string; badgeVariant: 'neutral' | 'info' | 'success' | 'warning' | 'error'; cancellable: boolean }
 > = {
-  PENDING: { label: '待支付', badgeVariant: 'warning', cancellable: true },
-  PAID: { label: '已支付 · 待发货', badgeVariant: 'info', cancellable: false },
+  PENDING: { label: '待商户确认', badgeVariant: 'warning', cancellable: true },
+  PAID: { label: '已确认 · 待发货', badgeVariant: 'info', cancellable: false },
   SHIPPED: { label: '已发货', badgeVariant: 'success', cancellable: false },
   COMPLETED: { label: '已完成', badgeVariant: 'neutral', cancellable: false },
   CANCELLED: { label: '已取消', badgeVariant: 'error', cancellable: false },

@@ -13,16 +13,16 @@ import type { OrderStatus } from '@/types/domain'
 
 const FILTERS: Array<{ value: OrderStatus | ''; label: string }> = [
   { value: '', label: '全部' },
-  { value: 'PENDING', label: '待支付' },
-  { value: 'PAID', label: '已支付' },
+  { value: 'PENDING', label: '待商户确认' },
+  { value: 'PAID', label: '已确认' },
   { value: 'SHIPPED', label: '已发货' },
   { value: 'COMPLETED', label: '已完成' },
   { value: 'CANCELLED', label: '已取消' },
 ]
 
-/** 按当前状态给出下一步动作：PENDING→确认收款、PAID→发货、SHIPPED→核销完成。 */
+/** 按当前状态给出下一步动作：PENDING→确认接单、PAID→发货、SHIPPED→核销完成。没有收款环节。 */
 const NEXT_ACTION: Partial<Record<OrderStatus, { action: AdminOrderAction; label: string }>> = {
-  PENDING: { action: 'confirm', label: '确认收款' },
+  PENDING: { action: 'confirm', label: '确认接单' },
   PAID: { action: 'ship', label: '发货' },
   SHIPPED: { action: 'complete', label: '核销完成' },
 }
