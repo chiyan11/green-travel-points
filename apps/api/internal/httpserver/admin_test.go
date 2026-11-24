@@ -31,9 +31,13 @@ type fakeAdmin struct {
 	config       []app.ConfigItem
 	mode         app.TravelMode
 	expire       app.ExpireResult
+	adjust       app.AdjustResult
+	audits       app.Page[app.AuditLog]
 	transition   func(id int64, to, reason string) (app.Order, error)
-	updateConfig func([]app.ConfigUpdate) ([]app.ConfigItem, error)
-	updateMode   func(code string, in app.TravelModeUpdate) (app.TravelMode, error)
+	updateConfig func(operatorID int64, updates []app.ConfigUpdate) ([]app.ConfigItem, error)
+	updateMode   func(operatorID int64, code string, in app.TravelModeUpdate) (app.TravelMode, error)
+	adjustFn     func(operatorID int64, in app.AdjustPointsInput) (app.AdjustResult, error)
+	auditFn      func(q app.AuditQuery) (app.Page[app.AuditLog], error)
 	reconcile    app.ReconcileResult
 	err          error
 }
@@ -73,22 +77,36 @@ func (f fakeAdmin) ListConfig(context.Context) ([]app.ConfigItem, error) {
 	return f.config, f.err
 }
 
-func (f fakeAdmin) UpdateConfig(_ context.Context, updates []app.ConfigUpdate) ([]app.ConfigItem, error) {
+func (f fakeAdmin) UpdateConfig(_ context.Context, operatorID int64, updates []app.ConfigUpdate) ([]app.ConfigItem, error) {
 	if f.updateConfig != nil {
-		return f.updateConfig(updates)
+		return f.updateConfig(operatorID, updates)
 	}
 	return f.config, f.err
 }
 
-func (f fakeAdmin) UpdateTravelMode(_ context.Context, code string, in app.TravelModeUpdate) (app.TravelMode, error) {
+func (f fakeAdmin) UpdateTravelMode(_ context.Context, operatorID int64, code string, in app.TravelModeUpdate) (app.TravelMode, error) {
 	if f.updateMode != nil {
-		return f.updateMode(code, in)
+		return f.updateMode(operatorID, code, in)
 	}
 	return f.mode, f.err
 }
 
 func (f fakeAdmin) ExpirePoints(context.Context) (app.ExpireResult, error) {
 	return f.expire, f.err
+}
+
+func (f fakeAdmin) AdjustPoints(_ context.Context, operatorID int64, in app.AdjustPointsInput) (app.AdjustResult, error) {
+	if f.adjustFn != nil {
+		return f.adjustFn(operatorID, in)
+	}
+	return f.adjust, f.err
+}
+
+func (f fakeAdmin) ListAuditLogs(_ context.Context, q app.AuditQuery) (app.Page[app.AuditLog], error) {
+	if f.auditFn != nil {
+		return f.auditFn(q)
+	}
+	return f.audits, f.err
 }
 
 func newAdminRouter(admin app.AdminStore, roles app.RoleStore) http.Handler {
@@ -272,7 +290,9 @@ func TestAdminUpdateConfigForbidden(t *testing.T) {
 
 func TestAdminUpdateConfigOK(t *testing.T) {
 	var got []app.ConfigUpdate
-	admin := fakeAdmin{updateConfig: func(updates []app.ConfigUpdate) ([]app.ConfigItem, error) {
+	var gotOperator int64
+	admin := fakeAdmin{updateConfig: func(operatorID int64, updates []app.ConfigUpdate) ([]app.ConfigItem, error) {
+		gotOperator = operatorID
 		got = updates
 		return []app.ConfigItem{{Key: "daily_points_cap", Value: "10", ValueType: "int"}}, nil
 	}}
@@ -282,6 +302,9 @@ func TestAdminUpdateConfigOK(t *testing.T) {
 		map[string]string{"X-User-Id": "1002"})
 	if rec.Code != http.StatusOK || env.Code != CodeOK {
 		t.Fatalf("期望 200/OK，实际 %d/%s", rec.Code, env.Code)
+	}
+	if gotOperator != 1002 {
+		t.Fatalf("操作人透传错误：got %d, 期望 1002（审计要用）", gotOperator)
 	}
 	if len(got) != 1 || got[0].Key != "daily_points_cap" || got[0].Value != "10" {
 		t.Fatalf("透传入参不符: %+v", got)
@@ -314,7 +337,7 @@ func TestAdminUpdateConfigInvalidBody(t *testing.T) {
 }
 
 func TestAdminUpdateConfigUnknownKey(t *testing.T) {
-	admin := fakeAdmin{updateConfig: func([]app.ConfigUpdate) ([]app.ConfigItem, error) {
+	admin := fakeAdmin{updateConfig: func(int64, []app.ConfigUpdate) ([]app.ConfigItem, error) {
 		return nil, fmt.Errorf("%w: 未知参数键 nope", app.ErrInvalidInput)
 	}}
 	h := newAdminRouter(admin, fakeRoles{role: "ADMIN"})
@@ -326,7 +349,7 @@ func TestAdminUpdateConfigUnknownKey(t *testing.T) {
 }
 
 func TestAdminUpdateTravelModeOK(t *testing.T) {
-	admin := fakeAdmin{updateMode: func(code string, in app.TravelModeUpdate) (app.TravelMode, error) {
+	admin := fakeAdmin{updateMode: func(operatorID int64, code string, in app.TravelModeUpdate) (app.TravelMode, error) {
 		if code != "bus" {
 			t.Fatalf("code = %q, 期望 bus", code)
 		}
@@ -369,7 +392,7 @@ func TestAdminUpdateTravelModeInvalid(t *testing.T) {
 }
 
 func TestAdminUpdateTravelModeNotFound(t *testing.T) {
-	admin := fakeAdmin{updateMode: func(string, app.TravelModeUpdate) (app.TravelMode, error) {
+	admin := fakeAdmin{updateMode: func(int64, string, app.TravelModeUpdate) (app.TravelMode, error) {
 		return app.TravelMode{}, app.ErrNotFound
 	}}
 	h := newAdminRouter(admin, fakeRoles{role: "ADMIN"})
@@ -414,5 +437,120 @@ func TestAdminExpirePointsInternalError(t *testing.T) {
 		map[string]string{"X-User-Id": "1002"})
 	if rec.Code != http.StatusInternalServerError || env.Code != CodeInternal {
 		t.Fatalf("期望 500/INTERNAL，实际 %d/%s", rec.Code, env.Code)
+	}
+}
+
+// ---------- P3-8 人工调账 + 审计查询 ----------
+
+func TestAdminAdjustPointsOK(t *testing.T) {
+	var gotOperator int64
+	var gotInput app.AdjustPointsInput
+	admin := fakeAdmin{adjustFn: func(operatorID int64, in app.AdjustPointsInput) (app.AdjustResult, error) {
+		gotOperator = operatorID
+		gotInput = in
+		return app.AdjustResult{AccountID: 7, UserID: in.UserID, Balance: 950, AuditID: 42}, nil
+	}}
+	h := newAdminRouter(admin, fakeRoles{role: "ADMIN"})
+	rec, env := doJSON(t, h, http.MethodPost, "/api/v1/admin/points/adjust",
+		`{"userId":1001,"amount":-50,"reason":"刷分扣回"}`,
+		map[string]string{"X-User-Id": "1002"})
+	if rec.Code != http.StatusOK || env.Code != CodeOK {
+		t.Fatalf("期望 200/OK，实际 %d/%s", rec.Code, env.Code)
+	}
+	if gotOperator != 1002 {
+		t.Fatalf("操作人 = %d，期望 1002（审计要记操作人）", gotOperator)
+	}
+	if gotInput.UserID != 1001 || gotInput.Amount != -50 || gotInput.Reason != "刷分扣回" {
+		t.Fatalf("调账入参不符: %+v", gotInput)
+	}
+	var res app.AdjustResult
+	if err := json.Unmarshal(env.Data, &res); err != nil {
+		t.Fatalf("解析 data 失败: %v", err)
+	}
+	if res.Balance != 950 || res.AuditID != 42 {
+		t.Fatalf("调账结果不符: %+v", res)
+	}
+}
+
+func TestAdminAdjustPointsInvalid(t *testing.T) {
+	h := newAdminRouter(fakeAdmin{}, fakeRoles{role: "ADMIN"})
+	cases := []string{
+		`{}`, // 全缺
+		`{"userId":1001,"amount":0,"reason":"零值"}`,           // amount 必须非 0
+		`{"userId":1001,"amount":10}`,                        // 缺理由（BR-14 必填）
+		`{"userId":0,"amount":10,"reason":"缺用户"}`,            // 缺 userId
+		`{"userId":1001,"amount":10,"reason":"x","extra":1}`, // 未知字段
+	}
+	for _, body := range cases {
+		rec, env := doJSON(t, h, http.MethodPost, "/api/v1/admin/points/adjust", body,
+			map[string]string{"X-User-Id": "1002"})
+		if rec.Code != http.StatusBadRequest || env.Code != CodeInvalidArgument {
+			t.Fatalf("body=%s 期望 400/INVALID_ARGUMENT，实际 %d/%s", body, rec.Code, env.Code)
+		}
+	}
+}
+
+func TestAdminAdjustPointsInsufficient(t *testing.T) {
+	admin := fakeAdmin{adjustFn: func(int64, app.AdjustPointsInput) (app.AdjustResult, error) {
+		return app.AdjustResult{}, fmt.Errorf("%w: 余额不足", app.ErrInsufficientPoints)
+	}}
+	h := newAdminRouter(admin, fakeRoles{role: "ADMIN"})
+	rec, env := doJSON(t, h, http.MethodPost, "/api/v1/admin/points/adjust",
+		`{"userId":1001,"amount":-99999,"reason":"超额扣减"}`,
+		map[string]string{"X-User-Id": "1002"})
+	if rec.Code != http.StatusConflict || env.Code != CodeInsufficientPoints {
+		t.Fatalf("期望 409/INSUFFICIENT_POINTS，实际 %d/%s", rec.Code, env.Code)
+	}
+}
+
+func TestAdminAdjustPointsForbidden(t *testing.T) {
+	h := newAdminRouter(fakeAdmin{}, fakeRoles{role: "CITIZEN"})
+	rec, env := doJSON(t, h, http.MethodPost, "/api/v1/admin/points/adjust",
+		`{"userId":1001,"amount":10,"reason":"越权"}`,
+		map[string]string{"X-User-Id": "1001"})
+	if rec.Code != http.StatusForbidden || env.Code != CodeForbidden {
+		t.Fatalf("期望 403/FORBIDDEN，实际 %d/%s", rec.Code, env.Code)
+	}
+}
+
+func TestAdminAuditLogs(t *testing.T) {
+	var gotQuery app.AuditQuery
+	admin := fakeAdmin{auditFn: func(q app.AuditQuery) (app.Page[app.AuditLog], error) {
+		gotQuery = q
+		return app.Page[app.AuditLog]{
+			Items: []app.AuditLog{{
+				ID: 42, OperatorID: 1002, Action: "ADJUST", TargetType: "point_account",
+				TargetKey: "1001", Amount: -50, BeforeValue: "1000", AfterValue: "950",
+				Reason: "刷分扣回",
+			}},
+			Page: 1, PageSize: 20, Total: 1,
+		}, nil
+	}}
+	h := newAdminRouter(admin, fakeRoles{role: "ADMIN"})
+	rec, env := doJSON(t, h, http.MethodGet,
+		"/api/v1/admin/audit-logs?operatorId=1002&action=adjust&targetType=point_account&targetKey=1001",
+		"", map[string]string{"X-User-Id": "1002"})
+	if rec.Code != http.StatusOK || env.Code != CodeOK {
+		t.Fatalf("期望 200/OK，实际 %d/%s", rec.Code, env.Code)
+	}
+	if gotQuery.OperatorID != 1002 || gotQuery.Action != "adjust" ||
+		gotQuery.TargetType != "point_account" || gotQuery.TargetKey != "1001" {
+		t.Fatalf("检索条件透传不符: %+v", gotQuery)
+	}
+	var page app.Page[app.AuditLog]
+	if err := json.Unmarshal(env.Data, &page); err != nil {
+		t.Fatalf("解析 data 失败: %v", err)
+	}
+	if page.Total != 1 || page.Items[0].Action != "ADJUST" || page.Items[0].Reason != "刷分扣回" {
+		t.Fatalf("审计列表不符: %+v", page)
+	}
+}
+
+func TestAdminAuditLogsForbidden(t *testing.T) {
+	h := newAdminRouter(fakeAdmin{}, fakeRoles{role: "CITIZEN"})
+	rec, env := doJSON(t, h, http.MethodGet, "/api/v1/admin/audit-logs", "",
+		map[string]string{"X-User-Id": "1001"})
+	if rec.Code != http.StatusForbidden || env.Code != CodeForbidden {
+		t.Fatalf("期望 403/FORBIDDEN，实际 %d/%s", rec.Code, env.Code)
 	}
 }

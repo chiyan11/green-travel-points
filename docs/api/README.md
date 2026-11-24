@@ -175,6 +175,8 @@ curl -X POST -H "Content-Type: application/json" `
 | POST | `/api/v1/admin/orders/{id}/complete` | `SHIPPED → COMPLETED`（核销完成） |
 | GET | `/api/v1/admin/points/reconcile` | 全量积分对账：`balance == Σ(txn)`，返回不一致账户（BR-07 证据） |
 | POST | `/api/v1/admin/points/expire` | 手动触发积分过期清算：到期批次置 `EXPIRED`、写 `EXPIRE` 流水、扣余额 |
+| POST | `/api/v1/admin/points/adjust` | 人工调增 / 调减积分（UC-15），必填理由，变动写 `audit_log` |
+| GET | `/api/v1/admin/audit-logs` | 审计日志查询（UC-19）：按操作人 / 动作 / 对象过滤 |
 | GET | `/api/v1/admin/config` | 系统参数列表（UC-14）：键 / 值 / 值类型 / 说明 |
 | PUT | `/api/v1/admin/config` | 批量修改系统参数，整批原子生效；任一项非法则全部回滚 |
 | PUT | `/api/v1/admin/travel-modes/{code}` | 更新出行方式名称 / 排放因子 / 启用状态 |
@@ -294,6 +296,54 @@ curl -X POST -H "X-User-Id: 1002" http://127.0.0.1:8080/api/v1/admin/points/expi
 
 > 已知前提：行程发分侧尚未写 `point_batch`（P2 待接 `GrantPointsWithBatch`），所以本地库里
 > 「行程发的分」没有批次，过期清算只会动到批次里真实存在的量；批次对账差值不是本接口引入的。
+
+### 6.3 人工调账与审计（UC-15 / UC-19，BR-14 / NFR-12）
+
+**调账** `POST /api/v1/admin/points/adjust`，理由必填（BR-14），返回新余额与审计记录 ID：
+
+```json
+{"userId": 1001, "amount": -50, "reason": "刷分扣回"}
+```
+```json
+{"accountId": 1001, "userId": 1001, "balance": 950, "auditId": 3}
+```
+
+| 规则 | 说明 |
+| --- | --- |
+| 入参 | `userId > 0`、`amount ≠ 0`（正增负减）、`reason` 非空且 ≤255 字；缺一项 → `400` |
+| 扣减下限 | `balance + amount < 0` → `409 INSUFFICIENT_POINTS`，整笔不落库 |
+| 流水 | `point_txn(txn_type='ADJUST', amount=±, biz_ref_type='audit_log', biz_ref_id=auditId)`，积分变动可反查来源（NFR-12） |
+| 批次 | 调增同时写 `point_batch`（有效期取 `points_expire_days`）；调减按 FIFO 消耗批次，批次不足的部分只扣余额、差额由对账接口暴露 → 正常数据下仍满足 `Σbalance == Σremaining(ACTIVE)` |
+| 审计 | `audit_log(action='ADJUST', operator_id=当前管理员, target_key=userId, amount, before_value, after_value, reason)`，与流水、余额同事务 |
+| 幂等 | 不支持幂等键：调账是运营人工动作，重复提交就是两笔——这正是要留审计的原因 |
+
+**配置变更也留审计**（BR-14）：`PUT /admin/config` 每个真正变了的键写一条 `CONFIG_UPDATE`
+（前后值 + 键名）；`PUT /admin/travel-modes/{code}` 写一条 `TRAVEL_MODE_UPDATE`
+（`name=…;efBase=…;efActual=…;enabled=…`）。值没变不记，避免刷屏。
+
+**审计查询** `GET /api/v1/admin/audit-logs?operatorId=&action=&targetType=&targetKey=&page=&pageSize=`：
+
+```json
+{
+  "items": [{
+    "id": 3, "operatorId": 1002, "action": "ADJUST", "targetType": "point_account",
+    "targetId": 1001, "targetKey": "1001", "amount": -50,
+    "beforeValue": "1000", "afterValue": "950", "reason": "刷分扣回",
+    "createdAt": "2026-11-24T21:52:10.123+08:00"
+  }],
+  "page": 1, "pageSize": 20, "total": 1
+}
+```
+
+| 过滤参数 | 说明 |
+| --- | --- |
+| `operatorId` | 操作人 `user.id` |
+| `action` | `ADJUST` / `CONFIG_UPDATE` / `TRAVEL_MODE_UPDATE`（大小写不敏感，内部转大写） |
+| `targetType` | `point_account` / `sys_config` / `travel_mode` |
+| `targetKey` | 账户按 `userId`、参数按 `config_key`、出行方式按 `code` |
+
+`audit_log` 只追加（无更新/删除接口），保留 ≥180 天（NFR-12）；表结构见
+`db/migrations/000007_audit_log.up.sql`。
 
 ## 7. 测试
 
