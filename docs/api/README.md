@@ -156,6 +156,33 @@ curl -X POST -H "Content-Type: application/json" `
   http://127.0.0.1:8080/api/v1/auth/login
 ```
 
+### 5.1 种子的重跑语义（重要）
+
+`db/seed/dev_demo.sql` 现在是**只补缺失行、绝不覆盖已有数据**：
+
+- 账本/库存相关表（`point_account`、`point_txn`、`point_batch`、`product`、`product_sku`、`merchant`）
+  一律 `ON DUPLICATE KEY UPDATE id = id`（no-op）——重跑不会改账户归属、不会把已消费的批次余量或库存冲回原值、
+  不会把运营手动下架的商品强制改回 `ONLINE`；
+- 唯一例外是两个演示账号的 `password_hash / role / nickname`：这是「让演示账号能登录」的明确意图，
+  重跑会把口令修回 `demo123456` / `admin123456`，不碰账本。
+
+要**恢复演示基线**（余额 1200、批次 1200、库存 50/30/5），正确做法是 `DROP DATABASE` → 按序执行
+`db/migrations/*.up.sql` → 再导入本文件；**不要**靠重跑 seed 去"覆盖"。
+
+> ⚠️ **共享库（`docs/dev/shared-db.md`，10.213.180.114）禁止执行 seed**：那边的用户 ID 与种子不一致
+> （「演示用户」是 `id=1` 而不是 `1001`），重跑会插入一整套重复的 `1001` 系列行。
+> 共享库要修口令等单点问题，只做定向 UPDATE：
+> ```sql
+> -- 让共享库的 13800000002 能登 /admin（口令改为 admin123456，与种子/前端 E2E 一致）
+> UPDATE user SET password_hash =
+>   'sha256$f6b61c75d1b8eb0d6939a5c363b03f12$ae2a6d8dd0f42821f2791d813f4fc5fa5c5ce9d4ee05658433d9669b3fe783d3'
+>  WHERE id = 1002;
+> -- 若共享库的「演示用户」也要能登录（id=1，口令 demo123456），同样只改这一列
+> UPDATE user SET password_hash =
+>   'sha256$726211e994a96a50be61dd7bd08aedee$e5b7d2e7e88ce334803ac33029c83cb451059ee6207f55309ecce7d0e8ca80d4'
+>  WHERE id = 1;
+> ```
+
 > ⚠️ Windows 下用 curl 传中文 JSON 时，命令行参数可能被转成 GBK 导致入库乱码；
 > 中文请求体建议写入 UTF-8 文件后 `--data-binary @file.json`。
 
