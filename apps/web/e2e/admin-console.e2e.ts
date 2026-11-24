@@ -3,12 +3,39 @@ import { expect, test, type Page } from '@playwright/test'
 /**
  * M8 运营后台主链路（P5-3）：建商品 → 上架 → 消费者下单 → 后台看订单并确认收款。
  *
- * 账号来自本机开发库（scripts 之外的本地操作，不改 db/seed）：
+ * 账号默认来自本机开发库（scripts 之外的本地操作，不改 db/seed）：
  *   - 管理员 13800000002（user 1002，role=ADMIN）
  *   - 消费者 13800000001（user 1001，余额 1200 分）
+ *
+ * 跨机共享库（docs/dev/shared-db.md 里那台）的种子账号口令与本机开发库不同，
+ * 所以这条用例默认只在「接口在本机」时跑；要对着共享库跑，就显式给出
+ * E2E_ADMIN_PHONE / E2E_ADMIN_PASSWORD / E2E_CITIZEN_PHONE / E2E_CITIZEN_PASSWORD。
  */
-const ADMIN = { phone: '13800000002', password: 'admin123456' }
-const CITIZEN = { phone: '13800000001', password: 'demo123456' }
+const ADMIN = {
+  phone: process.env.E2E_ADMIN_PHONE ?? '13800000002',
+  password: process.env.E2E_ADMIN_PASSWORD ?? 'admin123456',
+}
+const CITIZEN = {
+  phone: process.env.E2E_CITIZEN_PHONE ?? '13800000001',
+  password: process.env.E2E_CITIZEN_PASSWORD ?? 'demo123456',
+}
+
+const accountsGiven = Boolean(process.env.E2E_ADMIN_PHONE || process.env.E2E_ADMIN_PASSWORD)
+
+// 开跑前先探一次登录：本机开发库有这两个种子账号，跨机共享库上同 phone 的口令不同。
+// 口令不对时直接跳过并说明原因，不要伪装成「页面卡在登录页」的产品缺陷。
+let skipReason = ''
+
+test.beforeAll(async ({ request }) => {
+  if (accountsGiven) return
+  for (const account of [ADMIN, CITIZEN]) {
+    const res = await request.post('/api/v1/auth/login', { data: account })
+    if (!res.ok()) {
+      skipReason = `种子账号 ${account.phone} 在当前后端登录失败（HTTP ${res.status()}）：该用例默认依赖本机开发库；对着共享库跑请用 E2E_ADMIN_PHONE / E2E_ADMIN_PASSWORD / E2E_CITIZEN_PHONE / E2E_CITIZEN_PASSWORD 覆盖`
+      return
+    }
+  }
+})
 
 async function login(page: Page, account: string, password: string) {
   await page.goto('/login')
@@ -20,6 +47,8 @@ async function login(page: Page, account: string, password: string) {
 }
 
 test('建商品 → 上架 → 下单 → 后台看订单并确认收款', async ({ page, browser }) => {
+  test.skip(Boolean(skipReason), skipReason)
+
   const productName = `E2E环保水杯-${Date.now()}`
 
   // 1. 管理员登录，新建商品（默认 DRAFT）

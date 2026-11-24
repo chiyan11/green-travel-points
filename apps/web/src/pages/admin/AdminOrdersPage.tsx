@@ -5,7 +5,7 @@ import {
   transitionAdminOrder,
   type AdminOrderAction,
 } from '@/services/admin'
-import { ORDER_STATUS_META } from '@/lib/orderStatus'
+import { ORDER_STATUS_META, orderStatusBadgeClass } from '@/lib/orderStatus'
 import { formatDateTime, formatPoints } from '@/lib/format'
 import { ApiError } from '@/lib/http'
 import type { AdminOrder } from '@/types/admin'
@@ -113,7 +113,7 @@ export function AdminOrdersPage(): ReactNode {
                     <td>-{formatPoints(o.pointsSpent)}</td>
                     <td>{o.receiver}</td>
                     <td>
-                      <span className={`badge ${meta.badge}`}>{meta.label}</span>
+                      <span className={`badge ${orderStatusBadgeClass(o.status)}`}>{meta.label}</span>
                     </td>
                     <td>{formatDateTime(o.createdAt)}</td>
                     <td>

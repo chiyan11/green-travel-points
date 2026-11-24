@@ -1,7 +1,9 @@
 import { useState, type ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { IconEmptyRoute } from '@/components/icons'
 import { cancelOrder, listOrders } from '@/services/orders'
-import { ORDER_STATUS_META } from '@/lib/orderStatus'
+import { ORDER_STATUS_META, orderStatusBadgeClass } from '@/lib/orderStatus'
 import { formatDateTime, formatPoints } from '@/lib/format'
 import type { OrderStatus } from '@/types/domain'
 
@@ -14,16 +16,16 @@ const FILTERS: Array<{ value: OrderStatus | 'ALL'; label: string }> = [
   { value: 'CANCELLED', label: '已取消' },
 ]
 
+/**
+ * 兑换记录：卡片行而不是表格。
+ * 核销码是用户线下要出示的东西，所以放在最左边、等宽字体放大；订单号降到小字。
+ */
 export function OrdersPage(): ReactNode {
   const queryClient = useQueryClient()
   const [filter, setFilter] = useState<OrderStatus | 'ALL'>('ALL')
   const [error, setError] = useState('')
 
-  const { data: orders = [] } = useQuery({
-    queryKey: ['orders'],
-    queryFn: () => listOrders(),
-  })
-
+  const { data: orders = [] } = useQuery({ queryKey: ['orders'], queryFn: () => listOrders() })
   const visible = filter === 'ALL' ? orders : orders.filter((o) => o.status === filter)
 
   const onCancel = async (id: string) => {
@@ -39,17 +41,20 @@ export function OrdersPage(): ReactNode {
   }
 
   return (
-    <>
-      <section className="hero">
-        <h2>兑换记录</h2>
-        <p>订单状态机：待支付 → 已支付 → 已发货 → 已完成；仅待支付可取消并返还积分。</p>
-      </section>
+    <div className="page">
+      <div className="page__head">
+        <div>
+          <h1 className="page-title">兑换记录</h1>
+          <p className="page-sub">未核销的订单可以取消，积分会原路退回。</p>
+        </div>
+      </div>
 
-      <div className="filter-bar">
+      <div className="segmented" role="group" aria-label="按状态筛选">
         {FILTERS.map((f) => (
           <button
             key={f.value}
-            className={filter === f.value ? 'chip chip--active' : 'chip'}
+            type="button"
+            className={filter === f.value ? 'segmented__btn is-active' : 'segmented__btn'}
             onClick={() => setFilter(f.value)}
           >
             {f.label}
@@ -57,58 +62,68 @@ export function OrdersPage(): ReactNode {
         ))}
       </div>
 
-      {error && <p className="field-error">{error}</p>}
+      {error !== '' && <p className="field-error">{error}</p>}
 
       <section className="card">
-        <div className="section-head">
-          <h3>{filter === 'ALL' ? '全部订单' : FILTERS.find((f) => f.value === filter)?.label + '订单'}</h3>
-          <span className="muted" style={{ margin: 0 }}>共 {visible.length} 条</span>
+        <div className="card__head">
+          <h2 className="card__title">
+            {filter === 'ALL' ? '全部订单' : `${FILTERS.find((f) => f.value === filter)?.label ?? ''}订单`}
+          </h2>
+          <span className="muted">共 {visible.length} 条</span>
         </div>
+
         {visible.length === 0 ? (
-          <p className="empty-state">该状态下暂无订单。</p>
+          <div className="empty">
+            <span className="empty__art">
+              <IconEmptyRoute size={44} />
+            </span>
+            <p className="empty__title">该状态下暂无订单。</p>
+            <p className="empty__note">去商城看看，攒下的积分可以换点实用的东西。</p>
+          </div>
         ) : (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>订单号</th>
-                <th>商品</th>
-                <th>消耗积分</th>
-                <th>状态</th>
-                <th>下单时间</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visible.map((o) => {
-                const meta = ORDER_STATUS_META[o.status]
-                return (
-                  <tr key={o.id}>
-                    <td><code>{o.orderNo}</code></td>
-                    <td>
-                      {o.productName}（{o.skuName}）
-                      {o.redeemCode && (
-                        <p className="muted" style={{ margin: '4px 0 0' }}>核销码：{o.redeemCode}</p>
-                      )}
-                    </td>
-                    <td>-{formatPoints(o.pointsSpent)}</td>
-                    <td>
-                      <span className={`badge ${meta.badge}`}>{meta.label}</span>
-                    </td>
-                    <td>{formatDateTime(o.createdAt)}</td>
-                    <td>
-                      {meta.cancellable && (
-                        <button className="btn btn--danger" onClick={() => onCancel(o.id)}>
-                          取消并返还
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+          <div className="order-list">
+            {visible.map((o) => {
+              const meta = ORDER_STATUS_META[o.status]
+              return (
+                <article className="order-card" key={o.id}>
+                  <div>
+                    <p className="order-code__label">核销码</p>
+                    <p className="order-code">{o.redeemCode || '—'}</p>
+                  </div>
+
+                  <div>
+                    <p className="order-main__title">{o.productName}</p>
+                    <p className="order-main__meta">
+                      订单 {o.orderNo} · {formatDateTime(o.createdAt)}
+                    </p>
+                  </div>
+
+                  <div className="order-side">
+                    <span className={`badge ${orderStatusBadgeClass(o.status)}`}>{meta.label}</span>
+                    <span className="muted">-{formatPoints(o.pointsSpent)} 分</span>
+                  </div>
+
+                  <div className="order-actions">
+                    {meta.cancellable ? (
+                      <button
+                        type="button"
+                        className="btn btn--inline"
+                        onClick={() => void onCancel(o.id)}
+                      >
+                        取消并返还
+                      </button>
+                    ) : o.status === 'CANCELLED' ? (
+                      <Link className="btn btn--ghost btn--inline" to="/mall">
+                        重新兑换
+                      </Link>
+                    ) : null}
+                  </div>
+                </article>
+              )
+            })}
+          </div>
         )}
       </section>
-    </>
+    </div>
   )
 }

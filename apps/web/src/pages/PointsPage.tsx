@@ -1,107 +1,130 @@
 import { useQuery } from '@tanstack/react-query'
-import { getRecentCarbonSeries, getSummary, listTxns } from '@/services/points'
-import { POINT_TXN_TYPE_META } from '@/lib/orderStatus'
-import { CarbonTrendChart } from '@/components/CarbonTrendChart'
-import { formatDateTime, formatGrams, formatPoints } from '@/lib/format'
 import type { ReactNode } from 'react'
+import { CarbonTrendChart } from '@/components/CarbonTrendChart'
+import { IconAward, IconTrendDown, IconTrendUp } from '@/components/icons'
+import { POINT_TXN_TYPE_META } from '@/lib/orderStatus'
+import { formatDateTime, formatGrams, formatPoints } from '@/lib/format'
+import { getCarbonSeries, getSummary, listTxns } from '@/services/points'
+import type { PointBizRefType } from '@/types/domain'
 
+/** 业务引用类型的中文说明：流水里不展示裸枚举值。 */
+const BIZ_LABEL: Record<PointBizRefType, string> = {
+  trip_record: '行程核算',
+  redeem_order: '商城兑换',
+  audit_log: '人工调整',
+}
+
+/** 我的积分：一张主卡放余额与今日额度，两张副卡放累计减排与本月获得。 */
 export function PointsPage(): ReactNode {
-  const { data: summary } = useQuery({
-    queryKey: ['summary'],
-    queryFn: () => getSummary(),
-  })
-  const { data: txns = [] } = useQuery({
-    queryKey: ['txns'],
-    queryFn: () => listTxns(),
-  })
+  const { data: summary } = useQuery({ queryKey: ['summary'], queryFn: () => getSummary() })
+  const { data: txns = [] } = useQuery({ queryKey: ['txns'], queryFn: () => listTxns() })
   const { data: trend = [] } = useQuery({
     queryKey: ['carbon-trend-7d'],
-    queryFn: () => Promise.resolve(getRecentCarbonSeries()),
+    queryFn: () => getCarbonSeries(7),
   })
 
-  return (
-    <>
-      <section className="hero">
-        <h2>我的积分</h2>
-        <p>余额与流水只通过账本变更；当日发放受 500 分上限约束。</p>
-      </section>
+  const balance = summary?.balance ?? 0
+  const earnedToday = summary?.earnedToday ?? 0
+  const cap = summary?.dailyCap ?? 500
+  const pct = Math.min(100, Math.round((earnedToday / Math.max(cap, 1)) * 100))
 
-      <div className="grid">
-        <div className="stat-card stat-card--accent">
-          <span className="stat-card__icon" aria-hidden="true">💰</span>
-          <div>
-            <p className="stat-label">当前余额</p>
-            <p className="stat-value">{formatPoints(summary?.balance ?? 0)} 分</p>
-            <p className="stat-sub">可兑换商城商品</p>
-          </div>
+  return (
+    <div className="page">
+      <div className="page__head">
+        <div>
+          <h1 className="page-title">我的积分</h1>
+          <p className="page-sub">余额与流水只通过账本变更，当日发放受上限约束。</p>
         </div>
-        <div className="stat-card">
-          <span className="stat-card__icon" aria-hidden="true">🌿</span>
-          <div>
-            <p className="stat-label">累计碳减排</p>
-            <p className="stat-value">{formatGrams(summary?.totalCarbonSavedGrams ?? 0)}</p>
-            <p className="stat-sub">全部行程累计</p>
+        <span className="badge badge--muted">单日上限 {formatPoints(cap)} 分</span>
+      </div>
+
+      <div className="stat-row">
+        <section className="stat stat--main stat-card">
+          <div className="stat__main-row">
+            <div>
+              <p className="stat__label">当前余额</p>
+              <p className="stat__value">
+                {formatPoints(balance)}
+                <span className="stat__unit">分</span>
+              </p>
+              <p className="stat__note">可兑换商城商品</p>
+            </div>
+            <div className="stat__ring">
+              <span className="ring" style={{ ['--pct' as string]: pct }}>
+                <span className="ring__inner">
+                  <span className="ring__value">{pct}%</span>
+                </span>
+              </span>
+              <span className="ring__caption">今日额度</span>
+            </div>
           </div>
-        </div>
-        <div className="stat-card">
-          <span className="stat-card__icon" aria-hidden="true">📅</span>
-          <div>
-            <p className="stat-label">本月获得</p>
-            <p className="stat-value">{formatPoints(summary?.earnedThisMonth ?? 0)} 分</p>
-            <p className="stat-sub">按自然月统计</p>
-          </div>
-        </div>
-        <div className="stat-card">
-          <span className="stat-card__icon" aria-hidden="true">⏱️</span>
-          <div>
-            <p className="stat-label">今日已发 / 上限</p>
-            <p className="stat-value">
-              {summary?.earnedToday ?? 0} / {summary?.dailyCap ?? 500}
-            </p>
-            <p className="stat-sub">超出上限的部分不计积分</p>
-          </div>
-        </div>
+          <p className="stat__note">
+            今日已发 {formatPoints(earnedToday)} / {formatPoints(cap)} 分，超出部分不计积分
+          </p>
+        </section>
+
+        <section className="stat stat-card">
+          <p className="stat__label">累计碳减排</p>
+          <p className="stat__value">{formatGrams(summary?.totalCarbonSavedGrams ?? 0)}</p>
+          <p className="stat__note">全部行程累计，按 192 g/km 基准核算</p>
+        </section>
+
+        <section className="stat stat-card">
+          <p className="stat__label">本月获得</p>
+          <p className="stat__value">{formatPoints(summary?.earnedThisMonth ?? 0)} 分</p>
+          <p className="stat__note">按自然月统计</p>
+        </section>
       </div>
 
       <section className="card">
-        <h3>近 7 日碳减排</h3>
+        <div className="card__head">
+          <h2 className="card__title">近 7 日碳减排</h2>
+          <span className="muted">单位 gCO₂e</span>
+        </div>
         <CarbonTrendChart data={trend} />
       </section>
 
       <section className="card">
-        <h3>积分流水</h3>
+        <div className="card__head">
+          <h2 className="card__title">积分流水</h2>
+          <span className="muted">共 {txns.length} 条</span>
+        </div>
+
         {txns.length === 0 ? (
-          <p className="empty-state">暂无流水。</p>
+          <div className="empty">
+            <span className="empty__art">
+              <IconAward size={40} />
+            </span>
+            <p className="empty__title">还没有流水</p>
+            <p className="empty__note">上报一次出行，第一笔积分就会出现在这里。</p>
+          </div>
         ) : (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>时间</th>
-                <th>类型</th>
-                <th>变动</th>
-                <th>变动后余额</th>
-              </tr>
-            </thead>
-            <tbody>
-              {txns.map((t) => {
-                const meta = POINT_TXN_TYPE_META[t.type]
-                const sign = t.amount >= 0 ? '+' : ''
-                return (
-                  <tr key={t.id}>
-                    <td>{formatDateTime(t.occurredAt)}</td>
-                    <td>{meta.label}</td>
-                    <td className={t.amount >= 0 ? 'ok' : 'danger'}>
-                      {sign}
-                      {t.amount}
-                    </td>
-                    <td>{formatPoints(t.balanceAfter)}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+          <div className="list">
+            {txns.map((t) => {
+              const meta = POINT_TXN_TYPE_META[t.type]
+              const isOut = t.amount < 0
+              return (
+                <div className="list__row" key={t.id}>
+                  <span className={isOut ? 'list__icon list__icon--out' : 'list__icon'}>
+                    {isOut ? <IconTrendDown size={16} /> : <IconTrendUp size={16} />}
+                  </span>
+                  <div className="list__body">
+                    <p className="list__title">{meta.label}</p>
+                    <p className="list__meta">
+                      {BIZ_LABEL[t.bizRefType]} · {formatDateTime(t.occurredAt)} · 余额{' '}
+                      {formatPoints(t.balanceAfter)}
+                    </p>
+                  </div>
+                  <span className={isOut ? 'list__value list__value--out' : 'list__value list__value--amber'}>
+                    {t.amount >= 0 ? '+' : ''}
+                    {formatPoints(t.amount)}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
         )}
       </section>
-    </>
+    </div>
   )
 }

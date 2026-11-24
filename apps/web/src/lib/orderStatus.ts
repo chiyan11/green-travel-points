@@ -6,13 +6,26 @@ import type { OrderStatus, PointTxnType } from '@/types/domain'
  */
 export const ORDER_STATUS_META: Record<
   OrderStatus,
-  { label: string; badge: string; cancellable: boolean }
+  { label: string; badgeVariant: 'neutral' | 'info' | 'success' | 'warning' | 'error'; cancellable: boolean }
 > = {
-  PENDING: { label: '待支付', badge: 'badge--muted', cancellable: true },
-  PAID: { label: '已支付 · 待发货', badge: 'badge--info', cancellable: false },
-  SHIPPED: { label: '已发货', badge: 'badge--warn', cancellable: false },
-  COMPLETED: { label: '已完成', badge: 'badge--ok', cancellable: false },
-  CANCELLED: { label: '已取消', badge: 'badge--danger', cancellable: false },
+  PENDING: { label: '待支付', badgeVariant: 'warning', cancellable: true },
+  PAID: { label: '已支付 · 待发货', badgeVariant: 'info', cancellable: false },
+  SHIPPED: { label: '已发货', badgeVariant: 'success', cancellable: false },
+  COMPLETED: { label: '已完成', badgeVariant: 'neutral', cancellable: false },
+  CANCELLED: { label: '已取消', badgeVariant: 'error', cancellable: false },
+}
+
+/** 旧式 `.badge--*` 类名（运营后台仍在用 span.badge，不依赖 Astryx Badge 组件）。 */
+const BADGE_CLASS: Record<(typeof ORDER_STATUS_META)[OrderStatus]['badgeVariant'], string> = {
+  neutral: 'badge--muted',
+  info: 'badge--info',
+  warning: 'badge--warn',
+  success: 'badge--ok',
+  error: 'badge--danger',
+}
+
+export function orderStatusBadgeClass(status: OrderStatus): string {
+  return BADGE_CLASS[ORDER_STATUS_META[status].badgeVariant]
 }
 
 /** 合法跃迁边表；非法跃迁必须被后端拒绝，前端仅做按钮禁用提示。 */

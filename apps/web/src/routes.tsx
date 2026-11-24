@@ -17,6 +17,9 @@ import { AdminOrdersPage } from '@/pages/admin/AdminOrdersPage'
 /**
  * 路由：/login 公开；消费者端页面经 RequireAuth + AppLayout；
  * 运营后台（M8）挂在 /admin，独立布局，管理员身份由后端 RequireAdmin 判定。
+ *
+ * 消费者端 8 个页面均已接入真实后端（请求只在 src/services/* 里发），
+ * wire 类型由 docs/api/openapi.yaml 生成到 src/types/api.ts，页面视图模型见 src/types/domain.ts。
  */
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },

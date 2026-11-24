@@ -9,13 +9,13 @@
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "gen:api": "swagger-typescript-api generate -p ../../docs/api/openapi.yaml -o ./src/types --no-client --enum-style union --sort-types -n api.ts && node ./scripts/fix-generated.mjs"
   },
   "dependencies": {
     "@astryxdesign/core": "0.7.17",
     "@astryxdesign/theme-neutral": "0.7.17",
     "@tanstack/react-query": "^5.104.4",
-    "echarts": "^6.1.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-router-dom": "^7.18.4"
@@ -23,10 +23,17 @@
   "devDependencies": {
     "@astryxdesign/cli": "0.7.17",
     "@playwright/test": "^1.65.1",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/jest-dom": "^8.0.0",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.13",
     "@types/node": "^26.6.5",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^6.1.2",
+    "jsdom": "^31.0.1",
+    "msw": "^3.0.7",
+    "swagger-typescript-api": "^13.15.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.4",
     "vitest": "^5.0.5"
