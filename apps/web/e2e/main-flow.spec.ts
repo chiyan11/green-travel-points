@@ -38,6 +38,8 @@ test('主链路：注册 → 上报行程 → 积分到账 → 商城兑换 → 
   // 3. 首页
   await expect(page.getByRole('heading', { name: /把每一次低碳出行/ })).toBeVisible()
   await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible()
+  // 首页右上的碳减排与积分卡依赖 summary 查询，等余额真的取回来再截图，否则会拍到占位符「—」
+  await expect(page.locator('.balance-chip')).toHaveText(/可用\s*\d/, { timeout: 120_000 })
   await shot(page, '03-home.png')
 
   // 4. 上报两笔地铁 50km 行程（每笔 75 分，共 150 分，够换 100 分商品）
