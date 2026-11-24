@@ -293,7 +293,7 @@ pages/*.tsx  ──►  services/*.ts  ──►  lib/http.ts  ──►  fetch
 | 启动日志单测 | `apps/api/cmd/server/dbendpoint_test.go` | 1 个函数 / 9 例 | 表驱动：默认 DSN、局域网 / ZeroTier、localhost、IPv6 回环、unix socket、省略地址、非法 DSN |
 | 前端单测 | `apps/web/src/lib/*.test.ts` | 2 文件 19 例 | `http.test.ts` 用 `vi.stubGlobal('fetch')` 测解包与错误映射；`validators.test.ts` 测校验规则 |
 | 前端页面测试 | `apps/web/src/pages/*.test.tsx` | 5 文件 16 例 | jsdom + Testing Library + MSW 3 拦截 `fetch`；`src/test/render.tsx` 提供 QueryClient/路由壳，`src/test/http.ts` 造 `{code,message,data}` 壳（测试里也重放后端协议，不是随手 mock） |
-| E2E 主链路 | `apps/web/e2e/*.spec.ts` | 1 文件 2 例 | Playwright + Chromium，跑**真实前后端与共享库**，不 mock；每步落截图到 `docs/screenshots/` |
+| E2E 主链路 | `apps/web/e2e/*.spec.ts`、`apps/web/e2e/*.e2e.ts` | 2 文件 3 例 | Playwright + Chromium，跑**真实前后端与共享库**，不 mock；消费者主链路每步落截图到 `docs/screenshots/`；运营后台用例依赖本机开发库种子账号 |
 
 ### 新增功能的底线
 
@@ -324,7 +324,16 @@ $env:E2E_API_TARGET = 'http://127.0.0.1:18080'   # Playwright 启动 vite 时注
 npm run test:e2e
 ```
 
-共享库跨 ZeroTier：写接口单次 10–20s、读接口 1–5s，所以 `playwright.config.ts` 的 `timeout` 是 180s、`expect.timeout` 是 30s，不要按常规项目压到 5–10s。
+共享库跨 ZeroTier：写接口单次 10–40s、读接口 1–5s，所以 `playwright.config.ts` 的 `timeout` 是 300s、`expect.timeout` 与 `actionTimeout` 都是 120s，不要按常规项目压到 5–10s。
+
+写接口的超时链路要一起看：`apps/api/cmd/server/main.go` 里 `WriteTimeout = serverWriteTimeout(cfg.HTTPRequestTimeout)`（请求超时 + 15s），必须**晚于** `middleware.Timeout` 到期，否则慢请求会在响应当前被服务器掐断，浏览器/dev 代理侧看到 502，而后端日志里只留一条 duration≈30s 的成功记录。
+
+运营后台用例（`apps/web/e2e/admin-console.e2e.ts`）默认只在接口指向本机时运行：共享库上的种子管理员口令与本机开发库不同。要对着共享库跑，显式给账号：
+
+```powershell
+$env:E2E_ADMIN_PHONE = '13800000002'; $env:E2E_ADMIN_PASSWORD = '<共享库口令>'
+$env:E2E_CITIZEN_PHONE = '13800000001'; $env:E2E_CITIZEN_PASSWORD = '<共享库口令>'
+```
 
 ---
 

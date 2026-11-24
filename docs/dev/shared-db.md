@@ -180,6 +180,8 @@ git pull --rebase          # 拿迁移文件（留档 / 本地库复现用）
 
 两个直接后果：
 
-1. **前端 E2E 的超时必须放宽**：`apps/web/playwright.config.ts` 里 `timeout: 180_000`、`expect.timeout: 30_000`，压到 5–10 s 会稳定假失败（第一次跑就是被 30 s 的 URL 断言卡住的）。
+1. **前端 E2E 的超时必须放宽**：`apps/web/playwright.config.ts` 里 `timeout: 300_000`、`expect.timeout` 与 `actionTimeout` 都是 `120_000`，压到 5–10 s 会稳定假失败（第一次跑就是被 30 s 的 URL 断言卡住的）。
 2. **`/readyz` 冷启动会 503**：`apps/api/internal/httpserver/health.go` 里探活超时写死 2 s，而冷连接要 2–3 s。想让就绪检查变绿，先打一次真实接口把连接池热起来，或者等代码把超时调大。
+3. **写请求会比服务器的写超时先撞线**：`apps/api/cmd/server/main.go` 原本把 `WriteTimeout` 写死 30 s，比 `HTTP_REQUEST_TIMEOUT` 还早到期，于是 30 s 左右的兑换/取消会以 502 出现在浏览器侧（Vite dev 代理把被掐断的连接报成 502），而后端日志里是一条 `status=200 duration_ms≈30000`。现在 `WriteTimeout = serverWriteTimeout(cfg.HTTPRequestTimeout)`（请求超时 + 15 s），对着共享库跑时把 `HTTP_REQUEST_TIMEOUT=90s` 才有意义。
+4. **运营后台 E2E 的种子账号只在本机开发库有效**：共享库里 `13800000002`（ADMIN）的口令哈希与本机不同，`apps/web/e2e/admin-console.e2e.ts` 已改成开跑前探一次登录、失败就跳过并给出原因；要真跑，用 `E2E_ADMIN_PHONE` / `E2E_ADMIN_PASSWORD` / `E2E_CITIZEN_PHONE` / `E2E_CITIZEN_PASSWORD` 覆盖。
 
