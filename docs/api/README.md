@@ -112,6 +112,9 @@ curl -H "X-User-Id: 1001" http://127.0.0.1:8080/api/v1/points/summary
 | POST | `/api/v1/admin/orders/{id}/ship` | `PAID → SHIPPED`（发货） |
 | POST | `/api/v1/admin/orders/{id}/complete` | `SHIPPED → COMPLETED`（核销完成） |
 | GET | `/api/v1/admin/points/reconcile` | 全量积分对账：`balance == Σ(txn)`，返回不一致账户（BR-07 证据） |
+| GET | `/api/v1/admin/config` | 系统参数列表（UC-14）：键 / 值 / 值类型 / 说明 |
+| PUT | `/api/v1/admin/config` | 批量修改系统参数，整批原子生效；任一项非法则全部回滚 |
+| PUT | `/api/v1/admin/travel-modes/{code}` | 更新出行方式名称 / 排放因子 / 启用状态 |
 
 新建商品示例：
 
@@ -130,6 +133,59 @@ curl -H "X-User-Id: 1001" http://127.0.0.1:8080/api/v1/points/summary
 
 订单流转非法时返回 `409 ILLEGAL_TRANSITION`；每次流转都会写 `event_outbox`
 （`OrderConfirmed` / `OrderShipped` / `OrderCompleted`），交给 Worker 消费。
+
+### 6.1 参数配置（UC-14）
+
+业务规则参数在运行期全部来自数据库，运营改完**立即生效、无需发版**：
+行程上报每次读 `sys_config` 与 `travel_mode`（`httpserver/trips.go`），积分概览的
+`dailyCap` 与下单时的批次有效期也分别读 `daily_points_cap` / `points_expire_days`。
+
+`GET /api/v1/admin/config` 返回 `sys_config` 全量条目（值一律是字符串，按 `valueType` 解析）：
+
+```json
+[
+  {"key": "carbon_per_point", "value": "100", "valueType": "int", "description": "多少克碳减排量兑换 1 积分"},
+  {"key": "daily_points_cap", "value": "500", "valueType": "int", "description": "单日可获得积分上限，0 表示不限制"},
+  {"key": "trip_min_distance_km", "value": "0.1", "valueType": "decimal", "description": "单次行程最短距离（km）"},
+  {"key": "trip_max_distance_km", "value": "100", "valueType": "decimal", "description": "单次行程最长距离（km）"},
+  {"key": "points_expire_days", "value": "365", "valueType": "int", "description": "积分有效期（天）"}
+]
+```
+
+`PUT /api/v1/admin/config` 批量提交，成功后返回**更新后的全量参数**：
+
+```json
+{"items": [{"key": "daily_points_cap", "value": "10"}]}
+```
+
+校验规则（任一条不满足 → `400 INVALID_ARGUMENT`，整批不落库）：
+
+| 规则 | 说明 |
+| --- | --- |
+| 键必须已存在 | 只允许改 `sys_config` 里已有的参数；未知键拒绝，避免"改了但代码没消费" |
+| 类型匹配 | `int` 需为整数；`decimal` 需为有限小数；`bool` 取 `true/false/1/0` |
+| 语义约束 | `carbon_per_point > 0`（除零）、`points_expire_days > 0`（批次立即过期）、`trip_min_distance_km > 0`、`trip_max_distance_km > 0`、`daily_points_cap ≥ 0`（0 = 不限制） |
+| 距离区间 | 提交后复核 `trip_min_distance_km < trip_max_distance_km`，反了会让所有行程被拒 |
+| 原子性 | 整批在一个事务内完成，后续项非法时前面的改动一并回滚 |
+
+`PUT /api/v1/admin/travel-modes/{code}` 改一种出行方式（`nil` 字段不动），成功返回该方式最新值：
+
+```json
+{"efActual": 50, "enabled": true}
+```
+
+返回：
+
+```json
+{"code": "bus", "name": "公交", "efBase": 192, "efActual": 50, "enabled": true}
+```
+
+约束：至少提交一个字段；`name` 非空；`efBase > 0`；`efActual ≥ 0`；提交后复核
+`efActual < efBase`（否则该方式永远算不出碳减排量）。`enabled = false` 后该方式上报行程会返回
+`400 INVALID_ARGUMENT`（未知或已停用的出行方式）。方式不存在返回 `404 NOT_FOUND`。
+
+验收示例（P3-2）：把 `daily_points_cap` 改成 `10` 后上报 10 km 公交
+（碳减排 `10 × (192 − 68) = 1240 g`，按 100 g/分应得 12 分），实际 `grantedPoints = 10`。
 
 ## 7. 测试
 
