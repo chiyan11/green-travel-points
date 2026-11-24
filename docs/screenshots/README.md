@@ -25,3 +25,5 @@ npm run test:e2e
 | `11-login-error.png` | 错误密码登录 | 后端错误文案展示，不跳转首页 |
 
 注：积分页的「近 7 日碳减排」已改接 `GET /api/v1/points/daily-carbon?days=7`（原先前端写死的演示序列已删除），截图里的曲线是真实账本数据。
+
+注：这一批截图是前端换用 Astryx 设计系统（`@astryxdesign/core` + matcha 主题，品牌色 `#177a4d`）之后重跑的，页面结构、控件与配色以这里为准。

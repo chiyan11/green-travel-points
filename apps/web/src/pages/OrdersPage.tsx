@@ -1,5 +1,8 @@
 import { useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Badge } from '@astryxdesign/core/Badge'
+import { Button } from '@astryxdesign/core/Button'
+import { Card } from '@astryxdesign/core/Card'
 import { cancelOrder, listOrders } from '@/services/orders'
 import { ORDER_STATUS_META } from '@/lib/orderStatus'
 import { formatDateTime, formatPoints } from '@/lib/format'
@@ -57,58 +60,63 @@ export function OrdersPage(): ReactNode {
         ))}
       </div>
 
-      {error && <p className="field-error">{error}</p>}
+      {error !== '' && <p className="field-error">{error}</p>}
 
-      <section className="card">
+      <Card padding={5} elevation="low">
         <div className="section-head">
-          <h3>{filter === 'ALL' ? '全部订单' : FILTERS.find((f) => f.value === filter)?.label + '订单'}</h3>
-          <span className="muted" style={{ margin: 0 }}>共 {visible.length} 条</span>
+          <h3>{filter === 'ALL' ? '全部订单' : `${FILTERS.find((f) => f.value === filter)?.label ?? ''}订单`}</h3>
+          <span className="muted">共 {visible.length} 条</span>
         </div>
         {visible.length === 0 ? (
           <p className="empty-state">该状态下暂无订单。</p>
         ) : (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>订单号</th>
-                <th>商品</th>
-                <th>消耗积分</th>
-                <th>状态</th>
-                <th>下单时间</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visible.map((o) => {
-                const meta = ORDER_STATUS_META[o.status]
-                return (
-                  <tr key={o.id}>
-                    <td><code>{o.orderNo}</code></td>
-                    <td>
-                      {o.productName}（{o.skuName}）
-                      {o.redeemCode && (
-                        <p className="muted" style={{ margin: '4px 0 0' }}>核销码：{o.redeemCode}</p>
-                      )}
-                    </td>
-                    <td>-{formatPoints(o.pointsSpent)}</td>
-                    <td>
-                      <span className={`badge ${meta.badge}`}>{meta.label}</span>
-                    </td>
-                    <td>{formatDateTime(o.createdAt)}</td>
-                    <td>
-                      {meta.cancellable && (
-                        <button className="btn btn--danger" onClick={() => onCancel(o.id)}>
-                          取消并返还
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>订单号</th>
+                  <th>商品</th>
+                  <th>消耗积分</th>
+                  <th>状态</th>
+                  <th>下单时间</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visible.map((o) => {
+                  const meta = ORDER_STATUS_META[o.status]
+                  return (
+                    <tr key={o.id}>
+                      <td>
+                        <code>{o.orderNo}</code>
+                      </td>
+                      <td>
+                        {o.productName}（{o.skuName}）
+                        {o.redeemCode && <p className="muted">核销码：{o.redeemCode}</p>}
+                      </td>
+                      <td>-{formatPoints(o.pointsSpent)}</td>
+                      <td>
+                        <Badge label={meta.label} variant={meta.badgeVariant} />
+                      </td>
+                      <td>{formatDateTime(o.createdAt)}</td>
+                      <td>
+                        {meta.cancellable && (
+                          <Button
+                            label="取消并返还"
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => void onCancel(o.id)}
+                          />
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
-      </section>
+      </Card>
     </>
   )
 }

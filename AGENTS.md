@@ -112,7 +112,9 @@ green-travel-points/
 │       │   ├── lib/              http（Envelope 解包、错误、401 处理）、session、validators、format、orderStatus、productCover、queryClient
 │       │   ├── types/api.ts      由 docs/api/openapi.yaml 生成的 wire 类型（npm run gen:api，勿手改）
 │       │   ├── types/domain.ts   页面视图模型（id 转 string、coverUrl、startedAt 等展示口径）
-│       │   └── styles.css        全站样式（单文件，无 CSS 框架）
+│       │   ├── astryx-themes.ts  Astryx 主题注册（npx astryx theme add matcha 生成，勿手改）
+│       │   ├── astryx-brand.css  品牌 token 覆盖（主色 #177a4d、中文字体栈、页面底色）
+│       │   └── styles.css        全站业务样式（单文件 token 层，零硬编码颜色）
 │       ├── e2e/                  Playwright 主链路用例（真后端，截图落 docs/screenshots/）
 │       ├── scripts/fix-generated.mjs  生成后处理：去掉 @ts-nocheck、加来源说明
 │       └── vite.config.ts        端口 5173 + /api 代理（VITE_API_TARGET 可改目标）
@@ -263,7 +265,11 @@ pages/*.tsx  ──►  services/*.ts  ──►  lib/http.ts  ──►  fetch
 - **401 统一处理**：`lib/http.ts` 收到 401 会清会话并跳 `/login`，页面不要重复写这套逻辑。
 - **会话存 `localStorage` 的 `gtp_session`**（`lib/session.ts`）；不要另起 key。
 - **路由守卫**：`routes.tsx` 里 `/login` 公开，其余包 `RequireAuth` + `AppLayout`；新增页面挂到对应子路由下。
-- **样式**：全站单文件 `styles.css`，用现有类名（`btn` / `card` / `field-error` / `badge--ok` 等）；不引入 CSS 框架，不写内联大段样式。
+- **样式**：分三层，各管一段，不要混写。
+  1. **Astryx**（`@astryxdesign/core` + `theme-matcha`）：控件与 token 的来源。`main.tsx` 依次 import `reset.css` → `astryx.css` → `astryx-themes.ts` → `astryx-brand.css` → `styles.css`。用组件（Button / TextInput / Card / Badge / Field）替代手写控件。
+  2. **`astryx-brand.css`**：只放品牌 token 覆盖（`--color-accent: #177a4d`、中文标题字体栈、页面底色），写在 `[data-astryx-theme='matcha']` 下且**不放进 `@layer`**，才能压过主题默认值。
+  3. **`styles.css`**：业务布局与页面级类名（`app` / `hero` / `stat-card` / `data-table` / `product-card` 等），全部用 `var(--color-*|--spacing-*|--radius-*|--text-*)`，禁止硬编码颜色。Astryx 的样式都在 `@layer` 里，未分层的 `styles.css` 天然优先，所以存量页面不会被动。
+- **不引入 StyleX / Tailwind 编译器**：组件只吃 props（`label` / `variant` / `isDisabled` …）和 token，禁止 `stylex.create()`、`xstyle`、utility class。Astryx 官方约定见 `apps/web/AGENTS.md`，与本文件冲突时以本文件为准。
 - **类型**：`tsc --noEmit` 必须零错误；不用 `any` 绕过（确需时先说明）。
 
 ### 界面文案与信息密度
@@ -370,7 +376,7 @@ E2E **不在门禁里**：它需要真实后端 + 共享库，CI 没有这些环
 | sqlc | `apps/api/sqlc.yaml` 已配置但未启用，repo 全是手写 SQL | 启用即要重写 repo 层，别半途混用 |
 | 集成 / E2E | 集成测试未建（计划 testcontainers）；E2E 主链路已建（`apps/web/e2e`，真后端 + 共享库，截图在 `docs/screenshots/`），未进 CI | 集成测试按 testcontainers 补；E2E 若要进 CI，需先给 CI 一个可用的 MySQL 服务容器 |
 | 部署 | compose 只有 `mysql` + `api`；`web` 与 nginx 配置就绪但未编入；本机未实跑 docker | 补 web 服务与反向代理，留下实跑证据 |
-| 前端包体 | `vite build` 单包约 1.49 MB（gzip 489 kB），已触发 500 kB 警告 | 用路由级 `import()` 分包，图表库按需加载 |
+| 前端包体 | `vite build` 单包约 1.90 MB（gzip 624 kB），接入 Astryx 后比换装前涨了约 300 kB，仍触发 500 kB 警告 | 用路由级 `import()` 分包，图表库与 Astryx 按需加载；预算从 gzip 624 kB 起算 |
 
 ---
 

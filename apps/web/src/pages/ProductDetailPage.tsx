@@ -1,6 +1,10 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Badge } from '@astryxdesign/core/Badge'
+import { Button } from '@astryxdesign/core/Button'
+import { Card } from '@astryxdesign/core/Card'
+import { Field } from '@astryxdesign/core/Field'
 import { getProduct } from '@/services/products'
 import { createOrder } from '@/services/orders'
 import { getSummary } from '@/services/points'
@@ -25,14 +29,21 @@ export function ProductDetailPage(): ReactNode {
 
   if (!product) {
     return (
-      <section className="card">
+      <Card padding={5} elevation="low">
         <p className="empty-state">商品不存在或已下架。</p>
-      </section>
+      </Card>
     )
   }
 
+  const insufficient = (summary?.balance ?? 0) < product.pointsPrice
+  const soldOut = product.stock <= 0
+
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault()
+    // Button 的 isDisabled 只落 aria-disabled，回车提交仍会触发表单提交，这里再挡一道
+    if (insufficient || soldOut) {
+      return
+    }
     setError('')
     try {
       const order = await createOrder(product.id, receiver)
@@ -44,52 +55,60 @@ export function ProductDetailPage(): ReactNode {
     }
   }
 
-  const insufficient = (summary?.balance ?? 0) < product.pointsPrice
+  const buttonLabel = insufficient ? '积分不足' : soldOut ? '已兑完' : '确认兑换'
 
   return (
-    <section className="card">
+    <Card padding={5} elevation="low">
       <div className="product-detail">
         <div className="product-emoji product-emoji--large" aria-hidden="true">
           {product.coverUrl ? <img src={product.coverUrl} alt="" /> : productCoverIcon(product.category)}
         </div>
-        <div style={{ flex: 1, minWidth: 240 }}>
-          <div className="filter-bar" style={{ marginBottom: 10 }}>
+        <div className="product-detail__body">
+          <div className="filter-bar">
             {product.category && <span className="chip chip--tiny">{product.category}</span>}
-            <span className={product.stock > 0 ? 'badge badge--ok' : 'badge badge--muted'}>
-              库存 {product.stock}
-            </span>
-            {product.limitPerUser && (
-              <span className="badge badge--info">每人限 {product.limitPerUser} 件</span>
+            <Badge
+              label={`库存 ${product.stock}`}
+              variant={product.stock > 0 ? 'success' : 'neutral'}
+            />
+            {product.limitPerUser !== undefined && product.limitPerUser !== null && (
+              <Badge label={`每人限 ${product.limitPerUser} 件`} variant="info" />
             )}
           </div>
-          <h2 style={{ margin: '0 0 6px', fontSize: 24 }}>{product.name}</h2>
-          <p className="muted" style={{ margin: 0 }}>{product.description}</p>
+          <h2 className="product-detail__title">{product.name}</h2>
+          <p className="muted">{product.description}</p>
           <p className="product-price">{formatPoints(product.pointsPrice)} 分</p>
-          <p className="muted" style={{ margin: 0 }}>
+          <p className="muted">
             我的余额：{formatPoints(summary?.balance ?? 0)} 分
-            {insufficient && <span className="danger">（还差 {formatPoints(product.pointsPrice - (summary?.balance ?? 0))} 分）</span>}
+            {insufficient && (
+              <span className="danger">
+                （还差 {formatPoints(product.pointsPrice - (summary?.balance ?? 0))} 分）
+              </span>
+            )}
           </p>
+
+          <p className="hint-note">
+            兑换成功后积分立即扣减并生成核销码，可在「兑换记录」查看状态；未核销订单支持取消并退回积分。
+          </p>
+
+          <form onSubmit={onSubmit} className="product-detail__form">
+            <Field label="收货 / 领取人" inputID="receiver">
+              <input
+                id="receiver"
+                className="native-input"
+                value={receiver}
+                onChange={(e) => setReceiver(e.target.value)}
+              />
+            </Field>
+            {error !== '' && <p className="field-error">{error}</p>}
+            <Button
+              label={buttonLabel}
+              type="submit"
+              variant="primary"
+              isDisabled={insufficient || soldOut}
+            />
+          </form>
         </div>
       </div>
-
-      <div className="hint-note">
-        兑换成功后积分立即扣减并生成核销码，可在「兑换记录」查看状态；未核销订单支持取消并退回积分。
-      </div>
-
-      <form onSubmit={onSubmit} style={{ marginTop: 18 }}>
-        <div className="form-field">
-          <label htmlFor="receiver">收货 / 领取人</label>
-          <input
-            id="receiver"
-            value={receiver}
-            onChange={(e) => setReceiver(e.target.value)}
-          />
-        </div>
-        {error && <p className="field-error">{error}</p>}
-        <button type="submit" className="btn" disabled={insufficient || product.stock <= 0}>
-          {insufficient ? '积分不足' : product.stock <= 0 ? '已兑完' : '确认兑换'}
-        </button>
-      </form>
-    </section>
+    </Card>
   )
 }

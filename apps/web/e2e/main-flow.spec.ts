@@ -70,11 +70,13 @@ test('主链路：注册 → 上报行程 → 积分到账 → 商城兑换 → 
   // 6. 商城列表
   await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '积分商城' }).click()
   await expect(page.getByRole('heading', { name: '积分商城' })).toBeVisible()
-  await expect(page.getByText(/共 \d+ 件在售商品/)).toBeVisible()
+  // 等商品卡片真的渲染出来再截图，否则会拍到「共 0 件」的空态
+  await expect(page.locator('.product-card').first()).toBeVisible({ timeout: 120_000 })
+  await expect(page.getByText(/共 [1-9]\d* 件在售商品/)).toBeVisible()
   await shot(page, '06-mall.png')
 
   // 7. 商品详情：挑一个 100 分、买得起的商品
-  const card = page.locator('.card', { hasText: '环保帆布袋' }).first()
+  const card = page.locator('.product-card', { hasText: '环保帆布袋' }).first()
   await card.getByRole('link', { name: '查看详情' }).click()
   await expect(page.getByRole('button', { name: '确认兑换' })).toBeEnabled()
   await shot(page, '07-product-detail.png')

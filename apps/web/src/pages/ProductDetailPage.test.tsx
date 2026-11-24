@@ -48,8 +48,9 @@ describe('ProductDetailPage', () => {
     )
     renderDetail()
 
+    // Astryx Button 的 isDisabled 渲染成 aria-disabled，不是原生 disabled 属性
     const button = await screen.findByRole('button', { name: '已兑完' })
-    expect(button).toBeDisabled()
+    expect(button).toHaveAttribute('aria-disabled', 'true')
   })
 
   it('余额不足时禁用兑换并提示差额', async () => {
@@ -60,7 +61,7 @@ describe('ProductDetailPage', () => {
     renderDetail()
 
     const button = await screen.findByRole('button', { name: '积分不足' })
-    expect(button).toBeDisabled()
+    expect(button).toHaveAttribute('aria-disabled', 'true')
     expect(screen.getByText('（还差 380 分）')).toBeInTheDocument()
   })
 

@@ -1,12 +1,16 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Button } from '@astryxdesign/core/Button'
+import { Card } from '@astryxdesign/core/Card'
+import { TextInput } from '@astryxdesign/core/TextInput'
+import { VStack } from '@astryxdesign/core/VStack'
 import { login, register } from '@/services/auth'
 import { ApiError } from '@/lib/http'
 
 type Tab = 'login' | 'register'
 
 /**
- * 登录 / 注册页（联调版）。
+ * 登录 / 注册页。
  * 后端按手机号登记账号：注册可填昵称（省略则用手机号），登录用手机号 + 密码。
  */
 export function LoginPage(): ReactNode {
@@ -50,76 +54,78 @@ export function LoginPage(): ReactNode {
         <h2>登录绿行积分</h2>
         <p>上报绿色出行，积攒碳积分，兑换绿色好物。</p>
       </section>
-      <section className="card">
-        <div className="filter-bar" style={{ marginBottom: 16 }}>
-          <button
-            type="button"
-            className={tab === 'login' ? 'chip chip--active' : 'chip'}
-            onClick={() => {
-              setTab('login')
-              setError('')
-            }}
-          >
-            登录
-          </button>
-          <button
-            type="button"
-            className={tab === 'register' ? 'chip chip--active' : 'chip'}
-            onClick={() => {
-              setTab('register')
-              setError('')
-            }}
-          >
-            注册
-          </button>
-        </div>
 
-        <form onSubmit={onSubmit}>
-          <div className="form-field">
-            <label htmlFor="account">手机号</label>
-            <input
-              id="account"
-              value={account}
-              onChange={(e) => setAccount(e.target.value)}
-              placeholder="后端按手机号登记账号"
-              autoComplete="username"
-            />
+      <Card padding={5} elevation="low">
+        <VStack gap={3}>
+          <div className="filter-bar">
+            <button
+              type="button"
+              className={tab === 'login' ? 'chip chip--active' : 'chip'}
+              onClick={() => {
+                setTab('login')
+                setError('')
+              }}
+            >
+              登录
+            </button>
+            <button
+              type="button"
+              className={tab === 'register' ? 'chip chip--active' : 'chip'}
+              onClick={() => {
+                setTab('register')
+                setError('')
+              }}
+            >
+              注册
+            </button>
           </div>
 
-          {tab === 'register' && (
-            <div className="form-field">
-              <label htmlFor="nickname">昵称（可选）</label>
-              <input
-                id="nickname"
-                value={nickname}
-                onChange={(e) => setNickname(e.target.value)}
-                placeholder="不填则默认用手机号"
+          <form onSubmit={onSubmit}>
+            <VStack gap={3}>
+              <TextInput
+                label="手机号"
+                value={account}
+                onChange={(value) => setAccount(value)}
+                placeholder="后端按手机号登记账号"
+                autoComplete="username"
               />
-            </div>
-          )}
 
-          <div className="form-field">
-            <label htmlFor="password">密码</label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="至少 6 位"
-              autoComplete={tab === 'login' ? 'current-password' : 'new-password'}
-            />
-          </div>
+              {tab === 'register' && (
+                <TextInput
+                  label="昵称（可选）"
+                  value={nickname}
+                  onChange={(value) => setNickname(value)}
+                  placeholder="不填则默认用手机号"
+                />
+              )}
 
-          {error && <p className="field-error">{error}</p>}
-          <button type="submit" className="btn" style={{ width: '100%' }} disabled={pending}>
-            {pending ? '处理中…' : tab === 'login' ? '登录' : '注册并登录'}
-          </button>
-        </form>
+              <TextInput
+                label="密码"
+                type="password"
+                value={password}
+                onChange={(value) => setPassword(value)}
+                placeholder="至少 6 位"
+                autoComplete={tab === 'login' ? 'current-password' : 'new-password'}
+              />
 
-        <p className="hint-note" style={{ marginTop: 14 }}>
-          已对接 POST /api/v1/auth/login、/auth/register；登录成功后 token 存本地，后续请求带 Authorization: Bearer。
-        </p>
-      </section>
+              {error !== '' && <p className="field-error">{error}</p>}
+
+              <Button
+                label={pending ? '处理中…' : tab === 'login' ? '登录' : '注册并登录'}
+                type="submit"
+                variant="primary"
+                isDisabled={pending}
+                width="100%"
+              />
+            </VStack>
+          </form>
+
+          <p className="hint-note">
+            已对接 POST /api/v1/auth/login、/auth/register；登录成功后 token 存本地，后续请求带
+            Authorization: Bearer。
+          </p>
+        </VStack>
+      </Card>
     </div>
   )
 }

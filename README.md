@@ -122,6 +122,7 @@ flowchart LR
 | 迁移 | golang-migrate 风格的 `db/migrations` | — | up / down 成对，可回滚 |
 | 事件 | 事务性 Outbox 表 + 轮询 Worker | — | 不引入 Kafka / Redis，仍在关系库里保证"业务成功 ⇒ 事件必达"；**Worker 尚未实现**（见「系统架构」实现现状） |
 | 前端 | React + TypeScript 7 + Vite + TanStack Query | 19.3 / 7.0.2 / 8.3 / 5.104 | TS7 原生编译器（Go 实现），构建快；Query 统一服务端状态 |
+| 设计系统 | [Astryx](https://astryx.atmeta.com/) core + matcha 主题 | 0.7.17 | 控件层（Button / TextInput / Card / Badge / Field）与 design token 交给 Astryx；业务样式仍是一个 `styles.css`（token 层），无 StyleX/Tailwind 编译器 |
 | 接口契约 | OpenAPI 3.1 + swagger-typescript-api（devDependency） | 13.15 | `docs/api/openapi.yaml` 是唯一契约，`npm run gen:api` 生成 `apps/web/src/types/api.ts`，门禁校验生成物与 yaml 一致 |
 | 测试 | Go `testing` / Vitest + Testing Library + MSW / Playwright / k6 | 1.65 | 单测、页面测试、E2E 主链路已落地；集成测试与性能压测待建 |
 | 数据库 | MySQL | 8.4+（本机 9.7） | `utf8mb4_0900_ai_ci`、`DATETIME(3)`、JSON 存事件负载 |

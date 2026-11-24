@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
+import { Card } from '@astryxdesign/core/Card'
 import { listProducts } from '@/services/products'
 import { getSummary } from '@/services/points'
 import { formatPoints } from '@/lib/format'
@@ -24,7 +25,7 @@ export function MallPage(): ReactNode {
       </section>
 
       <div className="row-between">
-        <span className="muted" style={{ margin: 0 }}>共 {products.length} 件在售商品</span>
+        <span className="muted">共 {products.length} 件在售商品</span>
         <span className="price-chip">我的余额 {formatPoints(summary?.balance ?? 0)} 分</span>
       </div>
 
@@ -33,23 +34,25 @@ export function MallPage(): ReactNode {
       ) : (
         <div className="grid product-grid">
           {products.map((p) => (
-            <div key={p.id} className="card product-card">
-              <div className="product-cover" aria-hidden="true">
-                {p.coverUrl ? <img src={p.coverUrl} alt="" /> : productCoverIcon(p.category)}
-              </div>
-              <div className="product-body">
-                {p.category && <span className="chip chip--tiny">{p.category}</span>}
-                <h3>{p.name}</h3>
-                <p className="muted" style={{ margin: 0 }}>{p.description}</p>
-                <div className="product-meta">
-                  <span className="price-chip">{formatPoints(p.pointsPrice)} 分</span>
-                  <span className="muted" style={{ margin: 0 }}>库存 {p.stock}</span>
+            <Card key={p.id} padding={0} elevation="low">
+              <div className="product-card">
+                <div className="product-cover" aria-hidden="true">
+                  {p.coverUrl ? <img src={p.coverUrl} alt="" /> : productCoverIcon(p.category)}
                 </div>
-                <Link to={`/mall/${p.id}`} className="btn btn--ghost">
-                  查看详情
-                </Link>
+                <div className="product-body">
+                  {p.category && <span className="chip chip--tiny">{p.category}</span>}
+                  <h3>{p.name}</h3>
+                  <p className="muted">{p.description}</p>
+                  <div className="product-meta">
+                    <span className="price-chip">{formatPoints(p.pointsPrice)} 分</span>
+                    <span className="muted">库存 {p.stock}</span>
+                  </div>
+                  <Link to={`/mall/${p.id}`} className="link-button">
+                    查看详情
+                  </Link>
+                </div>
               </div>
-            </div>
+            </Card>
           ))}
         </div>
       )}

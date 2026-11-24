@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
+import { Badge } from '@astryxdesign/core/Badge'
+import { Card } from '@astryxdesign/core/Card'
 import { fetchPing } from '@/lib/http'
 
 const FLOW = ['上报行程', '计算碳减排量', '发放碳积分', '商城兑换']
@@ -33,10 +35,12 @@ export function HomePage(): ReactNode {
         <div className="hero__flow">
           {FLOW.map((step, i) => (
             <span key={step} style={{ display: 'contents' }}>
-              <span className={i === FLOW.length - 1 ? 'flow-step flow-step--end' : 'flow-step'}>
-                {step}
-              </span>
-              {i < FLOW.length - 1 && <span className="flow-arrow" aria-hidden="true">→</span>}
+              <span className={i === FLOW.length - 1 ? 'flow-step flow-step--end' : 'flow-step'}>{step}</span>
+              {i < FLOW.length - 1 && (
+                <span className="flow-arrow" aria-hidden="true">
+                  →
+                </span>
+              )}
             </span>
           ))}
         </div>
@@ -44,19 +48,23 @@ export function HomePage(): ReactNode {
 
       <section className="grid">
         {ENTRIES.map((e) => (
-          <Link to={e.to} className="card feature-card" key={e.to}>
-            <div className="feature-card__icon" aria-hidden="true">{e.emoji}</div>
-            <h3 className="feature-card__title">{e.title}</h3>
-            <p className="feature-card__note">{e.note}</p>
-          </Link>
+          <Card key={e.to} padding={4} elevation="low">
+            <Link to={e.to} className="feature-card">
+              <div className="feature-card__icon" aria-hidden="true">
+                {e.emoji}
+              </div>
+              <h3 className="feature-card__title">{e.title}</h3>
+              <p className="feature-card__note">{e.note}</p>
+            </Link>
+          </Card>
         ))}
       </section>
 
-      <section className="card">
+      <Card padding={5} elevation="low">
         <div className="section-head">
           <h3>前后端连通性</h3>
-          {data !== undefined && <span className="badge badge--ok">已连通</span>}
-          {isError && <span className="badge badge--danger">未连接</span>}
+          {data !== undefined && <Badge label="已连通" variant="success" />}
+          {isError && <Badge label="未连接" variant="error" />}
         </div>
         {isPending && <p className="muted">正在请求 /api/v1/ping …</p>}
         {isError && (
@@ -76,7 +84,7 @@ export function HomePage(): ReactNode {
             <li>运行环境：{data.env}</li>
           </ul>
         )}
-      </section>
+      </Card>
 
       <section>
         <div className="section-head">
@@ -85,24 +93,24 @@ export function HomePage(): ReactNode {
         </div>
         <div className="grid">
           {RULES.map((rule) => (
-            <article className="card" key={rule.label}>
-              <p className="stat-label muted" style={{ margin: 0 }}>{rule.label}</p>
-              <p className="metric">{rule.value}</p>
-              <p className="muted">{rule.note}</p>
-            </article>
+            <Card key={rule.label} padding={4} elevation="low">
+              <p className="stat-card__label">{rule.label}</p>
+              <p className="stat-card__value">{rule.value}</p>
+              <p className="stat-card__hint">{rule.note}</p>
+            </Card>
           ))}
         </div>
       </section>
 
-      <section className="card">
-        <h3>当前进度</h3>
+      <Card padding={5} elevation="low">
+        <h3 style={{ marginTop: 0 }}>当前进度</h3>
         <ul className="checklist">
           <li className="done">Sprint 0：Monorepo 骨架、领域规则单元测试、健康检查、迁移脚本</li>
           <li className="done">Sprint 1：用户注册登录、行程上报、碳减排与积分计算（已对接接口）</li>
           <li className="done">Sprint 2：积分账户与流水、商城浏览、兑换下单与状态机（已对接接口）</li>
           <li>Sprint 3：运营后台、报表、E2E 回归与实验报告定稿</li>
         </ul>
-      </section>
+      </Card>
     </>
   )
 }
