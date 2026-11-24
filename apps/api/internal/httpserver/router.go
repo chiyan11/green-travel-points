@@ -108,6 +108,7 @@ func NewRouter(opt Options) http.Handler {
 				r.Post("/admin/orders/{id}/ship", admin.transition("ship", "SHIPPED"))
 				r.Post("/admin/orders/{id}/complete", admin.transition("complete", "COMPLETED"))
 				r.Get("/admin/points/reconcile", admin.reconcile)
+				r.Post("/admin/points/expire", admin.expirePoints)
 				r.Get("/admin/config", admin.listConfig)
 				r.Put("/admin/config", admin.updateConfig)
 				r.Put("/admin/travel-modes/{code}", admin.updateTravelMode)

@@ -3,6 +3,7 @@ package httpserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -29,6 +30,7 @@ type fakeAdmin struct {
 	sku          app.SKU
 	config       []app.ConfigItem
 	mode         app.TravelMode
+	expire       app.ExpireResult
 	transition   func(id int64, to, reason string) (app.Order, error)
 	updateConfig func([]app.ConfigUpdate) ([]app.ConfigItem, error)
 	updateMode   func(code string, in app.TravelModeUpdate) (app.TravelMode, error)
@@ -83,6 +85,10 @@ func (f fakeAdmin) UpdateTravelMode(_ context.Context, code string, in app.Trave
 		return f.updateMode(code, in)
 	}
 	return f.mode, f.err
+}
+
+func (f fakeAdmin) ExpirePoints(context.Context) (app.ExpireResult, error) {
+	return f.expire, f.err
 }
 
 func newAdminRouter(admin app.AdminStore, roles app.RoleStore) http.Handler {
@@ -371,5 +377,42 @@ func TestAdminUpdateTravelModeNotFound(t *testing.T) {
 		`{"enabled":false}`, map[string]string{"X-User-Id": "1002"})
 	if rec.Code != http.StatusNotFound || env.Code != CodeNotFound {
 		t.Fatalf("期望 404/NOT_FOUND，实际 %d/%s", rec.Code, env.Code)
+	}
+}
+
+// ---------- P3-3 积分过期清算 ----------
+
+func TestAdminExpirePointsOK(t *testing.T) {
+	admin := fakeAdmin{expire: app.ExpireResult{Batches: 2, Points: 150, Accounts: 1}}
+	h := newAdminRouter(admin, fakeRoles{role: "ADMIN"})
+	rec, env := doJSON(t, h, http.MethodPost, "/api/v1/admin/points/expire", "",
+		map[string]string{"X-User-Id": "1002"})
+	if rec.Code != http.StatusOK || env.Code != CodeOK {
+		t.Fatalf("期望 200/OK，实际 %d/%s", rec.Code, env.Code)
+	}
+	var res app.ExpireResult
+	if err := json.Unmarshal(env.Data, &res); err != nil {
+		t.Fatalf("解析 data 失败: %v", err)
+	}
+	if res.Batches != 2 || res.Points != 150 || res.Accounts != 1 {
+		t.Fatalf("清算结果不符: %+v", res)
+	}
+}
+
+func TestAdminExpirePointsForbidden(t *testing.T) {
+	h := newAdminRouter(fakeAdmin{}, fakeRoles{role: "CITIZEN"})
+	rec, env := doJSON(t, h, http.MethodPost, "/api/v1/admin/points/expire", "",
+		map[string]string{"X-User-Id": "1001"})
+	if rec.Code != http.StatusForbidden || env.Code != CodeForbidden {
+		t.Fatalf("期望 403/FORBIDDEN，实际 %d/%s", rec.Code, env.Code)
+	}
+}
+
+func TestAdminExpirePointsInternalError(t *testing.T) {
+	h := newAdminRouter(fakeAdmin{err: errors.New("db down")}, fakeRoles{role: "ADMIN"})
+	rec, env := doJSON(t, h, http.MethodPost, "/api/v1/admin/points/expire", "",
+		map[string]string{"X-User-Id": "1002"})
+	if rec.Code != http.StatusInternalServerError || env.Code != CodeInternal {
+		t.Fatalf("期望 500/INTERNAL，实际 %d/%s", rec.Code, env.Code)
 	}
 }

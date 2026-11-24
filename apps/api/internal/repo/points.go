@@ -220,3 +220,143 @@ func placeholders(n int) string {
 	}
 	return strings.TrimSuffix(strings.Repeat("?,", n), ",")
 }
+
+// ExpirePoints 执行积分过期清算：把已到期且仍有余量的 ACTIVE 批次逐条置为 EXPIRED，
+// 同时写 EXPIRE 反向流水、扣减账户余额，并在 point_batch_txn 记一笔批次扣减明细。
+//
+// 语义与不变量：
+//   - 每批次最多一条 EXPIRE 流水：biz_ref_type='point_batch' + biz_ref_id=batch_id，
+//     由 uk_point_txn_biz 兜底，重复执行不会重复扣分；
+//   - 过期量取 min(batch.remaining, account.balance)：历史数据账实不符（余额小于批次余量）时
+//     只扣得动的部分，批次仍置 EXPIRED 并归零，差额留给 /admin/points/reconcile 暴露；
+//   - 全程单事务，锁顺序 account → batch（与 CreateOrder 一致，避免交叉死锁）；
+//   - 结束后 Σpoint_account.balance 与 Σpoint_batch.remaining(ACTIVE) 仍然相等（正常数据下）。
+func (s *Store) ExpirePoints(ctx context.Context) (app.ExpireResult, error) {
+	out := app.ExpireResult{}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return out, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// 先固定账户顺序（升序）再逐个加锁，避免与下单/取消事务交叉成环。
+	accountIDs, err := expiredBatchAccounts(ctx, tx)
+	if err != nil {
+		return out, err
+	}
+
+	now := time.Now()
+	for _, accountID := range accountIDs {
+		var balance int64
+		err := tx.QueryRowContext(ctx,
+			`SELECT balance FROM point_account WHERE id = ? FOR UPDATE`, accountID).Scan(&balance)
+		if errors.Is(err, sql.ErrNoRows) {
+			continue // 批次指向的账户已不存在（历史脏数据），跳过
+		}
+		if err != nil {
+			return out, err
+		}
+
+		batches, err := lockExpiredBatches(ctx, tx, accountID)
+		if err != nil {
+			return out, err
+		}
+		balanceChanged := false
+		for _, b := range batches {
+			expire := b.remaining
+			if expire > balance {
+				expire = balance
+			}
+			if _, err := tx.ExecContext(ctx,
+				`UPDATE point_batch SET remaining = 0, status = 'EXPIRED' WHERE id = ?`, b.id); err != nil {
+				return out, err
+			}
+			out.Batches++
+			if expire <= 0 {
+				continue // 余额已为 0：批次核销掉，但不再写金额为 0 的流水（DB 约束 amount <> 0）
+			}
+			balance -= expire
+			balanceChanged = true
+			res, err := tx.ExecContext(ctx,
+				`INSERT INTO point_txn
+				   (account_id, txn_type, amount, balance_after, biz_ref_type, biz_ref_id, occurred_at)
+				 VALUES (?, 'EXPIRE', ?, ?, 'point_batch', ?, ?)`,
+				accountID, -expire, balance, b.id, now)
+			if err != nil {
+				return out, err
+			}
+			txnID, err := res.LastInsertId()
+			if err != nil {
+				return out, err
+			}
+			// 明细同样记账：取消订单回填时按 point_batch_txn 原路还原，不能把已过期的量算回去。
+			if _, err := tx.ExecContext(ctx,
+				`INSERT INTO point_batch_txn (batch_id, txn_id, amount) VALUES (?, ?, ?)`,
+				b.id, txnID, -expire); err != nil {
+				return out, err
+			}
+			out.Points += expire
+		}
+		if balanceChanged {
+			if _, err := tx.ExecContext(ctx,
+				`UPDATE point_account SET balance = ?, version = version + 1 WHERE id = ?`,
+				balance, accountID); err != nil {
+				return out, err
+			}
+			out.Accounts++
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return out, err
+	}
+	return out, nil
+}
+
+// expiredBatchAccounts 列出存在到期批次的账户，按 id 升序固定加锁顺序。
+func expiredBatchAccounts(ctx context.Context, tx *sql.Tx) ([]int64, error) {
+	rows, err := tx.QueryContext(ctx,
+		`SELECT DISTINCT account_id FROM point_batch
+		 WHERE status = 'ACTIVE' AND remaining > 0 AND expires_at <= NOW(3)
+		 ORDER BY account_id ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	ids := make([]int64, 0, 16)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// expiredBatch 是一条待过期批次的快照（id + 剩余量）。
+type expiredBatch struct{ id, remaining int64 }
+
+// lockExpiredBatches 锁住某账户下所有已到期批次，按 expires_at、id 升序（与 FIFO 口径一致）。
+func lockExpiredBatches(ctx context.Context, tx *sql.Tx, accountID int64) ([]expiredBatch, error) {
+	rows, err := tx.QueryContext(ctx,
+		`SELECT id, remaining FROM point_batch
+		 WHERE account_id = ? AND status = 'ACTIVE' AND remaining > 0 AND expires_at <= NOW(3)
+		 ORDER BY expires_at ASC, id ASC FOR UPDATE`, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	batches := make([]expiredBatch, 0, 8)
+	for rows.Next() {
+		var b expiredBatch
+		if err := rows.Scan(&b.id, &b.remaining); err != nil {
+			return nil, err
+		}
+		batches = append(batches, b)
+	}
+	return batches, rows.Err()
+}
