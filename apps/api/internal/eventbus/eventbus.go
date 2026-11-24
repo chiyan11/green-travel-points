@@ -17,6 +17,8 @@ const (
 	TopicRedeemOrderPaid = "RedeemOrderPaid" // 兑换订单已支付（待发货）
 	TopicOrderShipped    = "OrderShipped"    // 订单已发货
 	TopicOrderConfirmed  = "OrderConfirmed"  // 商户已确认订单（运营后台）
+	TopicOrderPaid       = "OrderPaid"       // 兑换下单成功（待商户确认）
+	TopicOrderCancelled  = "OrderCancelled"  // 订单取消，积分原路退回
 	TopicOrderCompleted  = "OrderCompleted"  // 订单已完成核销（运营后台）
 )
 

@@ -8,6 +8,7 @@ import (
 
 	"greentravelpoints/internal/app"
 	"greentravelpoints/internal/domain"
+	"greentravelpoints/internal/eventbus"
 )
 
 // RoleOf 返回用户角色，供后台鉴权使用；用户不存在或已冻结返回 ErrNotFound。
@@ -298,9 +299,9 @@ func (s *Store) TransitionOrder(ctx context.Context, orderID int64, to, reason s
 	}
 
 	topic := map[domain.OrderStatus]string{
-		domain.OrderPaid:      "OrderConfirmed",
-		domain.OrderShipped:   "OrderShipped",
-		domain.OrderCompleted: "OrderCompleted",
+		domain.OrderPaid:      eventbus.TopicOrderConfirmed,
+		domain.OrderShipped:   eventbus.TopicOrderShipped,
+		domain.OrderCompleted: eventbus.TopicOrderCompleted,
 	}[target]
 	if err := insertOutbox(ctx, tx, topic, "order", orderNo, map[string]any{
 		"orderNo": orderNo,

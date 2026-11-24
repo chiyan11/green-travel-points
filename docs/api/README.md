@@ -27,8 +27,11 @@
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/api/v1/points/summary` | 余额 / 冻结 / 可用 / 累计减碳 / 本月获得 / 今日获得 / 日上限 |
+| GET | `/api/v1/points/summary` | 余额 / 冻结 / 可用 / 累计减碳 / 本月获得 / 今日获得 / 日上限（`earnedToday` 已排除退款） |
 | GET | `/api/v1/points/transactions` | 流水；`type` 可逗号多选，支持 `TRAVEL/REDEEM/REFUND/ADJUST/EXPIRE` 及前端别名 `EARN/SPEND/REVERSE` |
+| GET | `/api/v1/points/daily-carbon?days=7` | 最近 N 天逐日碳减排量（缺失日期补 0），供前端趋势图 |
+
+每日碳减排返回：`[{"date":"2026-11-24","grams":483.2}, ...]`（`days` 默认 7，上限 90）。
 
 流水字段：`id, type, amount（正得负耗）, balanceAfter, reason, refType, refId, createdAt`。
 
@@ -48,6 +51,13 @@
 3. 锁后复核：商品在线 / 库存 > 0 / `balance - frozen ≥ 价格` / 未超 `limit_per_user`；
 4. 写 `redeem_order` + `point_txn(REDEEM)` + 扣余额 + 扣库存 + 按 FIFO 消耗 `point_batch`；
 5. 写 `event_outbox(OrderPaid)`，提交。
+
+批次一致性（BR-11）：
+- 扣减严格按 `expires_at, id` 升序（真 FIFO），每笔消耗写入 `point_batch_txn`（`amount` 为负）；
+- 取消订单时按 `point_batch_txn` 原路回填到**原批次**（`expires_at` 不变，`amount` 为正）；
+  找不到消费明细（历史数据）才按 `points_expire_days` 新建批次；
+- 恒等式：`Σ(point_account.balance) − Σ(point_batch.remaining WHERE status='ACTIVE') = 0`
+  （行程发分侧由 `repo.GrantPointsWithBatch` 写批次，P2 的 `/trips` 需接这一行）。
 
 取消订单（BR-12）：补 `point_txn(REFUND)`、退余额、回补库存、生成退款批次（重新计有效期）、订单置 `CANCELLED`、写 `event_outbox(OrderCancelled)`。
 

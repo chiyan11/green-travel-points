@@ -6,6 +6,8 @@ import "context"
 type PointsStore interface {
 	Summary(ctx context.Context, userID int64) (PointsSummary, error)
 	ListTransactions(ctx context.Context, q TxnQuery) (Page[PointTxn], error)
+	// DailyCarbon 返回最近 days 天（含今天）逐日碳减排量，缺失日期补 0。
+	DailyCarbon(ctx context.Context, userID int64, days int) ([]DailyCarbonPoint, error)
 }
 
 // CatalogStore 是商品目录端口（M6）。

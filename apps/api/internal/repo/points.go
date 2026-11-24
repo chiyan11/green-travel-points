@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"time"
 
 	"greentravelpoints/internal/app"
 )
@@ -57,7 +58,7 @@ func (s *Store) Summary(ctx context.Context, userID int64) (app.PointsSummary, e
 		   COALESCE(SUM(CASE WHEN t.occurred_at >= CURDATE() THEN t.amount END), 0)
 		 FROM point_txn t
 		 JOIN point_account a ON a.id = t.account_id
-		 WHERE a.user_id = ? AND t.amount > 0`, userID,
+		 WHERE a.user_id = ? AND t.amount > 0 AND t.txn_type <> 'REFUND'`, userID,
 	).Scan(&out.EarnedThisMonth, &out.EarnedToday)
 	if err != nil {
 		return out, err
@@ -131,6 +132,51 @@ func (s *Store) dailyCap(ctx context.Context) int64 {
 		return 0
 	}
 	return n
+}
+
+// DailyCarbon 返回最近 days 天逐日碳减排量（缺失日期补 0），供前端趋势图使用。
+func (s *Store) DailyCarbon(ctx context.Context, userID int64, days int) ([]app.DailyCarbonPoint, error) {
+	if days <= 0 {
+		days = 7
+	}
+	if days > 90 {
+		days = 90
+	}
+	now := time.Now()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	start := today.AddDate(0, 0, -(days - 1))
+
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT DATE_FORMAT(cr.computed_at, '%Y-%m-%d') AS d,
+		        COALESCE(SUM(cr.carbon_saved_g), 0) AS grams
+		 FROM carbon_record cr
+		 JOIN trip_record tr ON tr.id = cr.trip_id
+		 WHERE tr.user_id = ? AND tr.status = 'VALID' AND cr.computed_at >= ?
+		 GROUP BY d`, userID, start)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	byDate := make(map[string]float64, days)
+	for rows.Next() {
+		var date string
+		var grams float64
+		if err := rows.Scan(&date, &grams); err != nil {
+			return nil, err
+		}
+		byDate[date] = grams
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	out := make([]app.DailyCarbonPoint, 0, days)
+	for i := 0; i < days; i++ {
+		d := start.AddDate(0, 0, i).Format("2006-01-02")
+		out = append(out, app.DailyCarbonPoint{Date: d, Grams: byDate[d]})
+	}
+	return out, nil
 }
 
 func normalizePage(page, pageSize int) (int, int) {

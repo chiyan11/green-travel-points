@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"greentravelpoints/internal/app"
+	"greentravelpoints/internal/eventbus"
 )
 
 // orderColumns 是订单查询的固定列顺序，scanOrder 依赖该顺序。
@@ -143,11 +144,16 @@ func (s *Store) CreateOrder(ctx context.Context, in app.CreateOrderInput) (app.O
 		return app.Order{}, false, err
 	}
 
-	if _, err := tx.ExecContext(ctx,
+	redeemRes, err := tx.ExecContext(ctx,
 		`INSERT INTO point_txn
 		   (account_id, txn_type, amount, balance_after, biz_ref_type, biz_ref_id, occurred_at)
 		 VALUES (?, 'REDEEM', ?, ?, 'redeem_order', ?, ?)`,
-		accountID, -price, newBalance, orderID, now); err != nil {
+		accountID, -price, newBalance, orderID, now)
+	if err != nil {
+		return app.Order{}, false, err
+	}
+	redeemTxnID, err := redeemRes.LastInsertId()
+	if err != nil {
 		return app.Order{}, false, err
 	}
 	if _, err := tx.ExecContext(ctx,
@@ -160,10 +166,10 @@ func (s *Store) CreateOrder(ctx context.Context, in app.CreateOrderInput) (app.O
 		skuID); err != nil {
 		return app.Order{}, false, err
 	}
-	if err := consumeBatches(ctx, tx, accountID, price, now); err != nil {
+	if err := consumeBatches(ctx, tx, accountID, price, redeemTxnID); err != nil {
 		return app.Order{}, false, err
 	}
-	if err := insertOutbox(ctx, tx, "OrderPaid", "order", orderNo, map[string]any{
+	if err := insertOutbox(ctx, tx, eventbus.TopicOrderPaid, "order", orderNo, map[string]any{
 		"orderNo":   orderNo,
 		"userId":    in.UserID,
 		"skuId":     skuID,
@@ -266,14 +272,17 @@ func (s *Store) CancelOrder(ctx context.Context, userID, orderID int64, reason s
 		return app.Order{}, err
 	}
 
-	// 退款积分作为新批次，按 points_expire_days 重新计有效期（BR-11）。
-	days := s.pointsExpireDays(ctx)
-	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO point_batch
-		   (account_id, grant_txn_id, granted_amount, remaining, expires_at, status)
-		 VALUES (?, ?, ?, ?, DATE_ADD(NOW(3), INTERVAL ? DAY), 'ACTIVE')`,
-		accountID, refundTxnID, points, points, days); err != nil {
+	// 退款优先原路回填被消耗的批次（expires_at 不变）；找不到消费明细才新建批次。
+	restored, err := restoreBatches(ctx, tx, orderID, refundTxnID, points)
+	if err != nil {
 		return app.Order{}, err
+	}
+	if restored < points {
+		days := s.pointsExpireDays(ctx)
+		if err := insertBatch(ctx, tx, accountID, refundTxnID, points-restored,
+			now.AddDate(0, 0, int(days))); err != nil {
+			return app.Order{}, err
+		}
 	}
 	if _, err := tx.ExecContext(ctx,
 		`UPDATE point_account SET balance = ?, version = version + 1 WHERE id = ?`,
@@ -294,7 +303,7 @@ func (s *Store) CancelOrder(ctx context.Context, userID, orderID int64, reason s
 		 WHERE id = ?`, cancelReason, orderID); err != nil {
 		return app.Order{}, err
 	}
-	if err := insertOutbox(ctx, tx, "OrderCancelled", "order", orderNo, map[string]any{
+	if err := insertOutbox(ctx, tx, eventbus.TopicOrderCancelled, "order", orderNo, map[string]any{
 		"orderNo": orderNo,
 		"userId":  userID,
 		"points":  points,
@@ -354,59 +363,6 @@ func scanOrder(row rowScanner) (app.Order, error) {
 		o.CancelledAt = &cancelledAt.Time
 	}
 	return o, nil
-}
-
-// consumeBatches 按先进先出扣减积分批次（BR-11）。
-// 批次不足（历史数据未补批次）时不报错，以账户余额为准。
-func consumeBatches(ctx context.Context, tx *sql.Tx, accountID, need int64, now time.Time) error {
-	if need <= 0 {
-		return nil
-	}
-	rows, err := tx.QueryContext(ctx,
-		`SELECT id, remaining FROM point_batch
-		 WHERE account_id = ? AND status = 'ACTIVE' AND remaining > 0
-		 ORDER BY expires_at ASC, id ASC FOR UPDATE`, accountID)
-	if err != nil {
-		return err
-	}
-	type batch struct{ id, remaining int64 }
-	batches := make([]batch, 0, 8)
-	for rows.Next() {
-		var b batch
-		if err := rows.Scan(&b.id, &b.remaining); err != nil {
-			_ = rows.Close()
-			return err
-		}
-		batches = append(batches, b)
-	}
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
-		return err
-	}
-	_ = rows.Close()
-
-	left := need
-	for _, b := range batches {
-		if left <= 0 {
-			break
-		}
-		take := b.remaining
-		if take > left {
-			take = left
-		}
-		left -= take
-		remaining := b.remaining - take
-		status := "ACTIVE"
-		if remaining == 0 {
-			status = "CONSUMED"
-		}
-		if _, err := tx.ExecContext(ctx,
-			`UPDATE point_batch SET remaining = ?, status = ? WHERE id = ?`,
-			remaining, status, b.id); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func insertOutbox(ctx context.Context, tx *sql.Tx, topic, aggregateType, aggregateID string, payload any) error {
