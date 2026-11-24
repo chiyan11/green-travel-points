@@ -261,3 +261,30 @@ go test ./... -count=1        # 领域规则 + 状态机 + HTTP 处理层（假�
 go vet ./...
 go build ./...
 ```
+
+### 7.1 repo 集成测试（真连 MySQL）
+
+`internal/repo/orders_test.go` 覆盖兑换成功 / 积分不足 / 库存不足 / 限购 / 取消退款回填 /
+20 并发防超卖 / 对账。**未设置 `REPO_TEST_DSN` 时全部跳过**，所以 CI 与没装库的机器不受影响。
+
+用例会**整表清空**，因此 DSN 指向的库名必须以 `_test` 结尾，防止误洗演示库。
+
+```powershell
+# ① 准备专用库（需要 MySQL 管理员；本机 root 口令未知时可临时起一个独立实例，见下）
+#    CREATE DATABASE green_travel_points_test DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+#    GRANT ALL PRIVILEGES ON green_travel_points_test.* TO 'greentravel'@'localhost';
+# ② 按文件名顺序执行 db/migrations/*.up.sql 到该库
+# ③ 跑测试
+$env:REPO_TEST_DSN = 'greentravel:greentravel@tcp(127.0.0.1:3306)/green_travel_points_test?parseTime=true&loc=Local&charset=utf8mb4'
+cd apps/api; go test ./internal/repo -count=1 -v
+```
+
+拿不到管理员权限时的等价做法：用已装好的 MySQL 二进制起一个**独立数据目录 + 独立端口**的临时实例，
+不碰系统实例、不需要 root 口令：
+
+```powershell
+$bin = 'C:\Program Files\MySQL\MySQL Server 8.0\bin'
+& "$bin\mysqld.exe" --initialize-insecure --datadir=.cache\mysql-test-data --basedir='C:\Program Files\MySQL\MySQL Server 8.0' --console
+& "$bin\mysqld.exe" --datadir=.cache\mysql-test-data --basedir='C:\Program Files\MySQL\MySQL Server 8.0' --port=3307 --mysqlx=OFF --console
+# 然后 root（空口令）建库建号、跑迁移，DSN 用 127.0.0.1:3307
+```
