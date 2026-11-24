@@ -134,6 +134,10 @@ curl -H "X-User-Id: 1001" http://127.0.0.1:8080/api/v1/points/summary
 订单流转非法时返回 `409 ILLEGAL_TRANSITION`；每次流转都会写 `event_outbox`
 （`OrderConfirmed` / `OrderShipped` / `OrderCompleted`），交给 Worker 消费。
 
+> `GET /api/v1/admin/products` 会随每个商品返回 `skus` 明细（`id / name / pointsPrice / stock / soldCount`），
+> 后台「改库存」直接用 `skus[].id` 调 `PUT /api/v1/admin/skus/{id}/stock`；
+> `pointsPrice` / `stock` 仍是聚合值（最低价 / 总库存），不要拿它当 SKU 库存。
+
 ### 6.1 参数配置（UC-14）
 
 业务规则参数在运行期全部来自数据库，运营改完**立即生效、无需发版**：
