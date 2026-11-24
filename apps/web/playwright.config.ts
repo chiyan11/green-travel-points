@@ -13,10 +13,10 @@ const BASE_URL = `http://127.0.0.1:${WEB_PORT}`
 
 export default defineConfig({
   testDir: './e2e',
-  // 共享库跨 ZeroTier，写接口（POST /trips 一个事务里 8 条 SQL）单次要 10–20s，
-  // 读接口 1–5s，所以超时给得比常规项目宽。
-  timeout: 180_000,
-  expect: { timeout: 30_000 },
+  // 共享库跨 ZeroTier，写接口（POST /trips 一个事务里 8 条 SQL）单次要 10–20s，忙时更久；
+  // 读接口 1–5s。断言超时给到 120s，整体用例 300s，避免网络抖动造成假失败。
+  timeout: 300_000,
+  expect: { timeout: 120_000 },
   fullyParallel: false,
   workers: 1,
   retries: 0,

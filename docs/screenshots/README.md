@@ -24,4 +24,4 @@ npm run test:e2e
 | `10-points-after-cancel.png` | 取消后回积分页 | 余额回到 150 分 |
 | `11-login-error.png` | 错误密码登录 | 后端错误文案展示，不跳转首页 |
 
-注：积分页的「近 7 日碳减排」当前仍是前端演示序列（P4 待办 #1），接上 `GET /api/v1/points/daily-carbon` 后需重拍 `05-points.png`。
+注：积分页的「近 7 日碳减排」已改接 `GET /api/v1/points/daily-carbon?days=7`（原先前端写死的演示序列已删除），截图里的曲线是真实账本数据。

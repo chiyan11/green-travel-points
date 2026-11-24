@@ -1,6 +1,6 @@
 /**
  * 近 7 日碳减排趋势折线图（ECharts）。
- * 原型占位：数据来自 services/points#getRecentCarbonSeries，联调换真实聚合接口。
+ * 数据来自 GET /api/v1/points/daily-carbon（services/points#getCarbonSeries）。
  */
 import { useEffect, useRef, type ReactNode } from 'react'
 import * as echarts from 'echarts'

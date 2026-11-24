@@ -41,11 +41,19 @@ test('主链路：注册 → 上报行程 → 积分到账 → 商城兑换 → 
   await shot(page, '03-home.png')
 
   // 4. 上报两笔地铁 50km 行程（每笔 75 分，共 150 分，够换 100 分商品）
+  // 写接口在共享库上要 12–20s，偶尔更久，所以等响应而不是只等 UI 变化。
   for (let i = 0; i < 2; i += 1) {
     await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '行程上报' }).click()
     await expect(page.getByRole('heading', { name: '行程上报' })).toBeVisible()
     await page.getByLabel(/距离（km/).fill('50')
-    await page.getByRole('button', { name: '上报行程' }).click()
+    const [tripResponse] = await Promise.all([
+      page.waitForResponse(
+        (r) => new URL(r.url()).pathname.endsWith('/api/v1/trips') && r.request().method() === 'POST',
+        { timeout: 180_000 },
+      ),
+      page.getByRole('button', { name: '上报行程' }).click(),
+    ])
+    expect(tripResponse.status(), `上报接口返回 ${tripResponse.status()}`).toBe(200)
     await expect(page.getByText('本次结果（后端核算）')).toBeVisible()
     await expect(page.getByText(/共 \d+ 条/)).toBeVisible()
     if (i === 0) await shot(page, '04-trips.png')
@@ -56,7 +64,7 @@ test('主链路：注册 → 上报行程 → 积分到账 → 商城兑换 → 
   await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '我的积分' }).click()
   await expect(page.getByRole('heading', { name: '我的积分' })).toBeVisible()
   const balanceCard = page.locator('.stat-card', { hasText: '当前余额' })
-  await expect(balanceCard).toContainText('150 分')
+  await expect(balanceCard).toContainText('150 分', { timeout: 120_000 })
   await shot(page, '05-points.png')
 
   // 6. 商城列表
@@ -86,14 +94,21 @@ test('主链路：注册 → 上报行程 → 积分到账 → 商城兑换 → 
   await expect(page.getByRole('button', { name: '取消并返还' })).toBeVisible()
   await shot(page, '08-orders-created.png')
 
-  // 9. 取消订单并返还积分
-  await page.getByRole('button', { name: '取消并返还' }).click()
-  await expect(page.getByText('已取消').first()).toBeVisible()
+  // 9. 取消订单并返还积分（等取消接口真的回来，再断言状态，否则会和退款竞态）
+  const [cancelResponse] = await Promise.all([
+    page.waitForResponse(
+      (r) => /\/api\/v1\/orders\/[^/]+\/cancel$/.test(new URL(r.url()).pathname) && r.request().method() === 'POST',
+      { timeout: 120_000 },
+    ),
+    page.getByRole('button', { name: '取消并返还' }).click(),
+  ])
+  expect(cancelResponse.ok(), `取消接口返回 ${cancelResponse.status()}`).toBeTruthy()
+  await expect(page.locator('table tbody tr').first()).toContainText('已取消')
   await shot(page, '09-orders-cancelled.png')
 
   // 10. 积分回到 150
   await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '我的积分' }).click()
-  await expect(page.locator('.stat-card', { hasText: '当前余额' })).toContainText('150 分')
+  await expect(page.locator('.stat-card', { hasText: '当前余额' })).toContainText('150 分', { timeout: 120_000 })
   await shot(page, '10-points-after-cancel.png')
 })
 

@@ -6,7 +6,12 @@
  * `occurredAt` 是页面视图模型（types/domain.ts）的字段名，wire 上是 `refType` / `createdAt`。
  */
 import { api } from '@/lib/http'
-import type { PointTxn as WirePointTxn, PointTxnPage, PointsSummary } from '@/types/api'
+import type {
+  DailyCarbonPoint as WireDailyCarbonPoint,
+  PointTxn as WirePointTxn,
+  PointTxnPage,
+  PointsSummary,
+} from '@/types/api'
 import {
   DAILY_POINTS_CAP,
   type PointBizRefType,
@@ -57,20 +62,16 @@ export interface DailyCarbonPoint {
 }
 
 /**
- * 近 7 日碳减排趋势（原型：固定演示序列）。
- * TODO 联调替换：GET /api/v1/points/daily-carbon?days=7（契约已在 openapi.yaml 中，
- * 需要把调用方（数据看板）改成异步查询后再接入，见 docs 待办）。
+ * 近 N 日碳减排趋势：GET /api/v1/points/daily-carbon（缺失日期后端已补 0）。
+ * wire 上的 date 是 `YYYY-MM-DD`，页面只需要 `M/D`。
  */
-export function getRecentCarbonSeries(): DailyCarbonPoint[] {
-  const demoGrams = [320, 483, 0, 960, 640, 483, 992]
-  const out: DailyCarbonPoint[] = []
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date()
-    d.setDate(d.getDate() - i)
-    out.push({
-      date: `${d.getMonth() + 1}/${d.getDate()}`,
-      grams: demoGrams[6 - i] ?? 0,
-    })
-  }
-  return out
+export async function getCarbonSeries(days = 7): Promise<DailyCarbonPoint[]> {
+  const rows = await api.get<WireDailyCarbonPoint[]>(`/api/v1/points/daily-carbon?days=${days}`)
+  return rows.map((r) => ({ date: toMonthDay(r.date), grams: r.grams }))
+}
+
+function toMonthDay(date: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(date)
+  if (!m) return date
+  return `${Number(m[2])}/${Number(m[3])}`
 }
