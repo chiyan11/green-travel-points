@@ -1,0 +1,44 @@
+@startuml 图1-2 用例图：出行与碳核算（模块 A）
+' 依据：需求规格说明书 §2.3.1 分区原则；与图1-1 总览一致
+skinparam defaultFontName "Microsoft YaHei"
+skinparam dpi 150
+skinparam shadowing false
+left to right direction
+skinparam usecase {
+  BackgroundColor #F5F9FF
+  BorderColor #2E5C8A
+}
+
+actor "市民\n（出行用户）" as R1
+actor "交通数据提供方\n（模拟外部系统）" as R5
+actor "定时任务\n（时间触发者）" as R6 <<系统>>
+
+rectangle "A. 出行与碳核算" {
+  usecase "UC-01 注册与登录" as UC01
+  usecase "UC-02 上报出行行程" as UC02
+  usecase "UC-03 出行数据采集与校验" as UC03
+  usecase "UC-04 计算碳减排量" as UC04
+  usecase "UC-05 核发碳积分" as UC05
+  usecase "UC-06 查询个人积分与流水" as UC06
+}
+
+R1 --> UC01
+R1 --> UC02
+R1 --> UC06
+R5 --> UC03
+R6 --> UC04
+R6 --> UC05
+
+UC02 ..> UC04 : <<include>>
+UC03 ..> UC04 : <<include>>
+UC04 ..> UC05 : <<include>>
+
+note bottom of UC02
+  上报与采集共用同一校验/幂等通道；
+  “算碳”和“发分”是被复用的子流程。
+end note
+note bottom of UC01
+  运营/商户也走同一登录用例；
+  本图只画市民侧，完整角色关系见图1-1。
+end note
+@enduml

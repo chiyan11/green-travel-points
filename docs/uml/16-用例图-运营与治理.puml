@@ -1,0 +1,39 @@
+@startuml 图1-4 用例图：运营与治理（模块 C）
+' 依据：需求规格说明书 §2.3.1 分区原则；与图1-1 总览一致
+skinparam defaultFontName "Microsoft YaHei"
+skinparam dpi 150
+skinparam shadowing false
+left to right direction
+skinparam usecase {
+  BackgroundColor #F5F9FF
+  BorderColor #2E5C8A
+}
+
+actor "运营管理员" as R2
+actor "碳核证 / 风控专员" as R4
+actor "定时任务\n（时间触发者）" as R6 <<系统>>
+
+rectangle "C. 运营与治理" {
+  usecase "UC-14 参数配置（因子与积分规则）" as UC14
+  usecase "UC-15 积分风控与人工调账" as UC15
+  usecase "UC-16 运营报表与对账" as UC16
+  usecase "UC-17 事件重放与死信处理" as UC17
+  usecase "UC-18 积分清算与过期" as UC18
+  usecase "UC-19 审计日志查询" as UC19
+}
+
+R2 --> UC14
+R2 --> UC15
+R2 --> UC16
+R2 --> UC19
+R4 --> UC15
+R4 --> UC16
+R4 --> UC17
+R4 --> UC19
+R6 --> UC18
+
+note bottom of UC16
+  报表对账与 UC-18 清算目标不同，
+  不画 include/extend。
+end note
+@enduml

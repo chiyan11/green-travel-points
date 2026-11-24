@@ -1,0 +1,29 @@
+@startuml 图2-8 序列图：浏览积分商城商品（UC-07 用例实现）
+skinparam defaultFontName "Microsoft YaHei"
+skinparam dpi 150
+skinparam shadowing false
+autonumber
+
+actor "市民" as U
+participant "前端\n(MallPage / ProductDetailPage)" as FE
+participant "ProductHandler\n(httpserver/products.go)" as H
+database "MySQL\nproduct / product_sku" as DB
+
+U -> FE : 打开商城
+FE -> H : GET /api/v1/products?page=1&category=...
+H -> DB : SELECT ... FROM product\nWHERE status='ONLINE' ORDER BY sort_order\nLIMIT ? OFFSET ?
+DB --> H : products
+H --> FE : 商品列表（含 SKU 库存/积分价）
+
+U -> FE : 点击商品详情
+FE -> H : GET /api/v1/products/{id}
+H -> DB : SELECT product + SKU\nFROM product JOIN product_sku ...
+DB --> H : detail
+H --> FE : 详情
+FE --> U : 图片 / 积分价 / 库存 / 兑换入口
+
+note over H
+  商品公开接口，不要求登录；
+  下架商品返回 404，库存为 0 仍可展示但不可兑换。
+end note
+@enduml

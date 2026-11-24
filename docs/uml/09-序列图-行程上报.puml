@@ -1,4 +1,4 @@
-@startuml 图2-6 序列图：上报出行行程（UC-02 用例实现）
+@startuml 图2-4 序列图：上报出行行程（UC-02 用例实现）
 ' 依据：需求规格说明书 §2.3.2 UC-02；实际代码 apps/api/internal/httpserver/trips.go（2026-11-24）
 ' 事实：没有 internal/usecase；TripHandler 直接持有 *sql.DB；Token 为自签 HMAC，不是标准 JWT
 
@@ -80,7 +80,7 @@ note over DB
   **事务边界**：trip_record + carbon_record + point_txn
   + point_account + event_outbox 同一事务，要么全成，要么全不成。
   **当前缺口**：发放积分时只写 point_txn 与 account，
-  **没有写 point_batch**；批次 FIFO/过期因此没有数据来源（见设计说明书 §4）。
+  **没有写 point_batch**；批次 FIFO/过期因此没有数据来源（见设计说明书 §4 DEV-03）。
 end note
 
 note over DB

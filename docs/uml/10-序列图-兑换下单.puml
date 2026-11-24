@@ -1,4 +1,4 @@
-@startuml 图2-7 序列图：兑换商品（UC-08 用例实现）
+@startuml 图2-10 序列图：兑换商品（UC-08 用例实现）
 ' 依据：需求规格说明书 §2.3.2 UC-08；实际代码 apps/api/internal/repo/orders.go
 ' 事实：没有 usecase；OrderHandler 调 repo.Store；sqlc 未启用；Worker 未实现
 
@@ -65,7 +65,7 @@ else 首次请求
       正常积分路径通常查不到批次；
       consumeBatches 在批次不足时**不报错**，
       只扣可用批次，余额仍按 price 减少，
-      因此余额与批次剩余可能不等（见 §4 D-03）。
+      因此余额与批次剩余可能不等（见 §4 DEV-03）。
     end note
     R -> DB : INSERT event_outbox\n(topic='OrderPaid', aggregate_type='order',\n aggregate_id=orderNo)
     R -> DB : COMMIT
@@ -128,7 +128,7 @@ note over R, DB
   优先按 point_batch_txn 把原批次回填为 ACTIVE（expires_at 不变），
   找不到消费明细的历史数据才新建退款批次（BR-11/BR-12）。
   但正常发放路径没有批次，导致“退款有批次、消费无批次”的不对称，
-  是 §4 偏差 D-03 的直接表现。
+  是 §4 偏差 DEV-03 的直接表现。
 end note
 
 @enduml

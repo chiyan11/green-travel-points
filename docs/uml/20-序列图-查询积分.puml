@@ -1,0 +1,33 @@
+@startuml 图2-7 序列图：查询个人积分与流水（UC-06 用例实现）
+skinparam defaultFontName "Microsoft YaHei"
+skinparam dpi 150
+skinparam shadowing false
+autonumber
+
+actor "市民" as U
+participant "前端\n(PointsPage)" as FE
+participant "Router + 中间件" as API
+participant "PointsHandler\n(httpserver/points.go)" as H
+database "MySQL\npoint_account / point_txn" as DB
+
+U -> FE : 打开积分页
+FE -> API : GET /api/v1/points/summary
+API -> H : Summary(userID)
+H -> DB : SELECT balance, frozen, total_saved_g\nFROM point_account WHERE user_id = ?
+DB --> H : account
+H --> API : 200 {balance, frozen, totalSavedG}
+API --> FE : 汇总
+
+FE -> API : GET /api/v1/points/transactions?page=1&pageSize=20
+API -> H : ListTxns(userID, page)
+H -> DB : SELECT ... FROM point_txn\nWHERE account_id = ? ORDER BY occurred_at DESC\nLIMIT ? OFFSET ?
+DB --> H : rows + total
+H --> API : 200 {items, total, page}
+API --> FE : 流水分页
+FE --> U : 余额 / 累计减碳 / 流水列表
+
+note over H
+  分页参数在 handler 兜底：page < 1 归 1，
+  pageSize 超上限截断；未登录由中间件先拦 401。
+end note
+@enduml

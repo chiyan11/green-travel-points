@@ -1,4 +1,4 @@
-@startuml 图2-4 鲁棒图：兑换商品（UC-08 用例实现 · 参与者：市民）
+@startuml 图2-9 鲁棒图：兑换商品（UC-08 用例实现 · 参与者：市民）
 ' 依据：设计说明书 2.2.1（用例实现 · 设计模型）
 ' 拆分口径：一个参与者一张鲁棒图。本图只画市民（UC-08 兑换商品）；
 '           运营管理员侧（UC-12 处理兑换订单）见图2-5。
@@ -32,6 +32,8 @@ entity "积分账户 PointAccount" as E3
 entity "积分流水 PointTxn" as E4
 entity "兑换订单 RedeemOrder" as E5
 entity "事件发件箱 EventOutbox" as E6
+entity "积分批次 PointBatch" as E7
+entity "批次消耗明细 PointBatchTxn" as E8
 
 ' ---------- UC-08 主成功场景：浏览 → 选规格 → 提交兑换 ----------
 U --> B1 : 浏览商品
@@ -50,6 +52,8 @@ C1 --> C3 : 校验并扣减积分
 C3 --> E3 : SELECT ... FOR UPDATE
 C3 --> E4 : INSERT 扣减流水
 C3 --> E3 : UPDATE balance
+C3 --> E7 : FIFO 扣减 remaining
+C3 --> E8 : INSERT 批次消耗明细
 C1 --> E5 : 创建订单（PENDING）
 C1 --> E6 : 写入 OrderPaid 事件（同事务）
 C1 --> B3 : 返回订单号 + 核销码
@@ -68,8 +72,8 @@ end note
 
 legend right
   **设计类清单·本图**（填入报告表 2-1）
-  边界类：B1–B3　控制类：C1–C3　实体类：E1–E6
-  与图2-5 共用：C1 / E5 / E6
+  边界类：B1–B3　控制类：C1–C3　实体类：E1–E8
+  与图2-12 共用：E5 / E6；本图另有 E7 / E8（批次）
 endlegend
 
 @enduml

@@ -1,4 +1,4 @@
-@startuml 图2-10 活动图：兑换下单与积分批次扣减
+@startuml 图2-14 活动图：兑换下单与积分批次扣减
 ' 依据：设计说明书 §2.2.2；实际代码 apps/api/internal/repo/orders.go
 ' 用途：表达关键类 OrderHandler / Store / point_batch 的关键操作与事务边界
 
@@ -89,11 +89,19 @@ while (need > 0 且存在 ACTIVE 批次?) is (是)
   (batch_id, txn_id=REDEEM, amount=−take);
   :need -= take;
 endwhile (否)
+
+if (need > 0?) then (是)
+  :ROLLBACK;
+  :409 BATCH_INCONSISTENT;
+  stop
+else (否)
+endif
+
 note right
-  **批次不足不报错**：循环结束后 need 可能仍 >0，
-  只扣可用批次，余额仍按 price 减少，可能不等。
-  发放端尚未写 point_batch，正常积分路径通常无批次可扣。
-  这是 BR-11 FIFO 的实现偏差，见设计说明书 §4 表 4-1 D-03。
+  **批次不足必须失败**：循环结束 need > 0 时
+  ROLLBACK 并返回 409 BATCH_INCONSISTENT，
+  不允许“只扣可用批次、余额仍减”。
+  发放端必须写 point_batch（图2-15）；当前代码未改，属 DEV-03。
 end note
 
 :INSERT event_outbox(topic='OrderPaid');
