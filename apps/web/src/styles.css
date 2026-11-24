@@ -925,3 +925,77 @@ code {
     margin-top: 24px;
   }
 }
+
+/* ========== 运营后台（/admin） ========== */
+
+.btn--inline {
+  padding: 4px 12px;
+  font-size: 12.5px;
+  margin-left: 8px;
+  box-shadow: none;
+}
+
+.filter-bar--inline {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+}
+
+.filter-input {
+  min-width: 200px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--text);
+}
+
+.filter-input:focus {
+  outline: none;
+  border-color: var(--accent-bright);
+  box-shadow: var(--ring);
+}
+
+.row-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sku-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 0;
+}
+
+.sku-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.sku-row__name {
+  font-weight: 600;
+}
+
+.sku-row__stock {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-soft);
+}
+
+.sku-row__stock input {
+  width: 88px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--text);
+}

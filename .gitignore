@@ -46,3 +46,7 @@ deploy/mysql-data/
 # ---- 文档出图工具链（本地 PlantUML / Graphviz 二进制，约 21MB，勿提交） ----
 docs/uml/.tools/
 # 注意：docs/uml/out/*.png 是有意入库的成图交付物（11 张，约 4MB），不要忽略
+
+# ---- Playwright（E2E 运行产物，截图证据在 docs/p5-evidence/ 需入库） ----
+apps/web/playwright-report/
+apps/web/test-results/
