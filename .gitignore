@@ -29,6 +29,9 @@ node_modules/
 # ---- 本机沙箱缓存重定向（见 scripts/dev-env.ps1，勿提交） ----
 .cache/
 
+# ---- DSH 本地截图（dsh-pilot 会话产物，勿提交） ----
+.dsh-pilot/
+
 # ---- IDE ----
 .idea/
 .vscode/*

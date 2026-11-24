@@ -48,8 +48,8 @@ func run() error {
 		return err
 	}
 	defer func() {
-		if cerr := db.Close(); cerr != nil {
-			logger.Warn("关闭数据库连接池失败", "err", cerr)
+		if err := db.Close(); err != nil {
+			logger.Warn("关闭数据库连接池失败", "err", err)
 		}
 	}()
 
