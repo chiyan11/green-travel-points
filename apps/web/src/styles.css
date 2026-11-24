@@ -705,3 +705,249 @@ code {
     padding: var(--spacing-4);
   }
 }
+
+/* ============================================================
+   兼容层：运营后台（M8，main 上的 feat/admin-console）沿用旧类名与旧变量名。
+   这里把旧变量映射到 Astryx token，并保留后台专用类，避免两套样式体系打架。
+   ============================================================ */
+:root {
+  --bg: var(--color-background-body);
+  --bg-tint: var(--color-background-green);
+  --surface: var(--color-background-card);
+  --surface-2: var(--color-background-muted);
+  --border: var(--color-border-gray);
+  --border-strong: var(--color-border-emphasized);
+  --text: var(--color-text-primary);
+  --text-soft: var(--color-text-secondary);
+  --muted: var(--color-text-secondary);
+  --accent: var(--color-accent);
+  --accent-strong: var(--color-text-accent);
+  --accent-bright: var(--color-accent);
+  --accent-soft: var(--color-accent-muted);
+  --accent-soft-2: var(--color-border-green);
+  --radius-sm: var(--radius-element);
+  --radius: var(--radius-container);
+  --radius-lg: var(--radius-container);
+  --shadow-xs: var(--shadow-low);
+  --shadow: var(--shadow-low);
+  --shadow-lift: var(--shadow-low);
+  --ring: 0 0 0 3px var(--color-border-green);
+}
+
+.card h3 {
+  margin: 0 0 12px;
+  font-size: 16.5px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  letter-spacing: 0.01em;
+}
+
+.stat-card__icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  font-size: 18px;
+}
+
+.stat-label {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin: 0;
+}
+
+.stat-value {
+  margin: 2px 0 0;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.stat-sub {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 2px 0 0;
+}
+
+.stat-card--accent {
+  border-color: var(--accent-soft-2);
+  background: linear-gradient(180deg, #ffffff 0%, #f4fbf7 100%);
+}
+
+.stat-card--accent .stat-value {
+  color: var(--accent-strong);
+}
+
+.metric {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.badge--ok {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.badge--muted {
+  background: #eff2f0;
+  color: var(--muted);
+}
+
+.badge--danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.badge--warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.badge--info {
+  background: var(--info-soft);
+  color: var(--info);
+}
+
+.btn:hover {
+  background: var(--accent-strong);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 22px rgb(23 122 77 / 24%);
+}
+
+.btn:active {
+  transform: translateY(0);
+}
+
+.btn--ghost {
+  background: var(--surface-2);
+  color: var(--text-soft);
+  border-color: var(--border);
+  box-shadow: var(--shadow-xs);
+}
+
+.btn--ghost:hover {
+  color: var(--accent-strong);
+  border-color: var(--accent-soft-2);
+  background: var(--accent-soft);
+  box-shadow: var(--shadow-xs);
+}
+
+.btn--danger {
+  background: #fff;
+  color: var(--danger);
+  border-color: #f0c4bf;
+  box-shadow: none;
+  padding: 8px 16px;
+  font-size: 13.5px;
+}
+
+.btn--danger:hover {
+  background: var(--danger-soft);
+  box-shadow: none;
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.product-emoji--large {
+  display: grid;
+  place-items: center;
+  width: 150px;
+  height: 150px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-size: 64px;
+  line-height: 1;
+  flex: none;
+}
+
+.product-emoji--large img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: var(--radius);
+}
+
+.card {
+    padding: 18px;
+  }
+
+.filter-bar--inline {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+}
+
+.filter-input {
+  min-width: 200px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--text);
+}
+
+.filter-input:focus {
+  outline: none;
+  border-color: var(--accent-bright);
+  box-shadow: var(--ring);
+}
+
+.row-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sku-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 0;
+}
+
+.sku-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.sku-row__name {
+  font-weight: 600;
+}
+
+.sku-row__stock {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-soft);
+}
+
+.sku-row__stock input {
+  width: 88px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--text);
+}

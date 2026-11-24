@@ -6,11 +6,11 @@ Project-specific guidance for AI coding agents.
 
 `apps/web` 是绿行积分的前端（React 19 + Vite + TanStack Query，仓库根 `AGENTS.md` 是总纲）。下文的 ASTRYX 区块由 `npx astryx init` 生成，是 Astryx 的官方用法说明；两者冲突时以仓库根 `AGENTS.md` 为准，具体是：
 
-- **样式分层不变**：全站样式仍然只写在 `src/styles.css`（token 层），Astryx 的 token 覆盖只写在 `src/astryx-brand.css`。不要新建按页面拆分的 css。
-- **不引入 StyleX / Tailwind 编译器**：组件只用 props 和 `var(--color-*)` 这类 token，禁止 `stylex.create()`、`xstyle`、utility class。
+- **样式分层不变**：全站业务样式仍然只写在 `src/styles.css`（token 层，用 `var(--color-*)` 等 Astryx token）。不要新建按页面拆分的 css；文件末尾的「兼容层」（旧变量名 → token 映射 + 运营后台旧类名）是给 `/admin` 用的，新页面不要再往里加东西。
+- **不引入 StyleX / Tailwind 编译器**：组件只用 props 和 token，禁止 `stylex.create()`、`xstyle`、utility class。
 - **不整页推翻重写**：存量页面的 DOM 结构与语义标签（`<table>`、`<form>`、`<section>`、`aria-label`）保留，Astryx 组件用来替换控件层（Button / TextInput / Card / Badge / Field）；用 `<div>` 承载布局在存量页面里是允许的。
-- **测试契约是硬约束**：页面测试（`src/pages/*.test.tsx`）与 E2E（`e2e/main-flow.spec.ts`）依赖的 label、文案、`data-testid`、`.stat-card` / `.product-card` 等选择器，改页面时必须保住；改文案要同步改测试。
-- **主题只有一个**：`src/astryx-themes.ts` 由 `npx astryx theme add matcha` 生成，`src/main.tsx` 里 `<Theme theme={themes[defaultThemeSlug]} mode="light">`（`mode` 必须显式 `light`，默认 `system` 会跟随系统渲染成暗色）。
+- **测试契约是硬约束**：页面测试（`src/pages/*.test.tsx`）与 E2E（`e2e/main-flow.spec.ts`、`e2e/admin-console.e2e.ts`）依赖的 label、文案、`data-testid`、`.stat-card` / `.product-card` 等选择器，改页面时必须保住；改文案要同步改测试。
+- **主题只有一个**：品牌子主题在 `src/themes/green-travel/greenTravelTheme.ts`（`defineTheme({ extends: neutralTheme })`，品牌绿 `#177a4d` + 中文字体回退），产物 `green-travel.js` 与 `greenTravelTheme.css` 一起提交；改完必须重跑 `npx astryx theme build src/themes/green-travel/greenTravelTheme.ts`。`src/main.tsx` 里 `<Theme theme={greenTravelTheme} mode="light">`，`mode` 必须显式 `light`（默认 `system` 会跟随系统渲染成暗色）；样式表导入顺序（fonts → reset → astryx → 主题 css → styles.css）不要改。
 
 已验证的组件用法（踩过的坑，别再踩一遍）：
 
@@ -21,7 +21,6 @@ Project-specific guidance for AI coding agents.
 | `Badge` | `label` + `variant`（`neutral / info / success / warning / error`），没有 `color` |
 | `Card` | `padding` 用 spacing step（数字），`elevation: none / low / med / high` |
 | `Field` | `label` + 必填 `inputID`，子节点是自己写的原生控件 |
-
 <!-- ASTRYX:START -->
 Astryx v0.7.17 · 174 components
 CLI: run every command as `npx astryx <cmd>` (shown below as `astryx ...`).

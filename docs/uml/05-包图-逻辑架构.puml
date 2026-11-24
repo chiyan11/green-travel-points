@@ -1,6 +1,6 @@
 @startuml 图2-2 系统逻辑架构 包图
-' 依据：设计说明书 2.1.2；与仓库实际目录一一对应（docs/项目分工与迭代计划.md §5.1）
-' 设计原则：依赖方向永远由外向内，domain 层不依赖任何框架/数据库/HTTP
+' 依据：docs/设计规格说明书.md §2.1.2；与仓库当前目录对齐（2026-11-24）
+' 设计原则：依赖方向由外向内；domain 只依赖标准库，不依赖 HTTP / SQL / 框架
 
 skinparam defaultFontName "Microsoft YaHei"
 skinparam dpi 150
@@ -8,59 +8,77 @@ skinparam shadowing false
 skinparam packageStyle folder
 skinparam ArrowColor #555555
 
-title 逻辑架构：分层 + 端口适配（ports & adapters 的轻量落地）
+title 逻辑架构：分层单体 + 事务性 Outbox（当前实现）
 
-package "apps/web　前端（TypeScript 7 + React）" as web {
+package "apps/web　前端（React 19 + TypeScript 7）" as web {
   package "pages/" as pages
-  package "lib/http.ts" as webhttp
-  package "lib/types.ts\n（由 openapi 生成）" as webtypes
+  package "services/" as services
+  package "lib/http.ts\n统一 Envelope 解包 / 401 处理" as webhttp
+  package "lib/session.ts\nlocalStorage 会话" as session
+  package "types/domain.ts\n（手写契约，不是 OpenAPI 生成）" as webtypes
 }
 
 package "apps/api　后端（Go 1.24+）" as api {
-  package "cmd/server\n（装配、依赖注入）" as cmd
-
-  package "internal/httpserver\n路由 / 中间件 / 统一响应壳" as http
-  package "internal/usecase\n应用服务（用例编排、事务边界）" as usecase
-  package "internal/domain\n实体 + 业务规则（纯函数）" as domain
-  package "internal/repo\nsqlc 查询 / 事务管理" as repo
-  package "internal/eventbus\nOutbox 写入 + Worker 投递" as eventbus
+  package "cmd/server\n（config → repo → httpserver 装配）" as cmd
+  package "internal/httpserver\n路由 / 中间件 / handler / 统一响应壳" as http
+  package "internal/app\nDTO + Ports 接口 + 哨兵错误" as app
+  package "internal/domain\n碳核算 / 积分 / 订单状态机（纯函数）" as domain
+  package "internal/repo\n手写 SQL / 事务 / 行锁 / Outbox 写入" as repo
+  package "internal/eventbus\n事件契约（无 Worker）" as eventbus
+  package "internal/config\n环境变量 → Config" as config
 }
 
-database "MySQL 8.0\nInnoDB" as db
+database "MySQL 8.0\nInnoDB（13 张表）" as db
 
 package "外部" as ext {
   package "模拟数据源\n（行程生成器）" as sim
 }
 
+pages ..> services
+services ..> webhttp
+services ..> webtypes
+webhttp ..> session
 web ..> http : HTTP / JSON
-pages ..> webhttp
-webhttp ..> webtypes
 
 cmd ..> http
-http ..> usecase
-usecase ..> domain
-usecase ..> repo
-usecase ..> eventbus
+cmd ..> repo
+cmd ..> config
+http ..> app
+http ..> domain
+repo ..> app : 实现 Ports
+repo ..> domain
+repo ..> eventbus : 写 Outbox
 repo ..> db : SQL
-eventbus ..> repo : 轮询 outbox
 sim ..> http : POST /api/v1/trips
 
 ' 关键约束：domain 不反向依赖任何人
 note bottom of domain
   **不依赖清单（可代码审查）**
-  无 net/http、无 database/sql、无任何第三方包。
-  因此可用纯 Go 单测覆盖（覆盖率要求 ≥ 90%，NFR-07）。
+  无 net/http、无 database/sql、无任何第三方包；
+  因此可用纯 Go 单测覆盖（NFR-07）。
 end note
 
-note right of usecase
-  **事务边界就在这一层**
-  一个用例方法 = 一个事务：
-  写业务表 + 写 outbox + 提交。
+note right of eventbus
+  **当前只到“写”这一半**
+  repo 在业务事务内写 event_outbox；
+  eventbus 只定义 Topic / Event / Handler，
+  **没有消费者、重试与死信 Worker**。
+  设计目标见设计说明书 §2.1.1，实现缺口见 §4。
+end note
+
+note bottom of repo
+  **实现偏差（如实标注）**
+  trips.go 的 TripHandler 目前直接持有 *sql.DB
+  并在 handler 内写 SQL，尚未抽到 repo；
+  其余订单/积分/商品路径已走 repo。
+  详见设计说明书 §4 表 4-1。
 end note
 
 legend right
-  依赖方向：web → http → usecase → {domain, repo, eventbus} → db
-  违反此方向（例如 domain import repo）= 架构评审不通过。
+  依赖方向：web → services → http → app/domain
+            repo → app/domain → db
+  eventbus 仅为契约；Worker 未实现。
+  违反方向（如 domain import repo）= 架构评审不通过。
 endlegend
 
 @enduml

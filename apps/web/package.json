@@ -13,9 +13,8 @@
     "gen:api": "swagger-typescript-api generate -p ../../docs/api/openapi.yaml -o ./src/types --no-client --enum-style union --sort-types -n api.ts && node ./scripts/fix-generated.mjs"
   },
   "dependencies": {
-    "@astryxdesign/core": "^0.7.17",
-    "@astryxdesign/theme-matcha": "^0.7.17",
-    "@stylexjs/stylex": "^0.19.2",
+    "@astryxdesign/core": "0.7.17",
+    "@astryxdesign/theme-neutral": "0.7.17",
     "@tanstack/react-query": "^5.104.4",
     "echarts": "^6.1.0",
     "react": "^19.3.1",
@@ -23,7 +22,7 @@
     "react-router-dom": "^7.18.4"
   },
   "devDependencies": {
-    "@astryxdesign/cli": "^0.7.17",
+    "@astryxdesign/cli": "0.7.17",
     "@playwright/test": "^1.65.1",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/jest-dom": "^8.0.0",

@@ -15,6 +15,19 @@ export const ORDER_STATUS_META: Record<
   CANCELLED: { label: '已取消', badgeVariant: 'error', cancellable: false },
 }
 
+/** 旧式 `.badge--*` 类名（运营后台仍在用 span.badge，不依赖 Astryx Badge 组件）。 */
+const BADGE_CLASS: Record<(typeof ORDER_STATUS_META)[OrderStatus]['badgeVariant'], string> = {
+  neutral: 'badge--muted',
+  info: 'badge--info',
+  warning: 'badge--warn',
+  success: 'badge--ok',
+  error: 'badge--danger',
+}
+
+export function orderStatusBadgeClass(status: OrderStatus): string {
+  return BADGE_CLASS[ORDER_STATUS_META[status].badgeVariant]
+}
+
 /** 合法跃迁边表；非法跃迁必须被后端拒绝，前端仅做按钮禁用提示。 */
 const TRANSITIONS: Record<OrderStatus, readonly OrderStatus[]> = {
   PENDING: ['PAID', 'CANCELLED'],

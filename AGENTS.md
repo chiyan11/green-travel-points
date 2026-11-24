@@ -112,17 +112,17 @@ green-travel-points/
 │       │   ├── lib/              http（Envelope 解包、错误、401 处理）、session、validators、format、orderStatus、productCover、queryClient
 │       │   ├── types/api.ts      由 docs/api/openapi.yaml 生成的 wire 类型（npm run gen:api，勿手改）
 │       │   ├── types/domain.ts   页面视图模型（id 转 string、coverUrl、startedAt 等展示口径）
-│       │   ├── astryx-themes.ts  Astryx 主题注册（npx astryx theme add matcha 生成，勿手改）
+│       │   ├── themes/green-travel/  Astryx 品牌子主题（defineTheme 源码 + theme build 产物）
 │       │   ├── astryx-brand.css  品牌 token 覆盖（主色 #177a4d、中文字体栈、页面底色）
 │       │   └── styles.css        全站业务样式（单文件 token 层，零硬编码颜色）
 │       ├── e2e/                  Playwright 主链路用例（真后端，截图落 docs/screenshots/）
 │       ├── scripts/fix-generated.mjs  生成后处理：去掉 @ts-nocheck、加来源说明
 │       └── vite.config.ts        端口 5173 + /api 代理（VITE_API_TARGET 可改目标）
 ├── db/
-│   ├── migrations/               5 组 up/down 迁移（见 §6）
+│   ├── migrations/               6 组 up/down 迁移（见 §6）
 │   └── seed/dev_demo.sql         演示数据：用户 1001、管理员 1002、3 个商品
 ├── deploy/                       docker-compose.yml、Dockerfile.api、Dockerfile.web、nginx.conf
-├── docs/                         需求规格、分工计划、Sprint 0 记录、数据库记录、接口说明、前端接口清单、UML
+├── docs/                         需求规格、设计规格、故事地图/Backlog、实验报告、分工计划、Sprint 0 记录、数据库记录、接口说明、前端接口清单、UML
 │   ├── api/openapi.yaml          机器可读契约（生成 types/api.ts 的唯一来源）
 │   └── screenshots/              E2E 跑出来的验收截图（改主链路后必须更新）
 ├── scripts/                      dev-env.ps1（缓存重定向）、verify.ps1（一键门禁）、uml-export.ps1、toc_pages.py、build_team_docx.py
@@ -219,7 +219,7 @@ domain ◄──────────────────────┘�
 
 ## 6. 数据层
 
-### 表清单（5 组迁移，13 张表）
+### 表清单（6 组迁移，14 张表）
 
 | 迁移 | 表 | 作用 |
 | --- | --- | --- |
@@ -228,18 +228,19 @@ domain ◄──────────────────────┘�
 | `000003` | `point_account`、`point_txn` | 积分账户（余额/冻结/累计减碳/version）与**只追加**流水 |
 | `000004` | `user`、`trip_record`、`carbon_record` | 用户、行程、碳记录 |
 | `000005` | `merchant`、`product`、`product_sku`、`redeem_order`、`point_batch` | 商城与兑换（批次用于 FIFO 扣减与过期） |
+| `000006` | `point_batch_txn` | 批次流水（记录每次扣减/退回对应的批次，便于对账与追溯） |
 
 ### 不变量（写 SQL 时不能破）
 
 - **流水只追加**：`point_txn` 不更新、不删除；余额变更必须同时写一条流水，`balance_after` 与该次变更后余额一致。
 - **一个业务事务一个事务**：行程上报 = `trip_record` + `carbon_record` + `point_txn` + `point_account` 余额 + `event_outbox`，全在一个 `tx`，任一步失败整体回滚。
-- **扣分按批次 FIFO**：先扣最早的 `point_batch`（`remaining`、`expires_at`），下单与取消都走批次，不直接改余额了事。
+- **扣分按批次 FIFO**：先扣最早的 `point_batch`（`remaining`、`expires_at`），下单与取消都走批次，不直接改余额了事。**现状偏差**：行程发放尚未写 `point_batch`（`GrantPointsWithBatch` 已存在但未接入 `/trips`）；扣减/退款会写 `point_batch_txn`；批次不足时 `consumeBatches` 不报错、只扣可用批次，余额仍减，见 §11。
 - **并发安全**：涉及余额/库存的读改写必须 `SELECT ... FOR UPDATE`（现有实现见 `apps/api/internal/repo/orders.go` 的 `CreateOrder`）。
 - **幂等**：`POST /orders` 支持 `Idempotency-Key`，命中即返回原订单，不重复扣分。
 
 ### 加一个迁移
 
-1. 新建成对文件，序号连续：`db/migrations/000006_xxx.up.sql` + `000006_xxx.down.sql`。
+1. 新建成对文件，序号连续：`db/migrations/000007_xxx.up.sql` + `000007_xxx.down.sql`。
 2. `up` 用 `CREATE TABLE IF NOT EXISTS`、幂等 `ALTER`；`down` 必须能真正回滚（删表 / 删列 / 删索引）。
 3. 同步更新本节表格与 `README.md` 目录结构里的迁移列表。
 4. 开发阶段**优先直接改已有迁移**并重建库（`DROP DATABASE` 后从空库重跑），不要为旧表结构追加兼容迁移；提交前确认从空库能一路跑到最新。只有在联调 / 共享库上才按「新变更新文件」处理，先看 §2「团队共享库」。
@@ -266,10 +267,11 @@ pages/*.tsx  ──►  services/*.ts  ──►  lib/http.ts  ──►  fetch
 - **会话存 `localStorage` 的 `gtp_session`**（`lib/session.ts`）；不要另起 key。
 - **路由守卫**：`routes.tsx` 里 `/login` 公开，其余包 `RequireAuth` + `AppLayout`；新增页面挂到对应子路由下。
 - **样式**：分三层，各管一段，不要混写。
-  1. **Astryx**（`@astryxdesign/core` + `theme-matcha`）：控件与 token 的来源。`main.tsx` 依次 import `reset.css` → `astryx.css` → `astryx-themes.ts` → `astryx-brand.css` → `styles.css`。用组件（Button / TextInput / Card / Badge / Field）替代手写控件。
-  2. **`astryx-brand.css`**：只放品牌 token 覆盖（`--color-accent: #177a4d`、中文标题字体栈、页面底色），写在 `[data-astryx-theme='matcha']` 下且**不放进 `@layer`**，才能压过主题默认值。
-  3. **`styles.css`**：业务布局与页面级类名（`app` / `hero` / `stat-card` / `data-table` / `product-card` 等），全部用 `var(--color-*|--spacing-*|--radius-*|--text-*)`，禁止硬编码颜色。Astryx 的样式都在 `@layer` 里，未分层的 `styles.css` 天然优先，所以存量页面不会被动。
-- **不引入 StyleX / Tailwind 编译器**：组件只吃 props（`label` / `variant` / `isDisabled` …）和 token，禁止 `stylex.create()`、`xstyle`、utility class。Astryx 官方约定见 `apps/web/AGENTS.md`，与本文件冲突时以本文件为准。
+  1. **Astryx**（`@astryxdesign/core` + `@astryxdesign/theme-neutral` 0.7.17）：控件与 design token 的来源。`apps/web/src/main.tsx` 按层导入四份样式表——`theme-neutral/fonts.css` → `core/reset.css` → `core/astryx.css` → `themes/green-travel/greenTravelTheme.css`，最后才是自有 `styles.css`；**导入顺序不要改**。组件用 props（`label` / `variant` / `isDisabled` …）驱动，禁止 `stylex.create()` / `xstyle` / utility class。
+  2. **品牌主题** `apps/web/src/themes/green-travel/greenTravelTheme.ts`：`defineTheme({ extends: neutralTheme, ... })` 只换品牌绿（`--color-accent: #177a4d`）与中文字体回退。**改完必须重建**：`npx astryx theme build src/themes/green-travel/greenTravelTheme.ts`（产物 `green-travel.js` / `greenTravelTheme.css` 一并提交）。
+  3. **`styles.css`**：唯一业务样式文件，页面级类名（`app` / `hero` / `stat-card` / `data-table` / `product-card` …）全部用 `var(--color-*|--spacing-*|--radius-*|--text-*)`，禁止硬编码颜色。
+  文件末尾有一层「兼容层」，把旧变量名（`--surface` / `--border` / `--accent` …）映射到 Astryx token，供运营后台沿用的旧类名（`btn` / `card` / `badge--ok` / `sku-row` …）继续工作；新增页面不要再往这一层加东西。
+- **不引入 StyleX / Tailwind 编译器**：Astryx 官方约定见 `apps/web/AGENTS.md`，与本文件冲突时以本文件为准。
 - **类型**：`tsc --noEmit` 必须零错误；不用 `any` 绕过（确需时先说明）。
 
 ### 界面文案与信息密度
@@ -370,13 +372,14 @@ E2E **不在门禁里**：它需要真实后端 + 共享库，CI 没有这些环
 
 | 项 | 现状 | 若要接手 |
 | --- | --- | --- |
-| Outbox Worker | 事件只写入 `event_outbox`，**没有消费者**；`internal/eventbus` 只有契约。生产端事件名还没统一：订单侧写死字面量 `OrderPaid` / `OrderCancelled`，常量却是 `TopicRedeemOrderPaid = "RedeemOrderPaid"`，且 `OrderCancelled` 无常量 | 先统一 topic 常量（含补 `OrderCancelled`），再实现轮询 + 退避 + 死信，读 `dispatched_at IS NULL AND available_at <= NOW()` |
+| 积分批次 | 发放端未写 `point_batch`（`GrantPointsWithBatch` 未接入 `/trips`）；扣减/退款已写 `point_batch_txn`；`consumeBatches` 批次不足时不报错、只扣可用批次，余额仍减，余额与批次剩余可能不等 | `/trips` 接入 `GrantPointsWithBatch`；批次不足直接失败或补齐；补过期任务与对账测试 |
+| Outbox Worker | 事件只写入 `event_outbox`，**没有消费者**；`internal/eventbus` 只有契约。订单侧已用 `TopicOrderPaid` / `TopicOrderCancelled` 常量；`TopicRedeemOrderPaid` 仍存在但无人使用 | 清理或标注 `TopicRedeemOrderPaid`，再实现轮询 + 退避 + 死信，读 `dispatched_at IS NULL AND available_at <= NOW()` |
 | 密码哈希 | 加盐 SHA-256（`sha256$salt$digest`），注释已标"临时方案" | 换 bcrypt / argon2，并给出存量数据迁移方案 |
 | Token | 自签 HMAC-SHA256 紧凑串，**不是标准 JWT**（无 header 段） | 需要标准 JWT 时统一改签发与校验两端 |
 | sqlc | `apps/api/sqlc.yaml` 已配置但未启用，repo 全是手写 SQL | 启用即要重写 repo 层，别半途混用 |
 | 集成 / E2E | 集成测试未建（计划 testcontainers）；E2E 主链路已建（`apps/web/e2e`，真后端 + 共享库，截图在 `docs/screenshots/`），未进 CI | 集成测试按 testcontainers 补；E2E 若要进 CI，需先给 CI 一个可用的 MySQL 服务容器 |
 | 部署 | compose 只有 `mysql` + `api`；`web` 与 nginx 配置就绪但未编入；本机未实跑 docker | 补 web 服务与反向代理，留下实跑证据 |
-| 前端包体 | `vite build` 单包约 1.90 MB（gzip 624 kB），接入 Astryx 后比换装前涨了约 300 kB，仍触发 500 kB 警告 | 用路由级 `import()` 分包，图表库与 Astryx 按需加载；预算从 gzip 624 kB 起算 |
+| 前端包体 | `vite build` 单包约 1.95 MB（gzip 635 kB）+ CSS 354 kB（gzip 54 kB），已触发 500 kB 警告。其中 Astryx 底座贡献约 140 kB JS 与约 300 kB CSS（`core/astryx.css` 是全组件样式，无法按组件裁剪） | 用路由级 `import()` 分包，图表库按需加载；预算从 gzip 635 kB 起算 |
 
 ---
 
