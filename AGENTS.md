@@ -111,7 +111,6 @@ green-travel-points/
 │       │   ├── services/         按域拆的 API 调用：auth / trips / products / points / orders
 │       │   ├── lib/              http（Envelope 解包、错误、401 处理）、session、validators、format、orderStatus、productCover、queryClient
 │       │   ├── types/domain.ts   全站共享的前端类型
-│       │   ├── mock/data.ts      原型残留数据，**已无引用**（可删）
 │       │   └── styles.css        全站样式（单文件，无 CSS 框架）
 │       └── vite.config.ts        端口 5173 + /api 代理
 ├── db/
@@ -258,7 +257,6 @@ pages/*.tsx  ──►  services/*.ts  ──►  lib/http.ts  ──►  fetch
 - **路由守卫**：`routes.tsx` 里 `/login` 公开，其余包 `RequireAuth` + `AppLayout`；新增页面挂到对应子路由下。
 - **样式**：全站单文件 `styles.css`，用现有类名（`btn` / `card` / `field-error` / `badge--ok` 等）；不引入 CSS 框架，不写内联大段样式。
 - **类型**：`tsc --noEmit` 必须零错误；不用 `any` 绕过（确需时先说明）。
-- `src/mock/data.ts` 已无任何引用，属于历史遗留；清理它要顺带删 `apps/web/PROTOTYPE.md` 的对应说明。
 
 ### 界面文案与信息密度
 
@@ -344,7 +342,6 @@ CI（`.github/workflows/ci.yml`）两个 job 与本地一致，差异：CI 用 `
 | sqlc | `apps/api/sqlc.yaml` 已配置但未启用，repo 全是手写 SQL | 启用即要重写 repo 层，别半途混用 |
 | 集成 / E2E | 均未建（计划 testcontainers + Playwright） | 先补「上报 → 得分 → 兑换 → 核销」主链路 |
 | 部署 | compose 只有 `mysql` + `api`；`web` 与 nginx 配置就绪但未编入；本机未实跑 docker | 补 web 服务与反向代理，留下实跑证据 |
-| 原型残留 | `apps/web/src/mock/data.ts`、`apps/web/PROTOTYPE.md` | 确认无引用后删除 |
 | 前端包体 | `vite build` 单包约 1.49 MB（gzip 489 kB），已触发 500 kB 警告 | 用路由级 `import()` 分包，图表库按需加载 |
 
 ---

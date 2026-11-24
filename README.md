@@ -15,7 +15,7 @@
 **当前进度：Sprint 0 工程骨架 + 实验一需求建模（全套 UML）已完成；后端 M1–M8 主要接口与前端用户端页面均已实现并通过一键校验。**
 
 已实现：认证 / 行程上报与碳核算 / 积分账本与查询 / 商品目录 / 兑换订单与状态机 / 运营后台（含积分对账）；
-待补齐：Outbox Worker（事件只落库、暂无消费者）、集成测试与 E2E、Docker 编排实跑；前端五个 service 均已联调真实接口，`apps/web/src/mock/data.ts` 与 `apps/web/PROTOTYPE.md` 属原型残留，可清理。
+待补齐：Outbox Worker（事件只落库、暂无消费者）、集成测试与 E2E、Docker 编排实跑；前端五个 service 均已联调真实接口。
 
 进度与偏差详见 [Sprint 0 骨架说明](docs/Sprint0-骨架说明.md)，分工详见 [项目分工与迭代计划](docs/项目分工与迭代计划.md)，接口细节见 [P3 接口说明](docs/api/README.md)。
 
