@@ -114,10 +114,10 @@ green-travel-points/
 │       │   └── styles.css        全站样式（单文件，无 CSS 框架）
 │       └── vite.config.ts        端口 5173 + /api 代理
 ├── db/
-│   ├── migrations/               5 组 up/down 迁移（见 §6）
+│   ├── migrations/               6 组 up/down 迁移（见 §6）
 │   └── seed/dev_demo.sql         演示数据：用户 1001、管理员 1002、3 个商品
 ├── deploy/                       docker-compose.yml、Dockerfile.api、Dockerfile.web、nginx.conf
-├── docs/                         需求规格、分工计划、Sprint 0 记录、数据库记录、接口说明、前端接口清单、UML
+├── docs/                         需求规格、设计规格、故事地图/Backlog、实验报告、分工计划、Sprint 0 记录、数据库记录、接口说明、前端接口清单、UML
 ├── scripts/                      dev-env.ps1（缓存重定向）、verify.ps1（一键门禁）、uml-export.ps1、toc_pages.py、build_team_docx.py
 ├── .github/workflows/ci.yml      Go job + Web job
 └── README.md                     面向人的总览（本文是面向干活的细节补充）
@@ -212,7 +212,7 @@ domain ◄──────────────────────┘�
 
 ## 6. 数据层
 
-### 表清单（5 组迁移，13 张表）
+### 表清单（6 组迁移，14 张表）
 
 | 迁移 | 表 | 作用 |
 | --- | --- | --- |
@@ -221,18 +221,19 @@ domain ◄──────────────────────┘�
 | `000003` | `point_account`、`point_txn` | 积分账户（余额/冻结/累计减碳/version）与**只追加**流水 |
 | `000004` | `user`、`trip_record`、`carbon_record` | 用户、行程、碳记录 |
 | `000005` | `merchant`、`product`、`product_sku`、`redeem_order`、`point_batch` | 商城与兑换（批次用于 FIFO 扣减与过期） |
+| `000006` | `point_batch_txn` | 批次流水（记录每次扣减/退回对应的批次，便于对账与追溯） |
 
 ### 不变量（写 SQL 时不能破）
 
 - **流水只追加**：`point_txn` 不更新、不删除；余额变更必须同时写一条流水，`balance_after` 与该次变更后余额一致。
 - **一个业务事务一个事务**：行程上报 = `trip_record` + `carbon_record` + `point_txn` + `point_account` 余额 + `event_outbox`，全在一个 `tx`，任一步失败整体回滚。
-- **扣分按批次 FIFO**：先扣最早的 `point_batch`（`remaining`、`expires_at`），下单与取消都走批次，不直接改余额了事。
+- **扣分按批次 FIFO**：先扣最早的 `point_batch`（`remaining`、`expires_at`），下单与取消都走批次，不直接改余额了事。**现状偏差**：行程发放尚未写 `point_batch`（`GrantPointsWithBatch` 已存在但未接入 `/trips`）；扣减/退款会写 `point_batch_txn`；批次不足时 `consumeBatches` 不报错、只扣可用批次，余额仍减，见 §11。
 - **并发安全**：涉及余额/库存的读改写必须 `SELECT ... FOR UPDATE`（现有实现见 `apps/api/internal/repo/orders.go` 的 `CreateOrder`）。
 - **幂等**：`POST /orders` 支持 `Idempotency-Key`，命中即返回原订单，不重复扣分。
 
 ### 加一个迁移
 
-1. 新建成对文件，序号连续：`db/migrations/000006_xxx.up.sql` + `000006_xxx.down.sql`。
+1. 新建成对文件，序号连续：`db/migrations/000007_xxx.up.sql` + `000007_xxx.down.sql`。
 2. `up` 用 `CREATE TABLE IF NOT EXISTS`、幂等 `ALTER`；`down` 必须能真正回滚（删表 / 删列 / 删索引）。
 3. 同步更新本节表格与 `README.md` 目录结构里的迁移列表。
 4. 开发阶段**优先直接改已有迁移**并重建库（`DROP DATABASE` 后从空库重跑），不要为旧表结构追加兼容迁移；提交前确认从空库能一路跑到最新。只有在联调 / 共享库上才按「新变更新文件」处理，先看 §2「团队共享库」。
@@ -337,7 +338,8 @@ CI（`.github/workflows/ci.yml`）两个 job 与本地一致，差异：CI 用 `
 
 | 项 | 现状 | 若要接手 |
 | --- | --- | --- |
-| Outbox Worker | 事件只写入 `event_outbox`，**没有消费者**；`internal/eventbus` 只有契约。生产端事件名还没统一：订单侧写死字面量 `OrderPaid` / `OrderCancelled`，常量却是 `TopicRedeemOrderPaid = "RedeemOrderPaid"`，且 `OrderCancelled` 无常量 | 先统一 topic 常量（含补 `OrderCancelled`），再实现轮询 + 退避 + 死信，读 `dispatched_at IS NULL AND available_at <= NOW()` |
+| 积分批次 | 发放端未写 `point_batch`（`GrantPointsWithBatch` 未接入 `/trips`）；扣减/退款已写 `point_batch_txn`；`consumeBatches` 批次不足时不报错、只扣可用批次，余额仍减，余额与批次剩余可能不等 | `/trips` 接入 `GrantPointsWithBatch`；批次不足直接失败或补齐；补过期任务与对账测试 |
+| Outbox Worker | 事件只写入 `event_outbox`，**没有消费者**；`internal/eventbus` 只有契约。订单侧已用 `TopicOrderPaid` / `TopicOrderCancelled` 常量；`TopicRedeemOrderPaid` 仍存在但无人使用 | 清理或标注 `TopicRedeemOrderPaid`，再实现轮询 + 退避 + 死信，读 `dispatched_at IS NULL AND available_at <= NOW()` |
 | 密码哈希 | 加盐 SHA-256（`sha256$salt$digest`），注释已标"临时方案" | 换 bcrypt / argon2，并给出存量数据迁移方案 |
 | Token | 自签 HMAC-SHA256 紧凑串，**不是标准 JWT**（无 header 段） | 需要标准 JWT 时统一改签发与校验两端 |
 | sqlc | `apps/api/sqlc.yaml` 已配置但未启用，repo 全是手写 SQL | 启用即要重写 repo 层，别半途混用 |

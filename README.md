@@ -12,7 +12,7 @@
 > 把一次「步行 / 骑行 / 地铁 / 公交 / 共享单车」出行，变成可计量、可核查、可兑换的碳资产。
 > 后端 Go + chi，前端 React + TypeScript 7 + Vite，MySQL 8 持久化，采用事务性发件箱（Outbox）落地教学级事件驱动架构。
 
-**当前进度：Sprint 0 工程骨架 + 实验一需求建模（全套 UML）已完成；后端 M1–M8 主要接口与前端用户端页面均已实现并通过一键校验。**
+**当前进度：Sprint 0–S2 文档已补齐（需求规格 + 设计规格 + 用户故事地图/Backlog）；后端主链路与商城主体已实现；Outbox Worker、集成/E2E、Docker 实跑仍待补。**
 
 已实现：认证 / 行程上报与碳核算 / 积分账本与查询 / 商品目录 / 兑换订单与状态机 / 运营后台（含积分对账）；
 待补齐：Outbox Worker（事件只落库、暂无消费者）、集成测试与 E2E、Docker 编排实跑；前端五个 service 均已联调真实接口。
@@ -144,9 +144,9 @@ flowchart LR
   OrderPaid    → 扣减库存 / 通知商户 / 生成核销码
 ```
 
-> **实现现状**：生产端已落地——行程上报、下单 / 取消、运营流转都在各自事务里 `INSERT event_outbox`；消费端未实现——`internal/eventbus` 只有 `Event` 与 `Handler` 契约，没有轮询循环，`event_outbox` 只增不消。接消费者前先统一事件名：订单侧写的是字面量 `OrderPaid` / `OrderCancelled`，而常量定义是 `TopicRedeemOrderPaid = "RedeemOrderPaid"`，且 `OrderCancelled` 无常量。
+> **实现现状**：生产端已落地——行程上报、下单 / 取消、运营流转都在各自事务里 `INSERT event_outbox`；消费端未实现——`internal/eventbus` 只有 `Event` 与 `Handler` 契约，没有轮询循环，`event_outbox` 只增不消。订单侧已改用 `TopicOrderPaid` / `TopicOrderCancelled` 常量；`TopicRedeemOrderPaid` 仍存在但无人使用，接消费者前先清理或标注。
 
-选择 EDA 而非"经典分层同步调用"的理由、与其他架构方案的对比，写在设计说明书的「2.1.1 架构决策与选型」；逻辑架构（包图）、物理架构（部署图）见 [docs/uml](docs/uml)。
+选择 EDA 而非“经典分层同步调用”的理由、与其他架构方案的对比，写在 [设计规格说明书](docs/设计规格说明书.md) 的「2.1.1 架构决策与选型」（含候选方案对比、约束支持度与决策记录）；逻辑架构（包图）、物理架构（部署图）见 [docs/uml](docs/uml)。
 
 ---
 
@@ -169,13 +169,17 @@ green-travel-points/
 │       ├── AGENTS.md                 # 前端专项代理指南（Astryx 工作流与规则，由 astryx init 维护）
 │       └── src/{pages,components,services,lib,themes,types}/  # themes/ = Astryx 品牌主题（green-travel）
 ├── db/
-│   ├── migrations/                   # 5 组 up/down：参数与出行方式 / 发件箱 / 账本 / 用户行程碳记录 / 商城订单
+│   ├── migrations/                   # 6 组 up/down：参数与出行方式 / 发件箱 / 账本 / 用户行程碳记录 / 商城订单 / 批次流水
 │   └── seed/dev_demo.sql             # 演示数据：用户 1001（1200 分）+ 3 个上架商品
 ├── deploy/                           # Dockerfile.api / Dockerfile.web / nginx.conf / docker-compose.yml
 ├── docs/
 │   ├── api/README.md                 # M5–M8 接口契约：字段、事务步骤、错误码、联调步骤
-│   ├── uml/                          # 12 个 .puml 源图 + out/ 12 张 PNG + .tools/(plantuml.jar, graphviz)
-│   └── *.md                          # 需求规格、分工计划、Sprint 0 记录、联通记录、建模指南、接口需求清单
+│   ├── uml/                          # 13 个 .puml 源图 + out/ 13 张 PNG + .tools/(plantuml.jar, graphviz)
+│   ├── 需求规格说明书.md              # 实验一：角色、用例、域模型、规则、非功能需求
+│   ├── 设计规格说明书.md              # 实验二：架构对比/决策、包图/部署图、表2-1/2-2/2-3、偏差
+│   ├── 用户故事地图与Backlog.md       # 故事地图、40 条 Backlog、7 个 Sprint 切片
+│   ├── 实验报告-绿行积分.md / .docx    # 五章完整报告（可单独提交）
+│   └── 其他 .md                       # 分工计划、Sprint 0 记录、联通记录、建模指南、接口需求清单
 ├── scripts/                          # dev-env.ps1（缓存重定向）/ verify.ps1（一键门禁）/ uml-export.ps1
 ├── .github/workflows/ci.yml          # 双 job：Go（gofmt→vet→test -race→build）+ Node（tsc→vitest→build）
 ├── AGENTS.md                         # 代理 / 新人作业手册：分层规范、领域规则、迁移与测试要求、门禁
@@ -335,11 +339,11 @@ pwsh -File .\scripts\verify.ps1
 | 单元测试（Go · cmd/server） | 启动日志的 DSN 目标判定：本机 / 局域网 / ZeroTier / socket / 非法 DSN | `go test ./cmd/server -v` | 1 个函数 / 9 个用例 |
 | 单元测试（前端） | Envelope 解包、错误映射、表单校验 | `npx vitest run` | 2 个文件 19 例（http 5 + validators 14） |
 | 类型检查 | 前端全量 | `npx tsc --noEmit` | 零错误 |
-| 集成测试 | API + MySQL | 待建（testcontainers） | 未建：原计划 S2 已过，随 S4 补 |
-| E2E | 上报 → 得积分 → 兑换 → 核销 | 待建（Playwright） | 未建：原计划 S3 已过，随 S4 补 |
-| 性能 | 行程上报、兑换并发 | 待建（k6） | Sprint 4 起 |
+| 集成测试 | API + MySQL | 待建（testcontainers） | 未建：计划 S5–S6 补主链路 |
+| E2E | 上报 → 得积分 → 兑换 → 核销 | 待建（Playwright） | 未建：计划 S6 补 |
+| 性能 | 行程上报、兑换并发 | 待建（k6） | 未建：计划 S6 起 |
 
-指导书要求的**基本路径法**（组件测试）与**等价类划分法**（功能测试）用例表，在 Sprint 3–4 补齐并写入测试报告。
+指导书要求的**基本路径法**（组件测试）与**等价类划分法**（功能测试）用例表，在 S6 补齐并写入测试报告。
 
 ---
 
@@ -349,7 +353,7 @@ pwsh -File .\scripts\verify.ps1
 docker compose -f deploy/docker-compose.yml up -d --build
 ```
 
-当前 compose 只编排 `mysql` + `api` 两个服务：MySQL 首次启动按文件名顺序导入 5 组迁移，API 等 `mysql` 健康检查通过后启动。
+当前 compose 只编排 `mysql` + `api` 两个服务：MySQL 首次启动按文件名顺序导入 6 组迁移，API 等 `mysql` 健康检查通过后启动。
 
 `web` 与反向代理 nginx 的镜像配置已就绪（`deploy/Dockerfile.web` 多阶段构建 → nginx 托管 `dist/`，`deploy/nginx.conf` 含 SPA 回退与 `/api` 反代），但尚未编入 compose。物理部署拓扑见 [部署图](docs/uml/06-部署图.puml)。
 
@@ -372,11 +376,11 @@ docker compose -f deploy/docker-compose.yml up -d --build
 
 | 编号 | 角色 | 一句话职责 | Sprint 1 起手位置 |
 | --- | --- | --- | --- |
-| P1 | 组长 / 架构与建模 ______ | 业务规则定稿、全套 UML、文档统稿、进度与互评 | 出用例图、域模型、包图；维护契约与自查表 |
-| P2 | 后端 / 核心域与事件引擎 ______ | 工程骨架、数据模型、认证、行程上报链路 | `internal/httpserver/router.go` 预留的 `/api/v1/trips`，复用 `domain.EvaluateTrip` |
-| P3 | 后端 / 积分商城与运营 ______ | 积分账户与流水、商品、订单、兑换 | 续写账本与商品表迁移；实现 `PointsGranted` 消费者 |
-| P4 | 前端 / 用户端 ______ | 前端工程化与用户端页面 | `apps/web/src/routes.tsx` 的占位页逐个替换；`src/lib/http.ts` 已封装 Envelope |
-| P5 | 测试与部署 / 运营后台 ______ | 三层测试、CI / 容器化、测试报告 | `scripts/verify.ps1` + `deploy/`；补基本路径法 / 等价类用例表 |
+| P1 | 组长 / 架构与建模 ______（待填写） | 业务规则定稿、全套 UML、文档统稿、进度与互评 | 出用例图、域模型、包图；维护契约与自查表 |
+| P2 | 后端 / 核心域与事件引擎 ______（待填写） | 工程骨架、数据模型、认证、行程上报链路 | `internal/httpserver/router.go` 预留的 `/api/v1/trips`，复用 `domain.EvaluateTrip` |
+| P3 | 后端 / 积分商城与运营 ______（待填写） | 积分账户与流水、商品、订单、兑换 | 续写账本与商品表迁移；实现 `PointsGranted` 消费者 |
+| P4 | 前端 / 用户端 ______（待填写） | 前端工程化与用户端页面 | `apps/web/src/routes.tsx` 的占位页逐个替换；`src/lib/http.ts` 已封装 Envelope |
+| P5 | 测试与部署 / 运营后台 ______（待填写） | 三层测试、CI / 容器化、测试报告 | `scripts/verify.ps1` + `deploy/`；补基本路径法 / 等价类用例表 |
 
 完整职责、WBS 与逐周任务矩阵见 [项目分工与迭代计划](docs/项目分工与迭代计划.md)。
 
@@ -387,10 +391,12 @@ docker compose -f deploy/docker-compose.yml up -d --build
 | Sprint | 周期 | 目标 | 对齐实验 | 状态 |
 | --- | --- | --- | --- | --- |
 | S0 | 第 1 周 | 技术栈验证、业务规则冻结、骨架搭建 | 准备 | ✅ 已完成 |
-| S1 | 第 2–4 周 | 需求建模：角色 / 用例 / 活动图 / 域模型 / 非功能需求 | 实验一 | ✅ 已完成（12 张 UML 源图 + 成图） |
-| S2 | 第 5–7 周 | 设计建模 + 垂直切片（登录 → 上报 → 碳核算 → 积分） | 实验二 | ✅ 主链路已通（认证 + 行程 + 积分） |
-| S3 | 第 8–10 周 | 商城闭环 + 订单状态机 + Outbox Worker | 实验三 | 🚧 商城闭环与状态机已实现，Worker 未做 |
-| S4 | 第 11–13 周 | 三层测试 + 性能 + 容器化部署 + 报告四 / 五章 | 实验四 | ⏳ 未开始 |
+| S1 | 第 2–3 周 | 需求建模：角色 / 用例 / 活动图 / 域模型 / 非功能需求 + 故事地图 | 实验一 | ✅ 已完成（19 个用例、12 张分析图、40 条 Backlog） |
+| S2 | 第 4–5 周 | 设计建模：三方案对比、包图/部署图、表2-1/2-2/2-3 | 实验二 | 🚧 设计规格与 13 张 UML 已补；19 个用例中 4 个有用例实现图，其余待补 |
+| S3 | 第 6–7 周 | 主链路：认证 → 行程 → 碳核算 → 积分发放 | 实验二/三 | ✅ 主链路已通（含幂等与日上限）；JWT/批次为临时实现 |
+| S4 | 第 8–9 周 | 商城闭环：商品 → 兑换 → 订单状态机 → 取消退分 | 实验三 | 🚧 兑换/订单/取消主体已提前实现；批次 FIFO 与并发测试待补 |
+| S5 | 第 10–11 周 | 运营后台 + Outbox Worker + 对账/审计 | 实验三 | 🚧 运营 API 部分实现；后台前端、Worker、审计未做 |
+| S6 | 第 12–13 周 | 三层测试、部署、报告四/五章、答辩 | 实验四 | ⏳ 未开始 |
 
 **Sprint 0 验收**
 
@@ -437,15 +443,18 @@ icacls "D:\coding\green-travel-points" /grant "$env:USERNAME:(OI)(CI)F" /T /C
 | 文档 | 内容 |
 | --- | --- |
 | [参考-2026版软件工程实验指导书](docs/参考-2026版软件工程实验指导书.txt) | 课程要求与报告样本（原文） |
-| [项目分工与迭代计划](docs/项目分工与迭代计划.md) | 角色、WBS、13 周迭代、协作规范、风险预案 |
+| [项目分工与迭代计划](docs/项目分工与迭代计划.md) | 角色、WBS、7 个 Sprint（13 周）、协作规范、风险预案 |
 | [需求规格说明书](docs/需求规格说明书.md) | 角色、用例、域模型、非功能需求（实验一） |
+| [设计规格说明书](docs/设计规格说明书.md) | 架构方案对比与决策、包图/部署图、表2-1/2-2/2-3、实现偏差（实验二） |
+| [用户故事地图与Backlog](docs/用户故事地图与Backlog.md) | 故事地图、40 条用户故事、Sprint 切片与验收标准 |
+| [实验报告（Markdown）](docs/实验报告-绿行积分.md) / [DOCX](docs/实验报告-绿行积分.docx) | 五章完整报告：需求、设计、原型、测试、总结与互评 |
 | [Sprint 0 骨架说明](docs/Sprint0-骨架说明.md) | 实施记录、实测数据、踩坑与验收证据 |
 | [数据库联通记录](docs/数据库联通记录.md) | 建库、迁移执行、连通性验证全过程 |
 | [PlantUML 建模指南](docs/PlantUML建模指南.md) | 出图流程与 `scripts/uml-export.ps1` 用法 |
 | [AGENTS.md](AGENTS.md) | 代理 / 新人作业手册：分层与依赖方向、领域规则、迁移与测试要求、门禁与排错 |
 | [P3 接口说明](docs/api/README.md) | M5–M8 端点、字段口径、事务步骤、业务错误码、联调步骤 |
 | [前端接口需求清单](docs/前端接口需求清单.md) | 页面 ↔ 端点对照、字段与错误码需求（P4 → P2/P3） |
-| [UML 源图与导出](docs/uml) | 12 个 `.puml`：用例图、2 张活动图、域模型、包图、部署图、2 张鲁棒图（市民 / 运营管理员各一张）、2 张序列图、2 张状态图；`out/` 下为 12 张 PNG |
+| [UML 源图与导出](docs/uml) | 13 个 `.puml`：用例图、3 张活动图、域模型、包图、部署图、2 张鲁棒图（市民 / 运营管理员各一张）、2 张序列图、2 张状态图；`out/` 下为 13 张 PNG |
 
 ---
 
