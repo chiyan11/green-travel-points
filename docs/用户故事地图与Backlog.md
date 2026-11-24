@@ -92,10 +92,10 @@
 | US-32 | R2 | 作为运营，我要调 SKU 库存 | `PUT /admin/skus/{id}/stock`；负数 400；库存变更可追溯 | P0 | 2 | S5 | 部分（API 有，无审计） |
 | US-33 | R2 | 作为运营，我要按状态查订单 | `GET /admin/orders` 分页/筛选；含用户与商品快照 | P1 | 2 | S5 | 已实现（API） |
 | US-34 | R2 | 作为运营，我要配置因子与积分规则 | 改 `sys_config`/`travel_mode` 后新行程按新规则；旧记录保留快照 | P1 | 3 | S5 | 未开始 |
-| US-35 | R2/R4 | 作为运营，我要对账并导出差异 | `GET /admin/points/reconcile` 返回差异；无差异时为空 | P0 | 3 | S5 | 部分（假存储测试，无 DB 验证） |
+| US-35 | R2/R4 | 作为运营，我要对账并导出差异 | `GET /admin/points/reconcile` 返回差异；无差异时为空 | P0 | 3 | S5 | 部分（HTTP 假存储用例 + repo 集成用例 `TestReconcileAfterOrderAndCancel`；导出与页面未做） |
 | US-36 | R2/R4 | 作为审计，我要查关键操作 | 配置变更/调账/状态流转写审计；按人/对象/时间检索 | P1 | 5 | S6 | 未开始（无 audit_log 表） |
 | US-37 | R4 | 作为风控，我要重放死信 | 查看失败事件、手动重放、标记死信 | P2 | 5 | S6 | 未开始（Worker 未做） |
-| US-38 | P1–P5 | 作为团队，我要有可重复的测试 | domain/HTTP/前端单测通过；集成/E2E 覆盖主链路；覆盖率门槛 | P0 | 8 | S6 | 部分（仅单测） |
+| US-38 | P1–P5 | 作为团队，我要有可重复的测试 | domain/HTTP/前端单测通过；集成/E2E 覆盖主链路；覆盖率门槛 | P0 | 8 | S6 | 部分（domain/HTTP/app 单测 + repo 集成 7 例 + E2E 主链路；覆盖率门槛未做，E2E 未进 CI） |
 | US-39 | P5 | 作为团队，我要一条命令部署 | `docker compose up -d` 拉起 mysql+api+web+nginx；有访问 URL | P1 | 5 | S6 | 未满足（compose 仅 mysql+api） |
 | US-40 | P1 | 作为团队，我要可提交的报告 | 五章报告 + 表5-1 + AI 记录 + UML 成图 + 演示脚本 | P0 | 5 | S6 | 部分（本文件所在批次补齐） |
 
