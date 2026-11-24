@@ -1,13 +1,12 @@
 /**
- * 前端领域类型与常量（手写过渡版）。
+ * 前端领域类型与常量（页面视图模型）。
  *
- * 现状：后端没有 `docs/api/openapi.yaml`，也没有 openapi-typescript 生成链路，
- * 所以这里暂时手写；字段口径以 `docs/api/README.md`、`apps/api/internal/app` 的 DTO
- * 与 `db/migrations` 为准，改动任一侧都要同步本文件。
- * 待后端产出 OpenAPI 后，改为 `openapi-typescript` 生成 `types/api.ts`，本文件收敛为薄封装。
- * 字段口径已与 db/migrations/000003（积分账本）/000004（用户/行程/碳记录）/000005（商城/订单）逐字段对齐：
- * 枚举值、列名 snake_case→camelCase 映射以后端表结构为准。
- * 常量口径与 apps/api/internal/domain、db/migrations/000001 种子保持一致。
+ * 分层：
+ * - `src/types/api.ts` 是后端 wire 契约，由 `docs/api/openapi.yaml` 生成（`npm run gen:api`，勿手改）；
+ * - 本文件是**页面视图模型**：把 wire 字段收敛成页面好用的形状（`id` 统一 `string`、
+ *   `imageUrl→coverUrl`、`traveledAt→startedAt`、`refType→bizRefType`、`createdAt→occurredAt` 等）。
+ * - 两者之间的映射只允许写在 `src/services/*.ts` 的 `toXxx()` 里；页面只用本文件的类型。
+ * 枚举与常量口径与 db/migrations 000001/000003/000004/000005 及 apps/api/internal/domain 保持一致。
  */
 
 export type TravelMode = 'walk' | 'bike' | 'subway' | 'bus' | 'shared_bike'

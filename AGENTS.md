@@ -108,9 +108,10 @@ green-travel-points/
 │       │   ├── routes.tsx        路由表：/login 公开，其余 RequireAuth + AppLayout
 │       │   ├── pages/            9 个页面：Home / Login / Trips / Points / Mall / ProductDetail / Orders / Profile / Placeholder
 │       │   ├── components/       AppLayout（外壳+导航）、RequireAuth（守卫）、CarbonTrendChart（折线图）
-│       │   ├── services/         按域拆的 API 调用：auth / trips / products / points / orders
+│       │   ├── services/         按域拆的 API 调用：auth / trips / products / points / orders（按生成契约标注传输类型）
 │       │   ├── lib/              http（Envelope 解包、错误、401 处理）、session、validators、format、orderStatus、productCover、queryClient
-│       │   ├── types/domain.ts   全站共享的前端类型
+│       │   ├── types/api.ts      由 docs/api/openapi.yaml 生成的 wire 类型（npm run gen:api，勿手改）
+│       │   ├── types/domain.ts   页面视图模型（id 转 string、coverUrl、startedAt 等展示口径）
 │       │   └── styles.css        全站样式（单文件，无 CSS 框架）
 │       └── vite.config.ts        端口 5173 + /api 代理
 ├── db/
@@ -247,11 +248,14 @@ domain ◄──────────────────────┘�
 ```
 pages/*.tsx  ──►  services/*.ts  ──►  lib/http.ts  ──►  fetch
     │                  │
-    └── types/domain.ts（共享类型）      lib/session.ts（token 存取）
+    └── types/domain.ts（视图模型）      lib/session.ts（token 存取）
+                       └── types/api.ts（wire 契约，由 openapi.yaml 生成）
 ```
 
 - **组件不直接 `fetch`**：请求只写在 `services/`，页面用 TanStack Query（`useQuery` / `useMutation`）调用。
-- **后端字段差异在 service 层吸收**，页面只看到干净的前端类型。已有例子：`imageUrl`/`coverUrl` 双字段、`traveledAt`/`startedAt`、`rawPoints`/`grantedPoints`、`status` 归一化。新增接口不许把原始 JSON 直接漏给页面。
+- **两层类型，不许混用**：`types/api.ts` 是后端 wire 契约（`npm run gen:api` 从 `docs/api/openapi.yaml` 生成，禁止手改）；`types/domain.ts` 是页面视图模型（`id` 统一 `string`、`imageUrl→coverUrl`、`traveledAt→startedAt`、`bizRefType/occurredAt` 等）。映射只写在 `services/` 的 `toXxx()` 里。
+- **接口变更顺序**：改 `apps/api` → 改 `docs/api/openapi.yaml` → `cd apps/web && npm run gen:api` → 修 `services/` 映射 → 提交生成物。门禁会校验生成物与 yaml 一致。
+- **后端字段差异在 service 层吸收**，页面只看到干净的前端类型。现有例子：`status`/`active` 归一化、`traveledAt`/`startedAt`、`refType→bizRefType`、`createdAt→occurredAt`、`rawPoints`/`grantedPoints` 推算 `cappedByDaily`。新增接口不许把原始 JSON 直接漏给页面。
 - **401 统一处理**：`lib/http.ts` 收到 401 会清会话并跳 `/login`，页面不要重复写这套逻辑。
 - **会话存 `localStorage` 的 `gtp_session`**（`lib/session.ts`）；不要另起 key。
 - **路由守卫**：`routes.tsx` 里 `/login` 公开，其余包 `RequireAuth` + `AppLayout`；新增页面挂到对应子路由下。
@@ -301,7 +305,7 @@ cd apps/web; npx vitest run src/lib/http.test.ts # 单文件
 pwsh -File .\scripts\verify.ps1
 ```
 
-七步，任一失败即非 0 退出并打印 `VERIFY FAILED: <步骤>`：
+八步，任一失败即非 0 退出并打印 `VERIFY FAILED: <步骤>`：
 
 | # | 步骤 | 失败常见原因 |
 | --- | --- | --- |
@@ -309,9 +313,10 @@ pwsh -File .\scripts\verify.ps1
 | 2 | `go vet ./...` | 未使用的变量、错的格式化占位符 |
 | 3 | `go test ./...` | 改了规则没改测试，或断言写死旧数值 |
 | 4 | `go build` | 导入未使用的包、接口实现不全 |
-| 5 | `tsc --noEmit` | 类型漂移；TS7 不认 `baseUrl`，路径别名用相对形式 |
-| 6 | `vitest run` | 断言过时、mock 返回值形状变了 |
-| 7 | `vite build` | 仅构建期才暴露的引用错误 |
+| 5 | `web: api contract`（`npm run gen:api` + `git status`） | 改了 `openapi.yaml` 没重新生成，或手改了 `types/api.ts`；跑 `npm run gen:api` 并提交 |
+| 6 | `tsc --noEmit` | 类型漂移；TS7 不认 `baseUrl`，路径别名用相对形式 |
+| 7 | `vitest run` | 断言过时、mock 返回值形状变了 |
+| 8 | `vite build` | 仅构建期才暴露的引用错误 |
 
 CI（`.github/workflows/ci.yml`）两个 job 与本地一致，差异：CI 用 `go test -race -coverprofile`、`npm ci`。
 

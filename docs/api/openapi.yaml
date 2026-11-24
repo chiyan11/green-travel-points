@@ -1,0 +1,1384 @@
+openapi: 3.1.0
+info:
+  title: 绿行积分 API
+  version: 1.0.0-p3
+  description: |
+    绿行积分（green-travel-points）后端 HTTP 接口契约。
+
+    ## 通用约定
+    - 全部响应都是统一外壳 `{ code, message, data }`：`code` 为稳定的业务码（前端与接口测试按它断言），
+      HTTP 状态码表达协议层语义；`data` 在失败响应中通常缺省。
+    - 所有 JSON 字段一律 camelCase，时间字段为 RFC 3339（`2026-11-24T10:00:00+08:00`）。
+    - 分页参数 `page`（默认 1，小于 1 按 1 处理）、`pageSize`（默认 20，上限 100）。
+    - 金额类字段 `pointsPrice` / `amount` / `pointsSpent` 均为整数积分，无小数。
+    - 碳减排量 `carbonSavedGrams` / `grams` / `totalCarbonSavedGrams` 为浮点克数（gCO2e）。
+
+    ## 身份
+    - 正式路径：`Authorization: Bearer <token>`，token 由 `/auth/login` 或 `/auth/register` 签发（2 小时有效）。
+    - 联调回退：未带 Bearer 时接受 `X-User-Id: <数字用户 ID>`（仅供本地联调与接口测试，生产不启用）。
+    - 运营后台额外要求调用者具备 ADMIN 角色，否则 403 `FORBIDDEN`。
+
+    ## 契约来源
+    本文件是前后端的唯一传输契约。字段口径以 `apps/api/internal/app` 的 DTO 与 `apps/api/internal/httpserver`
+    的处理逻辑为准，schema 由 `npm run gen:api`（apps/web）生成到 `apps/web/src/types/api.ts`，禁止手改生成物。
+  contact:
+    name: 绿行积分项目组
+servers:
+  - url: http://localhost:8080
+    description: 本地开发（apps/api 默认监听 :8080）
+tags:
+  - name: auth
+    description: 注册、登录与当前用户
+  - name: products
+    description: 商品目录（公开）
+  - name: points
+    description: 积分账户、流水与碳减排趋势
+  - name: trips
+    description: 绿色出行行程上报与列表
+  - name: orders
+    description: 积分兑换订单（用户侧）
+  - name: admin
+    description: 运营后台（需 ADMIN 角色）
+  - name: ops
+    description: 探针与连通性自检
+security:
+  - bearerAuth: []
+  - devUserId: []
+paths:
+  /api/v1/ping:
+    get:
+      tags: [ops]
+      summary: 连通性自检
+      security: []
+      responses:
+        '200':
+          description: 服务存活
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PingResponse'
+  /healthz:
+    get:
+      tags: [ops]
+      summary: 存活探针（进程活着即 200）
+      security: []
+      responses:
+        '200':
+          description: 存活
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /readyz:
+    get:
+      tags: [ops]
+      summary: 就绪探针（数据库可 ping 通才 200）
+      description: |
+        数据库不可达时返回 503 `UNAVAILABLE`。注意：共享库冷连接需要 2–3 秒，
+        而探针内部只有 2 秒超时，进程刚启动时可能短暂 503；先访问任意真实接口把连接池焐热即可。
+      security: []
+      responses:
+        '200':
+          description: 就绪
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessResponse'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /api/v1/auth/register:
+    post:
+      tags: [auth]
+      summary: 注册
+      description: 手机号唯一，密码至少 6 位；注册成功后自动创建积分账户并直接签发 token。
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterInput'
+      responses:
+        '200':
+          description: 注册成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSessionResponse'
+        '400':
+          $ref: '#/components/responses/InvalidArgument'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v1/auth/login:
+    post:
+      tags: [auth]
+      summary: 登录
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginInput'
+      responses:
+        '200':
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          $ref: '#/components/responses/InvalidArgument'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/me:
+    get:
+      tags: [auth]
+      summary: 当前登录用户
+      responses:
+        '200':
+          description: 当前用户信息
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/products:
+    get:
+      tags: [products]
+      summary: 商品列表（公开，仅上架）
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - name: category
+          in: query
+          schema:
+            type: string
+        - name: keyword
+          in: query
+          description: 名称/描述模糊匹配
+          schema:
+            type: string
+        - name: onlyInStock
+          in: query
+          description: 传字符串 `true` 才过滤无库存商品
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: 商品分页
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductPageResponse'
+  /api/v1/products/{id}:
+    get:
+      tags: [products]
+      summary: 商品详情（含 SKU 列表）
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/PathID'
+      responses:
+        '200':
+          description: 商品详情
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductResponse'
+        '400':
+          $ref: '#/components/responses/InvalidArgument'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/points/summary:
+    get:
+      tags: [points]
+      summary: 积分概览
+      description: '`available = balance - frozen`，`totalCarbonSavedGrams` 为累计碳减排克数。'
+      responses:
+        '200':
+          description: 积分概览
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PointsSummaryResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/points/transactions:
+    get:
+      tags: [points]
+      summary: 积分流水（append-only 账本）
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - name: type
+          in: query
+          description: 逗号分隔多选；接受 DB 枚举与历史别名（EARN/SPEND/REVERSE）
+          schema:
+            type: string
+            example: TRAVEL,REDEEM
+      responses:
+        '200':
+          description: 流水分页
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PointTxnPageResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/points/daily-carbon:
+    get:
+      tags: [points]
+      summary: 最近 N 天逐日碳减排量
+      description: 返回按日期升序的数组（不是分页对象）；`days` 缺省 7。
+      parameters:
+        - name: days
+          in: query
+          schema:
+            type: integer
+            default: 7
+            minimum: 1
+            maximum: 90
+      responses:
+        '200':
+          description: 逐日碳减排列表
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DailyCarbonListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/trips:
+    get:
+      tags: [trips]
+      summary: 我的行程列表
+      description: |
+        按 `traveledAt` 倒序返回当前用户全部行程，当前不分页（`page` 恒为 1、`pageSize` 等于条数）。
+        `rawPoints` 是规则原始积分，`grantedPoints` 是实际入账积分，`cappedByDaily` 表示被单日上限截断。
+      responses:
+        '200':
+          description: 行程分页
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TripPageResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [trips]
+      summary: 上报行程
+      description: |
+        同一用户、同一出行方式、同一距离、同一出发时间重复提交会返回首次结果（HTTP 200 而非 201 语义，
+        两者响应体同为 Trip），便于前端安全重试。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TripInput'
+      responses:
+        '200':
+          description: 行程已存在，返回首次结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TripResponse'
+        '400':
+          $ref: '#/components/responses/InvalidArgument'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/orders:
+    get:
+      tags: [orders]
+      summary: 我的订单
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/OrderStatus'
+      responses:
+        '200':
+          description: 订单分页
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderPageResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [orders]
+      summary: 兑换下单
+      description: |
+        `skuId` 省略时由后端挑选第一个有库存的 SKU；带 `Idempotency-Key` 且重复提交时返回原订单（HTTP 200），
+        首次创建返回 201。
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          description: 幂等键，同键重复提交返回首次创建的订单
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrderInput'
+      responses:
+        '201':
+          description: 下单成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        '200':
+          description: 幂等重放，返回原订单
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        '400':
+          $ref: '#/components/responses/InvalidArgument'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/OrderConflict'
+  /api/v1/orders/{id}/cancel:
+    post:
+      tags: [orders]
+      summary: 取消订单
+      parameters:
+        - $ref: '#/components/parameters/PathID'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelOrderInput'
+      responses:
+        '200':
+          description: 取消成功，返回流转后的订单
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        '400':
+          $ref: '#/components/responses/InvalidArgument'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/IllegalTransition'
+  /api/v1/admin/products:
+    get:
+      tags: [admin]
+      summary: 后台商品列表（含非上架）
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/ProductStatus'
+        - name: keyword
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 商品分页
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductPageResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [admin]
+      summary: 新建商品（含 SKU）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminProductInput'
+      responses:
+        '201':
+          description: 已创建
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductResponse'
+        '400':
+          $ref: '#/components/responses/InvalidArgument'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/admin/products/{id}:
+    patch:
+      tags: [admin]
+      summary: 更新商品（只传要改的字段）
+      parameters:
+        - $ref: '#/components/parameters/PathID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductUpdate'
+      responses:
+        '200':
+          description: 更新后的商品
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductResponse'
+        '400':
+          $ref: '#/components/responses/InvalidArgument'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/admin/skus/{id}/stock:
+    put:
+      tags: [admin]
+      summary: 设置 SKU 库存（绝对值）
+      parameters:
+        - $ref: '#/components/parameters/PathID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SKUStockInput'
+      responses:
+        '200':
+          description: 更新后的 SKU
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SKUResponse'
+        '400':
+          $ref: '#/components/responses/InvalidArgument'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/admin/orders:
+    get:
+      tags: [admin]
+      summary: 全部订单
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/OrderStatus'
+      responses:
+        '200':
+          description: 订单分页
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderPageResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/admin/orders/{id}/confirm:
+    post:
+      tags: [admin]
+      summary: 确认订单（PENDING → PAID）
+      parameters:
+        - $ref: '#/components/parameters/PathID'
+      responses:
+        '200':
+          description: 流转后的订单
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/IllegalTransition'
+  /api/v1/admin/orders/{id}/ship:
+    post:
+      tags: [admin]
+      summary: 发货（PAID → SHIPPED）
+      parameters:
+        - $ref: '#/components/parameters/PathID'
+      responses:
+        '200':
+          description: 流转后的订单
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/IllegalTransition'
+  /api/v1/admin/orders/{id}/complete:
+    post:
+      tags: [admin]
+      summary: 完成订单（SHIPPED → COMPLETED）
+      parameters:
+        - $ref: '#/components/parameters/PathID'
+      responses:
+        '200':
+          description: 流转后的订单
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/IllegalTransition'
+  /api/v1/admin/points/reconcile:
+    get:
+      tags: [admin]
+      summary: 积分对账（BR-07 证据）
+      description: 比对账户余额与流水求和，`ok` 为 true 表示全部一致。
+      responses:
+        '200':
+          description: 对账结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReconcileResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: '`/auth/login` 或 `/auth/register` 签发的 token，2 小时有效。'
+    devUserId:
+      type: apiKey
+      in: header
+      name: X-User-Id
+      description: 联调回退：直接指定数字用户 ID，仅在未携带 Bearer 时生效。
+  parameters:
+    Page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PageSize:
+      name: pageSize
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    PathID:
+      name: id
+      in: path
+      required: true
+      description: 数据库自增主键（正整数）
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+  responses:
+    InvalidArgument:
+      description: 参数非法（`INVALID_ARGUMENT`）或方法不允许
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Unauthorized:
+      description: 未登录或登录已失效（`UNAUTHORIZED`）
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Forbidden:
+      description: 无权限，例如非管理员访问后台（`FORBIDDEN`）
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    NotFound:
+      description: 资源不存在（`NOT_FOUND`）
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Conflict:
+      description: 冲突（`CONFLICT`），例如手机号已注册
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    OrderConflict:
+      description: 下单业务冲突：`INSUFFICIENT_POINTS` / `OUT_OF_STOCK` / `LIMIT_EXCEEDED`
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    IllegalTransition:
+      description: 非法状态跃迁（`ILLEGAL_TRANSITION`）
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Unavailable:
+      description: 依赖不可用（`UNAVAILABLE`）
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+  schemas:
+    ErrorCode:
+      type: string
+      description: 业务错误码（HTTP 状态码另行表达协议层语义）
+      enum:
+        - INVALID_ARGUMENT
+        - UNAUTHORIZED
+        - FORBIDDEN
+        - NOT_FOUND
+        - CONFLICT
+        - INTERNAL
+        - UNAVAILABLE
+        - INSUFFICIENT_POINTS
+        - OUT_OF_STOCK
+        - LIMIT_EXCEEDED
+        - ILLEGAL_TRANSITION
+    ErrorEnvelope:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          $ref: '#/components/schemas/ErrorCode'
+        message:
+          type: string
+          description: 面向人的中文错误说明，可直接展示
+    OrderStatus:
+      type: string
+      enum: [PENDING, PAID, SHIPPED, COMPLETED, CANCELLED]
+    ProductStatus:
+      type: string
+      enum: [DRAFT, ONLINE, OFFLINE]
+    TripStatus:
+      type: string
+      enum: [VALID, REVOKED]
+    TravelMode:
+      type: string
+      description: 出行方式代码，与 travel_mode 表种子一致
+      enum: [walk, bike, subway, bus, shared_bike]
+    PointTxnType:
+      type: string
+      description: 行程发放 / 兑换消耗 / 取消返还 / 人工调整 / 过期
+      enum: [TRAVEL, REDEEM, REFUND, ADJUST, EXPIRE]
+    PointBizRefType:
+      type: string
+      enum: [trip_record, redeem_order, audit_log]
+    SKU:
+      type: object
+      required: [id, name, pointsPrice, stock, soldCount]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        pointsPrice:
+          type: integer
+          format: int64
+          description: 兑换所需积分
+        stock:
+          type: integer
+        soldCount:
+          type: integer
+    Product:
+      type: object
+      required: [id, name, description, category, imageUrl, pointsPrice, stock, active, limitPerUser]
+      properties:
+        id:
+          type: integer
+          format: int64
+        merchantId:
+          type: integer
+          format: int64
+          description: 商户 ID，前台接口可能省略
+        status:
+          $ref: '#/components/schemas/ProductStatus'
+        name:
+          type: string
+        description:
+          type: string
+        category:
+          type: string
+        imageUrl:
+          type: string
+          description: 商品主图地址，缺省为空串（前端按分类兜底图标）
+        pointsPrice:
+          type: integer
+          format: int64
+          description: SKU 聚合最低价
+        stock:
+          type: integer
+          description: SKU 聚合总库存
+        active:
+          type: boolean
+          description: 历史字段，等价于 `status == ONLINE`；新代码请用 status
+        limitPerUser:
+          type: integer
+          description: 单用户限兑数量，0 表示不限
+        skus:
+          type: array
+          description: 仅商品详情返回
+          items:
+            $ref: '#/components/schemas/SKU'
+    ProductPage:
+      type: object
+      required: [items, page, pageSize, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Product'
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        total:
+          type: integer
+          format: int64
+    AuthSession:
+      type: object
+      required: [userId, nickname, token]
+      properties:
+        userId:
+          type: string
+          description: 对外用户 ID，形如 `u_1005`
+          example: u_1005
+        nickname:
+          type: string
+        token:
+          type: string
+          description: Bearer token，2 小时有效
+    LoginResult:
+      type: object
+      required: [token, user]
+      properties:
+        token:
+          type: string
+        user:
+          type: object
+          required: [userId, nickname]
+          properties:
+            userId:
+              type: string
+            nickname:
+              type: string
+    MeResult:
+      type: object
+      required: [userId, nickname, joinedAt]
+      properties:
+        userId:
+          type: string
+        nickname:
+          type: string
+        joinedAt:
+          type: string
+          format: date-time
+    PointsSummary:
+      type: object
+      required:
+        - balance
+        - frozen
+        - available
+        - totalCarbonSavedGrams
+        - earnedThisMonth
+        - earnedToday
+        - dailyCap
+      properties:
+        balance:
+          type: integer
+          format: int64
+        frozen:
+          type: integer
+          format: int64
+        available:
+          type: integer
+          format: int64
+          description: 可兑余额 = balance - frozen
+        totalCarbonSavedGrams:
+          type: number
+          description: 累计碳减排克数（gCO2e）
+        earnedThisMonth:
+          type: integer
+          format: int64
+        earnedToday:
+          type: integer
+          format: int64
+        dailyCap:
+          type: integer
+          format: int64
+          description: 单日积分上限，0 表示不限
+    PointTxn:
+      type: object
+      required: [id, type, amount, balanceAfter, reason, refType, refId, createdAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        type:
+          $ref: '#/components/schemas/PointTxnType'
+        amount:
+          type: integer
+          format: int64
+          description: 正为入账，负为出账
+        balanceAfter:
+          type: integer
+          format: int64
+        reason:
+          type: string
+        refType:
+          $ref: '#/components/schemas/PointBizRefType'
+        refId:
+          type: integer
+          format: int64
+        createdAt:
+          type: string
+          format: date-time
+    PointTxnPage:
+      type: object
+      required: [items, page, pageSize, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PointTxn'
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        total:
+          type: integer
+          format: int64
+    DailyCarbonPoint:
+      type: object
+      required: [date, grams]
+      properties:
+        date:
+          type: string
+          description: 日期，形如 `2026-11-24`
+          example: '2026-11-24'
+        grams:
+          type: number
+          description: 当日碳减排克数
+    Trip:
+      type: object
+      required:
+        - id
+        - mode
+        - distanceKm
+        - traveledAt
+        - carbonSavedGrams
+        - rawPoints
+        - grantedPoints
+        - cappedByDaily
+        - status
+      properties:
+        id:
+          type: string
+          description: 对外行程 ID（后端内部为自增主键，返回前做了混淆）
+        mode:
+          $ref: '#/components/schemas/TravelMode'
+        distanceKm:
+          type: number
+        traveledAt:
+          type: string
+          format: date-time
+        carbonSavedGrams:
+          type: number
+        rawPoints:
+          type: integer
+          format: int64
+        grantedPoints:
+          type: integer
+          format: int64
+        cappedByDaily:
+          type: boolean
+        status:
+          $ref: '#/components/schemas/TripStatus'
+    TripPage:
+      type: object
+      required: [items, page, pageSize, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Trip'
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        total:
+          type: integer
+          format: int64
+    Order:
+      type: object
+      required:
+        - id
+        - userId
+        - orderNo
+        - productId
+        - skuId
+        - productName
+        - skuName
+        - pointsSpent
+        - quantity
+        - receiver
+        - status
+        - redeemCode
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: integer
+          format: int64
+        userId:
+          type: integer
+          format: int64
+        orderNo:
+          type: string
+        productId:
+          type: integer
+          format: int64
+        skuId:
+          type: integer
+          format: int64
+        productName:
+          type: string
+        skuName:
+          type: string
+        pointsSpent:
+          type: integer
+          format: int64
+        quantity:
+          type: integer
+        receiver:
+          type: string
+        status:
+          $ref: '#/components/schemas/OrderStatus'
+        redeemCode:
+          type: string
+          description: 核销码，SHIPPED 之后可用，之前为空串
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        shippedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+        cancelledAt:
+          type: string
+          format: date-time
+        cancelReason:
+          type: string
+    OrderPage:
+      type: object
+      required: [items, page, pageSize, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Order'
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        total:
+          type: integer
+          format: int64
+    ReconcileItem:
+      type: object
+      required: [userId, accountId, balance, ledgerSum]
+      properties:
+        userId:
+          type: integer
+          format: int64
+        accountId:
+          type: integer
+          format: int64
+        balance:
+          type: integer
+          format: int64
+        ledgerSum:
+          type: integer
+          format: int64
+    ReconcileResult:
+      type: object
+      required: [accounts, mismatches, ok]
+      properties:
+        accounts:
+          type: integer
+          format: int64
+          description: 参与对账的账户数
+        mismatches:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReconcileItem'
+        ok:
+          type: boolean
+    PingResult:
+      type: object
+      required: [pong, env]
+      properties:
+        pong:
+          type: string
+          example: green-travel-points
+        env:
+          type: string
+          example: dev
+    HealthResult:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          example: ok
+    ReadinessResult:
+      type: object
+      required: [status, database]
+      properties:
+        status:
+          type: string
+          example: ok
+        database:
+          type: string
+          example: up
+    RegisterInput:
+      type: object
+      required: [password]
+      description: '`phone` 与 `account` 二者其一必填（`account` 是手机号的历史别名，同时传时以 `phone` 为准）'
+      properties:
+        phone:
+          type: string
+        account:
+          type: string
+        nickname:
+          type: string
+          description: 缺省用手机号
+        password:
+          type: string
+          minLength: 6
+    LoginInput:
+      type: object
+      required: [password]
+      properties:
+        phone:
+          type: string
+        account:
+          type: string
+          description: 手机号的历史别名，同时传时以 `account` 优先
+        password:
+          type: string
+    TripInput:
+      type: object
+      required: [mode, distanceKm, traveledAt]
+      properties:
+        mode:
+          $ref: '#/components/schemas/TravelMode'
+        distanceKm:
+          type: number
+          description: 距离区间由 sys_config 配置（种子值 0.1–100 km）
+        traveledAt:
+          type: string
+          format: date-time
+          description: RFC 3339，决定归属哪一天的单日上限
+    CreateOrderInput:
+      type: object
+      required: [productId]
+      properties:
+        productId:
+          type: integer
+          format: int64
+        skuId:
+          type: integer
+          format: int64
+          description: 省略或 0 时由后端挑选第一个有库存的 SKU
+        receiver:
+          type: string
+          description: 收货人，缺省为「本人」
+    CancelOrderInput:
+      type: object
+      properties:
+        reason:
+          type: string
+    AdminSKUInput:
+      type: object
+      required: [name, pointsPrice, stock]
+      properties:
+        name:
+          type: string
+        pointsPrice:
+          type: integer
+          format: int64
+        stock:
+          type: integer
+    AdminProductInput:
+      type: object
+      required: [name, skus]
+      properties:
+        merchantId:
+          type: integer
+          format: int64
+        name:
+          type: string
+        description:
+          type: string
+        category:
+          type: string
+        imageUrl:
+          type: string
+        status:
+          $ref: '#/components/schemas/ProductStatus'
+        sortOrder:
+          type: integer
+        limitPerUser:
+          type: integer
+        skus:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminSKUInput'
+    ProductUpdate:
+      type: object
+      description: 全部字段可选，未传的字段保持原值
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        category:
+          type: string
+        imageUrl:
+          type: string
+        status:
+          $ref: '#/components/schemas/ProductStatus'
+        sortOrder:
+          type: integer
+        limitPerUser:
+          type: integer
+    SKUStockInput:
+      type: object
+      required: [stock]
+      properties:
+        stock:
+          type: integer
+          minimum: 0
+          description: 库存绝对值
+    PingResponse:
+      type: object
+      required: [code, message, data]
+      properties:
+        code:
+          type: string
+          enum: [OK]
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/PingResult'
+    HealthResponse:
+      type: object
+      required: [code, message, data]
+      properties:
+        code:
+          type: string
+          enum: [OK]
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/HealthResult'
+    ReadinessResponse:
+      type: object
+      required: [code, message, data]
+      properties:
+        code:
+          type: string
+          enum: [OK]
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/ReadinessResult'
+    AuthSessionResponse:
+      type: object
+      required: [code, message, data]
+      properties:
+        code:
+          type: string
+          enum: [OK]
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/AuthSession'
+    LoginResponse:
+      type: object
+      required: [code, message, data]
+      properties:
+        code:
+          type: string
+          enum: [OK]
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/LoginResult'
+    MeResponse:
+      type: object
+      required: [code, message, data]
+      properties:
+        code:
+          type: string
+          enum: [OK]
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/MeResult'
+    ProductResponse:
+      type: object
+      required: [code, message, data]
+      properties:
+        code:
+          type: string
+          enum: [OK]
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/Product'
+    ProductPageResponse:
+      type: object
+      required: [code, message, data]
+      properties:
+        code:
+          type: string
+          enum: [OK]
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/ProductPage'
+    PointsSummaryResponse:
+      type: object
+      required: [code, message, data]
+      properties:
+        code:
+          type: string
+          enum: [OK]
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/PointsSummary'
+    PointTxnPageResponse:
+      type: object
+      required: [code, message, data]
+      properties:
+        code:
+          type: string
+          enum: [OK]
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/PointTxnPage'
+    DailyCarbonListResponse:
+      type: object
+      required: [code, message, data]
+      properties:
+        code:
+          type: string
+          enum: [OK]
+        message:
+          type: string
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/DailyCarbonPoint'
+    TripResponse:
+      type: object
+      required: [code, message, data]
+      properties:
+        code:
+          type: string
+          enum: [OK]
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/Trip'
+    TripPageResponse:
+      type: object
+      required: [code, message, data]
+      properties:
+        code:
+          type: string
+          enum: [OK]
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/TripPage'
+    OrderResponse:
+      type: object
+      required: [code, message, data]
+      properties:
+        code:
+          type: string
+          enum: [OK]
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/Order'
+    OrderPageResponse:
+      type: object
+      required: [code, message, data]
+      properties:
+        code:
+          type: string
+          enum: [OK]
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/OrderPage'
+    SKUResponse:
+      type: object
+      required: [code, message, data]
+      properties:
+        code:
+          type: string
+          enum: [OK]
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/SKU'
+    ReconcileResponse:
+      type: object
+      required: [code, message, data]
+      properties:
+        code:
+          type: string
+          enum: [OK]
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/ReconcileResult'

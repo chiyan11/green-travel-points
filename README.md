@@ -122,6 +122,7 @@ flowchart LR
 | 迁移 | golang-migrate 风格的 `db/migrations` | — | up / down 成对，可回滚 |
 | 事件 | 事务性 Outbox 表 + 轮询 Worker | — | 不引入 Kafka / Redis，仍在关系库里保证"业务成功 ⇒ 事件必达"；**Worker 尚未实现**（见「系统架构」实现现状） |
 | 前端 | React + TypeScript 7 + Vite + TanStack Query | 19.3 / 7.0.2 / 8.3 / 5.104 | TS7 原生编译器（Go 实现），构建快；Query 统一服务端状态 |
+| 接口契约 | OpenAPI 3.1 + swagger-typescript-api（devDependency） | 13.15 | `docs/api/openapi.yaml` 是唯一契约，`npm run gen:api` 生成 `apps/web/src/types/api.ts`，门禁校验生成物与 yaml 一致 |
 | 测试 | Go `testing` / Vitest / Playwright / k6 | — | 前两层已落地；集成测试、E2E、性能压测待建 |
 | 数据库 | MySQL | 8.4+（本机 9.7） | `utf8mb4_0900_ai_ci`、`DATETIME(3)`、JSON 存事件负载 |
 | 部署 | Docker Compose + Nginx + GitHub Actions | — | 一条命令起全栈，CI 双 job 门禁 |
@@ -333,6 +334,7 @@ pwsh -File .\scripts\verify.ps1
 | 单元测试（Go · cmd/server） | 启动日志的 DSN 目标判定：本机 / 局域网 / ZeroTier / socket / 非法 DSN | `go test ./cmd/server -v` | 1 个函数 / 9 个用例 |
 | 单元测试（前端） | Envelope 解包、错误映射、表单校验 | `npx vitest run` | 2 个文件 19 例（http 5 + validators 14） |
 | 类型检查 | 前端全量 | `npx tsc --noEmit` | 零错误 |
+| 契约一致性 | `docs/api/openapi.yaml` ↔ `apps/web/src/types/api.ts` | `npm run gen:api` 后 `git diff --exit-code` | 已接入 `verify.ps1` 与 CI |
 | 集成测试 | API + MySQL | 待建（testcontainers） | 未建：原计划 S2 已过，随 S4 补 |
 | E2E | 上报 → 得积分 → 兑换 → 核销 | 待建（Playwright） | 未建：原计划 S3 已过，随 S4 补 |
 | 性能 | 行程上报、兑换并发 | 待建（k6） | Sprint 4 起 |
@@ -442,6 +444,7 @@ icacls "D:\coding\green-travel-points" /grant "$env:USERNAME:(OI)(CI)F" /T /C
 | [PlantUML 建模指南](docs/PlantUML建模指南.md) | 出图流程与 `scripts/uml-export.ps1` 用法 |
 | [AGENTS.md](AGENTS.md) | 代理 / 新人作业手册：分层与依赖方向、领域规则、迁移与测试要求、门禁与排错 |
 | [P3 接口说明](docs/api/README.md) | M5–M8 端点、字段口径、事务步骤、业务错误码、联调步骤 |
+| [OpenAPI 契约](docs/api/openapi.yaml) | 全部端点的机器可读契约（3.1），前端类型由它生成 |
 | [前端接口需求清单](docs/前端接口需求清单.md) | 页面 ↔ 端点对照、字段与错误码需求（P4 → P2/P3） |
 | [UML 源图与导出](docs/uml) | 12 个 `.puml`：用例图、2 张活动图、域模型、包图、部署图、2 张鲁棒图（市民 / 运营管理员各一张）、2 张序列图、2 张状态图；`out/` 下为 12 张 PNG |
 

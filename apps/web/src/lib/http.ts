@@ -1,4 +1,5 @@
 /** 与 Go 后端 `internal/httpserver/response.go` 的 Envelope 保持一致的响应壳。 */
+import type { PingResult } from '@/types/api'
 import { clearSession, getToken } from './session'
 
 export interface Envelope<T> {
@@ -75,10 +76,7 @@ export const api = {
     request<T>(path, { method: 'POST', body: JSON.stringify(body), headers }),
 }
 
-export interface PingResponse {
-  env: string
-  pong: string
-}
+export type PingResponse = PingResult
 
 /** Sprint 0 连通性自检：前端 → /api 代理 → Go 服务。 */
-export const fetchPing = (): Promise<PingResponse> => api.get<PingResponse>('/api/v1/ping')
+export const fetchPing = (): Promise<PingResult> => api.get<PingResult>('/api/v1/ping')

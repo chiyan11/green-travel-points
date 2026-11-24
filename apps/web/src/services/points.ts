@@ -1,82 +1,51 @@
 /**
- * 积分服务（联调版）。
- * GET /api/v1/points/summary、GET /api/v1/points/transactions（需 X-User-Id）。
- * 流水字段做双向兼容：P3 当前返回 refType/refId/createdAt，迁移口径为 bizRefType/bizRefId/occurredAt。
+ * 积分服务。
+ * GET /api/v1/points/summary、GET /api/v1/points/transactions（需登录）。
+ *
+ * 传输类型来自 `src/types/api.ts`（由 docs/api/openapi.yaml 生成）；`bizRefType` /
+ * `occurredAt` 是页面视图模型（types/domain.ts）的字段名，wire 上是 `refType` / `createdAt`。
  */
 import { api } from '@/lib/http'
+import type { PointTxn as WirePointTxn, PointTxnPage, PointsSummary } from '@/types/api'
 import {
   DAILY_POINTS_CAP,
-  type Page,
   type PointBizRefType,
   type PointSummary,
   type PointTxn,
   type PointTxnType,
 } from '@/types/domain'
 
-interface RawSummary {
-  balance: number
-  frozen?: number
-  available?: number
-  totalCarbonSavedGrams?: number
-  earnedThisMonth?: number
-  earnedToday?: number
-  dailyCap?: number
+function normalizeRefType(r: WirePointTxn): PointBizRefType {
+  const refType: string = r.refType
+  if (refType === 'trip_record' || refType === 'redeem_order' || refType === 'audit_log') return refType
+  return 'audit_log'
 }
 
-interface RawTxn {
-  id: number
-  type: string
-  amount: number
-  balanceAfter: number
-  /** 过渡期：旧契约别名。 */
-  refType?: string
-  refId?: number
-  createdAt?: string
-  /** 迁移口径字段。 */
-  bizRefType?: string
-  bizRefId?: number
-  occurredAt?: string
-}
-
-function normalizeRefType(t: RawTxn): PointBizRefType {
-  if (t.bizRefType === 'trip_record' || t.bizRefType === 'redeem_order' || t.bizRefType === 'audit_log') {
-    return t.bizRefType
-  }
-  switch (t.refType) {
-    case 'TRIP':
-      return 'trip_record'
-    case 'ORDER':
-      return 'redeem_order'
-    default:
-      return 'audit_log'
-  }
-}
-
-function toTxn(r: RawTxn): PointTxn {
+function toTxn(r: WirePointTxn): PointTxn {
   return {
     id: String(r.id),
-    type: (r.type || 'ADJUST') as PointTxnType,
+    type: r.type as PointTxnType,
     amount: r.amount,
     balanceAfter: r.balanceAfter,
     bizRefType: normalizeRefType(r),
-    bizRefId: String(r.bizRefId ?? r.refId ?? ''),
-    occurredAt: r.occurredAt || r.createdAt || '',
+    bizRefId: String(r.refId),
+    occurredAt: r.createdAt,
   }
 }
 
 export async function getSummary(): Promise<PointSummary> {
-  const s = await api.get<RawSummary>('/api/v1/points/summary')
+  const s = await api.get<PointsSummary>('/api/v1/points/summary')
   return {
     balance: s.balance,
-    totalCarbonSavedGrams: s.totalCarbonSavedGrams ?? 0,
-    earnedThisMonth: s.earnedThisMonth ?? 0,
-    earnedToday: s.earnedToday ?? 0,
-    dailyCap: s.dailyCap ?? DAILY_POINTS_CAP,
+    totalCarbonSavedGrams: s.totalCarbonSavedGrams,
+    earnedThisMonth: s.earnedThisMonth,
+    earnedToday: s.earnedToday,
+    dailyCap: s.dailyCap || DAILY_POINTS_CAP,
   }
 }
 
 export async function listTxns(): Promise<PointTxn[]> {
-  const page = await api.get<Page<RawTxn>>('/api/v1/points/transactions?page=1&pageSize=50')
+  const page = await api.get<PointTxnPage>('/api/v1/points/transactions?page=1&pageSize=50')
   return (page.items ?? []).map(toTxn)
 }
 
@@ -89,8 +58,8 @@ export interface DailyCarbonPoint {
 
 /**
  * 近 7 日碳减排趋势（原型：固定演示序列）。
- * TODO 联调替换：GET /api/v1/trips?from=<7天前>，由后端按日聚合 carbon_record.carbon_saved_g。
- * （/trips 为 P2 接口，尚未上线。）
+ * TODO 联调替换：GET /api/v1/points/daily-carbon?days=7（契约已在 openapi.yaml 中，
+ * 需要把调用方（数据看板）改成异步查询后再接入，见 docs 待办）。
  */
 export function getRecentCarbonSeries(): DailyCarbonPoint[] {
   const demoGrams = [320, 483, 0, 960, 640, 483, 992]
