@@ -1,37 +1,39 @@
 /* ============================================================
    绿行积分 · 前端样式
-   设计基调：清爽绿色 + 浅灰底 + 圆角卡片；不使用高饱和底色
+   设计基调：暖中性浅底 + 白色大圆角卡片 + 柔和投影；绿色品牌主色。
+   视觉语言参考 Astryx 设计系统（大圆角、分层柔影、分段导航、胶囊控件），
+   仅用原生 CSS 变量与单文件样式，不引入第三方样式库。
    ============================================================ */
 
 :root {
-  --bg: #f4f7f4;
-  --bg-tint: #eaf5ee;
+  --bg: #f5f6f3;
+  --bg-tint: #ecf4ee;
   --surface: #ffffff;
-  --surface-2: #f9fbfa;
-  --border: #e3eae4;
-  --border-strong: #d2ddD5;
-  --text: #17211a;
-  --text-soft: #3c4a3f;
-  --muted: #647464;
-  --accent: #14764a;
-  --accent-strong: #0f5f3b;
-  --accent-bright: #1ca862;
-  --accent-soft: #e7f5ec;
-  --accent-soft-2: #d5ecdf;
+  --surface-2: #f6f8f6;
+  --border: #e5ebe6;
+  --border-strong: #d4ddd6;
+  --text: #161d18;
+  --text-soft: #3a453d;
+  --muted: #68746b;
+  --accent: #177a4d;
+  --accent-strong: #105f3a;
+  --accent-bright: #1e9e63;
+  --accent-soft: #e8f4ec;
+  --accent-soft-2: #d6ecdf;
   --danger: #b42318;
   --danger-soft: #fdecea;
   --warn: #9a5b06;
   --warn-soft: #fff6e6;
   --info: #23618f;
   --info-soft: #e9f2f9;
-  --ok: #14764a;
-  --radius-sm: 8px;
-  --radius: 14px;
-  --radius-lg: 20px;
-  --shadow-xs: 0 1px 2px rgb(18 45 27 / 5%);
-  --shadow: 0 2px 4px rgb(18 45 27 / 4%), 0 10px 26px rgb(18 45 27 / 6%);
-  --shadow-lift: 0 4px 8px rgb(18 45 27 / 6%), 0 16px 36px rgb(18 45 27 / 10%);
-  --ring: 0 0 0 3px rgb(28 168 98 / 18%);
+  --ok: #177a4d;
+  --radius-sm: 10px;
+  --radius: 16px;
+  --radius-lg: 22px;
+  --shadow-xs: 0 1px 2px rgb(18 40 26 / 5%);
+  --shadow: 0 1px 2px rgb(18 40 26 / 4%), 0 8px 24px rgb(18 40 26 / 6%);
+  --shadow-lift: 0 6px 16px rgb(18 40 26 / 7%), 0 18px 40px rgb(18 40 26 / 11%);
+  --ring: 0 0 0 3px rgb(30 158 99 / 18%);
   color-scheme: light;
 }
 
@@ -47,10 +49,10 @@ body {
   margin: 0;
   min-height: 100vh;
   background:
-    radial-gradient(1100px 520px at 50% -12%, #e6f6ec 0%, rgb(230 246 236 / 0%) 70%),
+    radial-gradient(1100px 480px at 50% -12%, #e9f4ec 0%, rgb(233 244 236 / 0%) 70%),
     var(--bg);
   color: var(--text);
-  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  font-family: "Inter", "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
   font-size: 15px;
   line-height: 1.65;
   -webkit-font-smoothing: antialiased;
@@ -61,7 +63,7 @@ code {
   font-size: 0.88em;
   background: var(--accent-soft);
   color: var(--accent-strong);
-  border-radius: 5px;
+  border-radius: 6px;
   padding: 1px 6px;
 }
 
@@ -94,16 +96,16 @@ code {
   height: 46px;
   font-size: 24px;
   line-height: 1;
-  border-radius: 14px;
+  border-radius: 16px;
   background: linear-gradient(140deg, var(--accent-bright), var(--accent-strong));
-  box-shadow: 0 6px 16px rgb(20 118 74 / 22%);
+  box-shadow: 0 6px 16px rgb(23 122 77 / 20%);
 }
 
 .app__title {
   margin: 0;
   font-size: 23px;
   font-weight: 700;
-  letter-spacing: 0.01em;
+  letter-spacing: -0.01em;
 }
 
 .app__subtitle {
@@ -113,15 +115,16 @@ code {
   letter-spacing: 0.02em;
 }
 
+/* 分段导航：浅灰轨道 + 选中白色胶囊（Astryx segmented control 风格） */
 .app__nav {
   display: flex;
   gap: 4px;
   flex-wrap: wrap;
   margin: 22px 0 26px;
   padding: 6px;
-  background: var(--surface);
+  background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: 14px;
   box-shadow: var(--shadow-xs);
 }
 
@@ -132,18 +135,19 @@ code {
   text-decoration: none;
   font-size: 14px;
   font-weight: 500;
-  transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+  transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
 }
 
 .nav-link:hover {
-  background: var(--accent-soft);
+  background: rgb(255 255 255 / 70%);
   color: var(--accent-strong);
 }
 
 .nav-link--active {
-  background: linear-gradient(135deg, var(--accent-bright), var(--accent));
-  color: #fff;
-  box-shadow: 0 4px 12px rgb(20 118 74 / 22%);
+  background: var(--surface);
+  color: var(--accent-strong);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-xs);
 }
 
 .app__main {
@@ -165,12 +169,12 @@ code {
 
 .hero {
   position: relative;
-  padding: 28px 28px 26px;
+  padding: 30px 30px 28px;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background:
-    radial-gradient(700px 260px at 92% 0%, var(--bg-tint) 0%, rgb(234 245 238 / 0%) 65%),
-    linear-gradient(180deg, #ffffff 0%, #f8fbf9 100%);
+    radial-gradient(700px 260px at 92% 0%, var(--bg-tint) 0%, rgb(236 244 238 / 0%) 65%),
+    linear-gradient(180deg, #ffffff 0%, #f9fbf9 100%);
   box-shadow: var(--shadow);
   overflow: hidden;
 }
@@ -183,7 +187,7 @@ code {
   width: 180px;
   height: 180px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgb(28 168 98 / 12%), rgb(28 168 98 / 0%) 70%);
+  background: radial-gradient(circle, rgb(30 158 99 / 12%), rgb(30 158 99 / 0%) 70%);
   pointer-events: none;
 }
 
@@ -192,7 +196,7 @@ code {
   font-size: 30px;
   line-height: 1.3;
   font-weight: 700;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.015em;
 }
 
 .hero p {
@@ -222,7 +226,7 @@ code {
 }
 
 .flow-step--end {
-  background: linear-gradient(135deg, var(--accent-bright), var(--accent));
+  background: var(--accent);
   border-color: transparent;
   color: #fff;
 }
@@ -277,10 +281,10 @@ code {
 .feature-card__icon {
   display: grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
+  width: 42px;
+  height: 42px;
   margin-bottom: 12px;
-  border-radius: 12px;
+  border-radius: 13px;
   background: var(--accent-soft);
   font-size: 20px;
 }
@@ -313,10 +317,10 @@ code {
 .stat-card__icon {
   display: grid;
   place-items: center;
-  width: 38px;
-  height: 38px;
+  width: 40px;
+  height: 40px;
   flex: none;
-  border-radius: 11px;
+  border-radius: 12px;
   background: var(--accent-soft);
   font-size: 18px;
 }
@@ -349,12 +353,6 @@ code {
   margin: 12px 0 6px;
 }
 
-.stat-card .stat-label {
-  font-size: 12.5px;
-  color: var(--muted);
-  margin: 0;
-}
-
 .stat-card .stat-value {
   margin: 2px 0 0;
   font-size: 26px;
@@ -362,12 +360,6 @@ code {
   letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
   color: var(--text);
-}
-
-.stat-card .stat-sub {
-  font-size: 12px;
-  color: var(--muted);
-  margin: 2px 0 0;
 }
 
 .stat-card--accent {
@@ -408,7 +400,7 @@ code {
 .badge {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   padding: 4px 11px;
   border-radius: 999px;
   font-size: 12.5px;
@@ -460,15 +452,15 @@ code {
 }
 
 .chip--active {
-  background: linear-gradient(135deg, var(--accent-bright), var(--accent));
+  background: var(--accent);
   color: #fff;
   border-color: transparent;
-  box-shadow: 0 4px 12px rgb(20 118 74 / 20%);
+  box-shadow: 0 4px 12px rgb(23 122 77 / 18%);
 }
 
 .chip--active:hover {
   color: #fff;
-  background: linear-gradient(135deg, var(--accent-bright), var(--accent));
+  background: var(--accent);
 }
 
 .chip--tiny {
@@ -521,12 +513,12 @@ code {
 .form-field select {
   padding: 11px 14px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 12px;
   font-size: 14.5px;
   font-family: inherit;
   color: var(--text);
-  background: #fff;
-  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+  background: var(--surface-2);
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
 }
 
 .form-field input::placeholder {
@@ -536,6 +528,7 @@ code {
 .form-field input:focus,
 .form-field select:focus {
   outline: none;
+  background: #fff;
   border-color: var(--accent-bright);
   box-shadow: var(--ring);
 }
@@ -554,7 +547,7 @@ code {
 
 .mode-option {
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 14px;
   padding: 14px 10px;
   text-align: center;
   cursor: pointer;
@@ -588,22 +581,23 @@ code {
   justify-content: center;
   gap: 6px;
   padding: 11px 22px;
-  border-radius: 10px;
+  border-radius: 999px;
   border: 1px solid transparent;
   font-size: 14.5px;
   font-weight: 600;
   font-family: inherit;
   cursor: pointer;
   text-decoration: none;
-  background: linear-gradient(135deg, var(--accent-bright), var(--accent));
+  background: var(--accent);
   color: #fff;
-  box-shadow: 0 6px 16px rgb(20 118 74 / 20%);
+  box-shadow: 0 4px 12px rgb(23 122 77 / 18%);
   transition: transform 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
 }
 
 .btn:hover {
+  background: var(--accent-strong);
   transform: translateY(-1px);
-  box-shadow: 0 8px 22px rgb(20 118 74 / 26%);
+  box-shadow: 0 8px 22px rgb(23 122 77 / 24%);
 }
 
 .btn:active {
@@ -611,7 +605,7 @@ code {
 }
 
 .btn--ghost {
-  background: #fff;
+  background: var(--surface-2);
   color: var(--text-soft);
   border-color: var(--border);
   box-shadow: var(--shadow-xs);
@@ -651,7 +645,7 @@ code {
   margin-top: 18px;
   border-left: 4px solid var(--accent-bright);
   background: linear-gradient(90deg, var(--accent-soft) 0%, #f7fcf9 100%);
-  border-radius: 10px;
+  border-radius: 14px;
   padding: 16px 18px;
 }
 
@@ -682,15 +676,7 @@ code {
   font-size: 12.5px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  background: var(--surface-2);
-}
-
-.data-table th:first-child {
-  border-top-left-radius: 10px;
-}
-
-.data-table th:last-child {
-  border-top-right-radius: 10px;
+  background: transparent;
 }
 
 .data-table tbody tr {
@@ -732,7 +718,7 @@ code {
   place-items: center;
   height: 120px;
   background:
-    radial-gradient(200px 120px at 50% 120%, var(--accent-soft) 0%, rgb(231 245 236 / 0%) 70%),
+    radial-gradient(200px 120px at 50% 120%, var(--accent-soft) 0%, rgb(232 244 236 / 0%) 70%),
     var(--surface-2);
   border-bottom: 1px solid var(--border);
   font-size: 44px;
@@ -869,31 +855,12 @@ code {
   flex-wrap: wrap;
 }
 
-.txn-positive {
-  color: var(--accent);
-  font-weight: 700;
-}
-
-.txn-negative {
-  color: var(--danger);
-  font-weight: 700;
-}
-
-.mock-note {
-  font-size: 12.5px;
-  color: var(--warn);
-  background: var(--warn-soft);
-  border-radius: 10px;
-  padding: 10px 14px;
-  line-height: 1.6;
-}
-
 .hint-note {
   font-size: 12.5px;
   color: var(--muted);
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 12px;
   padding: 10px 14px;
   line-height: 1.6;
 }
