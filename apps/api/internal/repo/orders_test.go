@@ -77,6 +77,7 @@ func resetFixture(t *testing.T, db *sql.DB) {
 
 	// 无外键约束，清空顺序只按可读性排列；仅允许在 _test 库执行（见 newTestStore）。
 	for _, stmt := range []string{
+		`DELETE FROM audit_log`,
 		`DELETE FROM point_batch_txn`,
 		`DELETE FROM point_txn`,
 		`DELETE FROM point_batch`,

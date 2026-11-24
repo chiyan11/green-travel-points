@@ -19,7 +19,7 @@ npm run test:e2e
 | `05-points.png` | 积分页 | 当前余额 150 分、近 7 日趋势、积分流水两条 |
 | `06-mall.png` | 商城列表 | 在售商品列表与「我的余额」 |
 | `07-product-detail.png` | 商品详情 | 库存、每人限购、收货人输入、确认兑换可点 |
-| `08-orders-created.png` | 兑换后落到兑换记录 | 新订单状态「待支付」、可取消并返还 |
+| `08-orders-created.png` | 兑换后落到兑换记录 | 新订单状态「待商户确认」、可取消并返还 |
 | `09-orders-cancelled.png` | 取消订单 | 状态变为「已取消」，积分返还 |
 | `10-points-after-cancel.png` | 取消后回积分页 | 余额回到 150 分 |
 | `11-login-error.png` | 错误密码登录 | 后端错误文案展示，不跳转首页 |

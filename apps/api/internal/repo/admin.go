@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"greentravelpoints/internal/app"
 	"greentravelpoints/internal/domain"
@@ -384,6 +385,102 @@ func (s *Store) ReconcilePoints(ctx context.Context) (app.ReconcileResult, error
 	return out, nil
 }
 
+// AdjustPoints 人工调增 / 调减积分（UC-15）。BR-14：必须填理由并写 audit_log，
+// 记录操作人、账户、前后余额与理由；调账流水用 biz_ref_type='audit_log' 回指审计记录。
+//
+// 账本一致性（与批次恒等式对齐）：
+//   - 调增：同时写 point_batch（有效期取 sys_config.points_expire_days），保证 Σbalance == Σremaining(ACTIVE)；
+//   - 调减：按 FIFO 消耗批次；批次不足的部分只扣余额（历史数据常见），差额由对账接口暴露。
+func (s *Store) AdjustPoints(ctx context.Context, operatorID int64, in app.AdjustPointsInput) (app.AdjustResult, error) {
+	reason := strings.TrimSpace(in.Reason)
+	if in.UserID <= 0 || in.Amount == 0 || reason == "" {
+		return app.AdjustResult{}, fmt.Errorf("%w: userId / amount（非 0）/ reason 均为必填", app.ErrInvalidInput)
+	}
+	if operatorID <= 0 {
+		return app.AdjustResult{}, fmt.Errorf("%w: 缺少操作人", app.ErrInvalidInput)
+	}
+	if len([]rune(reason)) > 255 {
+		return app.AdjustResult{}, fmt.Errorf("%w: reason 超过 255 字", app.ErrInvalidInput)
+	}
+
+	// 账户不存在时先建空账户（事务外，避免并发下共享锁升级成死锁，同 CreateOrder）。
+	if _, err := s.db.ExecContext(ctx,
+		`INSERT IGNORE INTO point_account (user_id) VALUES (?)`, in.UserID); err != nil {
+		return app.AdjustResult{}, err
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return app.AdjustResult{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var accountID, balance int64
+	err = tx.QueryRowContext(ctx,
+		`SELECT id, balance FROM point_account WHERE user_id = ? FOR UPDATE`, in.UserID,
+	).Scan(&accountID, &balance)
+	if errors.Is(err, sql.ErrNoRows) {
+		return app.AdjustResult{}, app.ErrNotFound
+	}
+	if err != nil {
+		return app.AdjustResult{}, err
+	}
+
+	after := balance + in.Amount
+	if after < 0 {
+		return app.AdjustResult{}, fmt.Errorf("%w: 余额 %d 不足以扣减 %d",
+			app.ErrInsufficientPoints, balance, -in.Amount)
+	}
+
+	auditID, err := writeAudit(ctx, tx, auditEntry{
+		operatorID:  operatorID,
+		action:      "ADJUST",
+		targetType:  "point_account",
+		targetID:    accountID,
+		targetKey:   strconv.FormatInt(in.UserID, 10), // 按用户检索审计
+		amount:      in.Amount,
+		beforeValue: strconv.FormatInt(balance, 10),
+		afterValue:  strconv.FormatInt(after, 10),
+		reason:      reason,
+	})
+	if err != nil {
+		return app.AdjustResult{}, err
+	}
+
+	res, err := tx.ExecContext(ctx,
+		`INSERT INTO point_txn
+		   (account_id, txn_type, amount, balance_after, biz_ref_type, biz_ref_id)
+		 VALUES (?, 'ADJUST', ?, ?, 'audit_log', ?)`,
+		accountID, in.Amount, after, auditID)
+	if err != nil {
+		return app.AdjustResult{}, err
+	}
+	txnID, err := res.LastInsertId()
+	if err != nil {
+		return app.AdjustResult{}, err
+	}
+
+	if in.Amount > 0 {
+		days := s.pointsExpireDays(ctx)
+		if err := GrantPointsWithBatch(ctx, tx, accountID, txnID, in.Amount,
+			time.Now().AddDate(0, 0, int(days))); err != nil {
+			return app.AdjustResult{}, err
+		}
+	} else if err := consumeBatches(ctx, tx, accountID, -in.Amount, txnID); err != nil {
+		return app.AdjustResult{}, err
+	}
+
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE point_account SET balance = ?, version = version + 1 WHERE id = ?`,
+		after, accountID); err != nil {
+		return app.AdjustResult{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return app.AdjustResult{}, err
+	}
+	return app.AdjustResult{AccountID: accountID, UserID: in.UserID, Balance: after, AuditID: auditID}, nil
+}
+
 // ListConfig 读取全部系统参数（UC-14：运营可调，改完立即生效，无需发版）。
 func (s *Store) ListConfig(ctx context.Context) ([]app.ConfigItem, error) {
 	rows, err := s.db.QueryContext(ctx,
@@ -406,8 +503,9 @@ func (s *Store) ListConfig(ctx context.Context) ([]app.ConfigItem, error) {
 
 // UpdateConfig 批量修改系统参数：键必须已存在，值按 value_type 与语义约束校验。
 // 整批在一个事务里完成，任一项非法则全部回滚，避免"改一半"。
+// 每个真正发生变化的参数都写一条 audit_log（BR-14：操作人/前后值/理由）。
 // 返回更新后的全量参数，便于调用方直接刷新界面。
-func (s *Store) UpdateConfig(ctx context.Context, updates []app.ConfigUpdate) ([]app.ConfigItem, error) {
+func (s *Store) UpdateConfig(ctx context.Context, operatorID int64, updates []app.ConfigUpdate) ([]app.ConfigItem, error) {
 	if len(updates) == 0 {
 		return nil, fmt.Errorf("%w: 至少需要一项参数", app.ErrInvalidInput)
 	}
@@ -433,9 +531,11 @@ func (s *Store) UpdateConfig(ctx context.Context, updates []app.ConfigUpdate) ([
 	defer func() { _ = tx.Rollback() }()
 
 	for _, up := range normalized {
-		var valueType string
+		var configID int64
+		var valueType, beforeValue string
 		err := tx.QueryRowContext(ctx,
-			`SELECT value_type FROM sys_config WHERE config_key = ? FOR UPDATE`, up.Key).Scan(&valueType)
+			`SELECT id, value_type, config_value FROM sys_config WHERE config_key = ? FOR UPDATE`, up.Key,
+		).Scan(&configID, &valueType, &beforeValue)
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("%w: 未知参数键 %s", app.ErrInvalidInput, up.Key)
 		}
@@ -447,6 +547,22 @@ func (s *Store) UpdateConfig(ctx context.Context, updates []app.ConfigUpdate) ([
 		}
 		if _, err := tx.ExecContext(ctx,
 			`UPDATE sys_config SET config_value = ? WHERE config_key = ?`, up.Value, up.Key); err != nil {
+			return nil, err
+		}
+		// 值没变就不记审计，避免刷屏；变了才留痕。
+		if beforeValue == up.Value {
+			continue
+		}
+		if _, err := writeAudit(ctx, tx, auditEntry{
+			operatorID:  operatorID,
+			action:      "CONFIG_UPDATE",
+			targetType:  "sys_config",
+			targetID:    configID,
+			targetKey:   up.Key,
+			beforeValue: beforeValue,
+			afterValue:  up.Value,
+			reason:      "参数配置变更",
+		}); err != nil {
 			return nil, err
 		}
 	}
@@ -494,8 +610,8 @@ func checkDistanceRange(ctx context.Context, tx *sql.Tx) error {
 }
 
 // UpdateTravelMode 更新出行方式的名称 / 排放因子 / 启用状态（UC-14）。
-// 实际排放因子必须小于基准因子，否则该方式永远算不出碳减排量。
-func (s *Store) UpdateTravelMode(ctx context.Context, code string, in app.TravelModeUpdate) (app.TravelMode, error) {
+// 实际排放因子必须小于基准因子，否则该方式永远算不出碳减排量；变更写 audit_log（BR-14）。
+func (s *Store) UpdateTravelMode(ctx context.Context, operatorID int64, code string, in app.TravelModeUpdate) (app.TravelMode, error) {
 	code = strings.ToLower(strings.TrimSpace(code))
 	if code == "" {
 		return app.TravelMode{}, fmt.Errorf("%w: 出行方式代码不能为空", app.ErrInvalidInput)
@@ -522,6 +638,7 @@ func (s *Store) UpdateTravelMode(ctx context.Context, code string, in app.Travel
 		return app.TravelMode{}, err
 	}
 	cur.Enabled = enabled != 0
+	before := describeTravelMode(cur)
 
 	if in.Name != nil {
 		cur.Name = strings.TrimSpace(*in.Name)
@@ -545,10 +662,32 @@ func (s *Store) UpdateTravelMode(ctx context.Context, code string, in app.Travel
 		 WHERE code = ?`, cur.Name, cur.EFBase, cur.EFActual, cur.Enabled, cur.Code); err != nil {
 		return app.TravelMode{}, err
 	}
+	if after := describeTravelMode(cur); after != before {
+		if _, err := writeAudit(ctx, tx, auditEntry{
+			operatorID:  operatorID,
+			action:      "TRAVEL_MODE_UPDATE",
+			targetType:  "travel_mode",
+			targetKey:   cur.Code,
+			beforeValue: before,
+			afterValue:  after,
+			reason:      "出行方式参数变更",
+		}); err != nil {
+			return app.TravelMode{}, err
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return app.TravelMode{}, err
 	}
 	return cur, nil
+}
+
+// describeTravelMode 把出行方式的可审计字段拼成一行，供 audit_log 的前后值使用。
+func describeTravelMode(m app.TravelMode) string {
+	return fmt.Sprintf("name=%s;efBase=%s;efActual=%s;enabled=%t",
+		m.Name,
+		strconv.FormatFloat(m.EFBase, 'f', -1, 64),
+		strconv.FormatFloat(m.EFActual, 'f', -1, 64),
+		m.Enabled)
 }
 
 // getProductAny 读取任意状态的商品（含 SKU 列表），供后台使用。

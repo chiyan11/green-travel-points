@@ -9,8 +9,8 @@ import type { OrderStatus } from '@/types/domain'
 
 const FILTERS: Array<{ value: OrderStatus | 'ALL'; label: string }> = [
   { value: 'ALL', label: '全部' },
-  { value: 'PENDING', label: '待支付' },
-  { value: 'PAID', label: '已支付' },
+  { value: 'PENDING', label: '待商户确认' },
+  { value: 'PAID', label: '已确认' },
   { value: 'SHIPPED', label: '已发货' },
   { value: 'COMPLETED', label: '已完成' },
   { value: 'CANCELLED', label: '已取消' },
@@ -35,9 +35,12 @@ export function OrdersPage(): ReactNode {
     setError('')
     try {
       await cancelOrder(id)
+      // 取消会回补库存（后端 BR-12），商品列表与详情的库存也要一起失效
       void queryClient.invalidateQueries({ queryKey: ['orders'] })
       void queryClient.invalidateQueries({ queryKey: ['summary'] })
       void queryClient.invalidateQueries({ queryKey: ['txns'] })
+      void queryClient.invalidateQueries({ queryKey: ['products'] })
+      void queryClient.invalidateQueries({ queryKey: ['product'] })
     } catch (err) {
       setError(err instanceof Error ? err.message : '取消失败')
     }
