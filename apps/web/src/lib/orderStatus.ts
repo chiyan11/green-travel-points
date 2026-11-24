@@ -8,10 +8,10 @@ export const ORDER_STATUS_META: Record<
   OrderStatus,
   { label: string; badgeVariant: 'neutral' | 'info' | 'success' | 'warning' | 'error'; cancellable: boolean }
 > = {
-  PENDING: { label: '待支付', badgeVariant: 'neutral', cancellable: true },
+  PENDING: { label: '待支付', badgeVariant: 'warning', cancellable: true },
   PAID: { label: '已支付 · 待发货', badgeVariant: 'info', cancellable: false },
-  SHIPPED: { label: '已发货', badgeVariant: 'warning', cancellable: false },
-  COMPLETED: { label: '已完成', badgeVariant: 'success', cancellable: false },
+  SHIPPED: { label: '已发货', badgeVariant: 'success', cancellable: false },
+  COMPLETED: { label: '已完成', badgeVariant: 'neutral', cancellable: false },
   CANCELLED: { label: '已取消', badgeVariant: 'error', cancellable: false },
 }
 

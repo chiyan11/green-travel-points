@@ -269,9 +269,11 @@ pages/*.tsx  ──►  services/*.ts  ──►  lib/http.ts  ──►  fetch
 - **样式**：分三层，各管一段，不要混写。
   1. **Astryx**（`@astryxdesign/core` + `@astryxdesign/theme-neutral` 0.7.17）：控件与 design token 的来源。`apps/web/src/main.tsx` 按层导入四份样式表——`theme-neutral/fonts.css` → `core/reset.css` → `core/astryx.css` → `themes/green-travel/greenTravelTheme.css`，最后才是自有 `styles.css`；**导入顺序不要改**。组件用 props（`label` / `variant` / `isDisabled` …）驱动，禁止 `stylex.create()` / `xstyle` / utility class。
   2. **品牌主题** `apps/web/src/themes/green-travel/greenTravelTheme.ts`：`defineTheme({ extends: neutralTheme, ... })` 只换品牌绿（`--color-accent: #177a4d`）与中文字体回退。**改完必须重建**：`npx astryx theme build src/themes/green-travel/greenTravelTheme.ts`（产物 `green-travel.js` / `greenTravelTheme.css` 一并提交）。
-  3. **`styles.css`**：唯一业务样式文件，页面级类名（`app` / `hero` / `stat-card` / `data-table` / `product-card` …）全部用 `var(--color-*|--spacing-*|--radius-*|--text-*)`，禁止硬编码颜色。
-  文件末尾有一层「兼容层」，把旧变量名（`--surface` / `--border` / `--accent` …）映射到 Astryx token，供运营后台沿用的旧类名（`btn` / `card` / `badge--ok` / `sku-row` …）继续工作；新增页面不要再往这一层加东西。
+  3. **`styles.css`**：唯一业务样式文件，自带一套设计 token（第 1 节 `:root`）：品牌绿 `--green-700/800/900/50/100`、积分专用琥珀 `--amber-500/600/50`、中性 `--ink/--ink-2/--ink-3`、`--line/--line-strong`、`--surface/--surface-2/--bg`、字号 `--fs-12..--fs-44`、间距 `--sp-1..--sp-7`、圆角 `--r-card:12px`/`--r-input:10px`/`--r-pill:999px`、阴影 `--shadow`/`--shadow-hover`。页面与组件类名只用这些变量，**禁止写颜色/圆角/阴影字面量**。
+     约定：积分与碳减排数字用 `--amber-*`（钱要跳出绿色），大标题与数字用 `--green-900`，卡片圆角 12px、胶囊 999px，阴影只保留 `--shadow` 一档，层级靠边框与底色。
+  文件第 18 节是「兼容层」，把运营后台（#21）沿用的旧类名（`btn` / `card` / `badge--ok` / `sku-row` / `filter-bar` …）映射到本文件 token，供 `apps/web/src/pages/admin/` 继续工作；新增页面不要再往这一层加东西。
 - **不引入 StyleX / Tailwind 编译器**：Astryx 官方约定见 `apps/web/AGENTS.md`，与本文件冲突时以本文件为准。
+- **图标手写、图表用 CSS**：`apps/web/src/components/icons.tsx` 里是一组 24×24 单色线性 SVG（`stroke=currentColor`、`strokeWidth=1.75`），不引入图标库；近 7 日碳减排是 CSS 柱状图（`CarbonTrendChart`），不引入图表库。空间不够就删元素，不要靠新增依赖解决。
 - **类型**：`tsc --noEmit` 必须零错误；不用 `any` 绕过（确需时先说明）。
 
 ### 界面文案与信息密度
@@ -388,7 +390,7 @@ E2E **不在门禁里**：它需要真实后端 + 共享库，CI 没有这些环
 | sqlc | `apps/api/sqlc.yaml` 已配置但未启用，repo 全是手写 SQL | 启用即要重写 repo 层，别半途混用 |
 | 集成 / E2E | 集成测试未建（计划 testcontainers）；E2E 主链路已建（`apps/web/e2e`，真后端 + 共享库，截图在 `docs/screenshots/`），未进 CI | 集成测试按 testcontainers 补；E2E 若要进 CI，需先给 CI 一个可用的 MySQL 服务容器 |
 | 部署 | compose 只有 `mysql` + `api`；`web` 与 nginx 配置就绪但未编入；本机未实跑 docker | 补 web 服务与反向代理，留下实跑证据 |
-| 前端包体 | `vite build` 单包约 1.95 MB（gzip 635 kB）+ CSS 354 kB（gzip 54 kB），已触发 500 kB 警告。其中 Astryx 底座贡献约 140 kB JS 与约 300 kB CSS（`core/astryx.css` 是全组件样式，无法按组件裁剪） | 用路由级 `import()` 分包，图表库按需加载；预算从 gzip 635 kB 起算 |
+| 前端包体 | `vite build` 单包约 540 kB（gzip 163 kB）+ CSS 354 kB（gzip 54 kB）；移除 ECharts 后已从 1.95 MB 降下来，仍略超 500 kB 警告。 | 用路由级 `import()` 分包；预算从 gzip 163 kB 起算 |
 
 ---
 

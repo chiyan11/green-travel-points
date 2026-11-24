@@ -80,12 +80,16 @@ test('主链路：注册 → 上报行程 → 积分到账 → 商城兑换 → 
   await card.getByRole('link', { name: '查看详情' }).click()
   await expect(page.getByRole('button', { name: '确认兑换' })).toBeEnabled()
   await shot(page, '07-product-detail.png')
+  // 兑换前先弹二次确认（弹窗里重申核销码规则），点确认才真的下单
+  await page.getByRole('button', { name: '确认兑换', exact: true }).click()
+  const confirmDialog = page.getByRole('dialog')
+  await expect(confirmDialog).toBeVisible()
   const [redeemResponse] = await Promise.all([
     page.waitForResponse(
       (r) => r.url().includes('/api/v1/orders') && r.request().method() === 'POST',
       { timeout: 120_000 },
     ),
-    page.getByRole('button', { name: '确认兑换' }).click(),
+    confirmDialog.getByRole('button', { name: '确认兑换并生成核销码' }).click(),
   ])
   expect(redeemResponse.status(), `兑换接口返回 ${redeemResponse.status()}`).toBe(201)
 
@@ -105,7 +109,7 @@ test('主链路：注册 → 上报行程 → 积分到账 → 商城兑换 → 
     page.getByRole('button', { name: '取消并返还' }).click(),
   ])
   expect(cancelResponse.ok(), `取消接口返回 ${cancelResponse.status()}`).toBeTruthy()
-  await expect(page.locator('table tbody tr').first()).toContainText('已取消')
+  await expect(page.locator('.order-card').first()).toContainText('已取消')
   await shot(page, '09-orders-cancelled.png')
 
   // 10. 积分回到 150

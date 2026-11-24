@@ -48,9 +48,8 @@ describe('ProductDetailPage', () => {
     )
     renderDetail()
 
-    // Astryx Button 的 isDisabled 渲染成 aria-disabled，不是原生 disabled 属性
     const button = await screen.findByRole('button', { name: '已兑完' })
-    expect(button).toHaveAttribute('aria-disabled', 'true')
+    expect(button).toBeDisabled()
   })
 
   it('余额不足时禁用兑换并提示差额', async () => {
@@ -61,8 +60,8 @@ describe('ProductDetailPage', () => {
     renderDetail()
 
     const button = await screen.findByRole('button', { name: '积分不足' })
-    expect(button).toHaveAttribute('aria-disabled', 'true')
-    expect(screen.getByText('（还差 380 分）')).toBeInTheDocument()
+    expect(button).toBeDisabled()
+    expect(screen.getByText('380 分')).toBeInTheDocument()
   })
 
   it('兑换时撞上库存不足（409 OUT_OF_STOCK）展示后端文案且不跳转', async () => {
@@ -77,6 +76,7 @@ describe('ProductDetailPage', () => {
     const user = userEvent.setup()
 
     await user.click(await screen.findByRole('button', { name: '确认兑换' }))
+    await user.click(await screen.findByRole('button', { name: '确认兑换并生成核销码' }))
 
     expect(await screen.findByText('商品库存不足，兑换失败')).toBeInTheDocument()
     expect(screen.queryByTestId('route-stub')).not.toBeInTheDocument()
@@ -112,6 +112,7 @@ describe('ProductDetailPage', () => {
     const user = userEvent.setup()
 
     await user.click(await screen.findByRole('button', { name: '确认兑换' }))
+    await user.click(await screen.findByRole('button', { name: '确认兑换并生成核销码' }))
 
     expect(await screen.findByTestId('route-stub')).toBeInTheDocument()
   })

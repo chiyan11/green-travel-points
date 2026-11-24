@@ -1,20 +1,16 @@
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Badge } from '@astryxdesign/core/Badge'
-import { Button } from '@astryxdesign/core/Button'
-import { Card } from '@astryxdesign/core/Card'
+import { IconLeaf, IconUser } from '@/components/icons'
 import { getSession, logout } from '@/services/auth'
 import { getSummary } from '@/services/points'
 import { formatGrams, formatPoints } from '@/lib/format'
 import type { ReactNode } from 'react'
 
+/** 个人中心：账号信息与累计数据，不放开发态说明。 */
 export function ProfilePage(): ReactNode {
   const navigate = useNavigate()
   const session = getSession()
-  const { data: summary } = useQuery({
-    queryKey: ['summary'],
-    queryFn: () => getSummary(),
-  })
+  const { data: summary } = useQuery({ queryKey: ['summary'], queryFn: () => getSummary() })
 
   const onLogout = () => {
     logout()
@@ -22,66 +18,66 @@ export function ProfilePage(): ReactNode {
   }
 
   return (
-    <>
-      <section className="hero">
-        <h2>个人中心</h2>
-        <p>账号信息、碳减排成就与数据导出（原型仅展示）。</p>
-      </section>
-
-      <Card padding={5} elevation="low">
-        <div className="row-between">
-          <div className="app__brand">
-            <span className="app__logo" aria-hidden="true">
-              👤
-            </span>
-            <div>
-              <h3 style={{ margin: 0 }}>{session?.nickname ?? '未登录'}</h3>
-              <p className="muted" style={{ margin: 0 }}>
-                用户 ID：{session?.userId ?? '-'}
-              </p>
-            </div>
-          </div>
-          <Badge
-            label={session ? '已登录 · 令牌 2 小时有效' : '未登录'}
-            variant={session ? 'success' : 'neutral'}
-          />
+    <div className="page">
+      <div className="page__head">
+        <div>
+          <h1 className="page-title">个人中心</h1>
+          <p className="page-sub">账号信息与累计碳减排成就。</p>
         </div>
-        <div className="row-between" style={{ marginTop: 'var(--spacing-4)' }}>
-          <p className="muted" style={{ margin: 0 }}>
-            会话保存在浏览器 localStorage，退出后立即清除。
-          </p>
-          <Button label="退出登录" variant="secondary" size="sm" onClick={onLogout} />
-        </div>
-      </Card>
-
-      <div className="grid grid--stats">
-        <Card padding={4} elevation="low">
-          <div className="stat-card stat-card--accent">
-            <span aria-hidden="true">💰</span>
-            <p className="stat-card__label">累计积分余额</p>
-            <p className="stat-card__value">{formatPoints(summary?.balance ?? 0)} 分</p>
-            <p className="stat-card__hint">可用于商城兑换</p>
-          </div>
-        </Card>
-        <Card padding={4} elevation="low">
-          <div className="stat-card">
-            <span aria-hidden="true">🌿</span>
-            <p className="stat-card__label">累计碳减排</p>
-            <p className="stat-card__value">{formatGrams(summary?.totalCarbonSavedGrams ?? 0)}</p>
-            <p className="stat-card__hint">基准：燃油私家车 192 gCO₂e/km</p>
-          </div>
-        </Card>
       </div>
 
-      <Card padding={5} elevation="low">
-        <div className="section-head">
-          <h3>成就徽章</h3>
-          <Badge label="待 Sprint 3 接入" variant="neutral" />
+      <section className="card">
+        <div className="card__head">
+          <div className="app__brand">
+            <span className="app__logo">
+              <IconUser size={22} />
+            </span>
+            <span>
+              <span className="app__title">{session?.nickname ?? '未登录'}</span>
+              <span className="app__subtitle">用户 ID：{session?.userId ?? '-'}</span>
+            </span>
+          </div>
+          <button type="button" className="btn" onClick={onLogout}>
+            退出登录
+          </button>
         </div>
-        <p className="empty-state">
-          连续绿色出行 7 天、累计减排 10kg 等里程碑徽章，由后端 Outbox 事件触发。
-        </p>
-      </Card>
-    </>
+        <p className="muted">登录有效期 2 小时，到期后需要重新登录。</p>
+      </section>
+
+      <div className="stat-row">
+        <section className="stat stat--main">
+          <p className="stat__label">可用积分</p>
+          <p className="stat__value">
+            {formatPoints(summary?.balance ?? 0)}
+            <span className="stat__unit">分</span>
+          </p>
+          <p className="stat__note">可用于商城兑换</p>
+        </section>
+        <section className="stat">
+          <p className="stat__label">累计碳减排</p>
+          <p className="stat__value">{formatGrams(summary?.totalCarbonSavedGrams ?? 0)}</p>
+          <p className="stat__note">基准：燃油私家车 192 gCO₂e/km</p>
+        </section>
+        <section className="stat">
+          <p className="stat__label">本月获得</p>
+          <p className="stat__value">{formatPoints(summary?.earnedThisMonth ?? 0)} 分</p>
+          <p className="stat__note">按自然月统计</p>
+        </section>
+      </div>
+
+      <section className="card">
+        <div className="card__head">
+          <h2 className="card__title">成就徽章</h2>
+          <span className="badge badge--muted">即将开放</span>
+        </div>
+        <div className="empty">
+          <span className="empty__art">
+            <IconLeaf size={44} />
+          </span>
+          <p className="empty__title">还没有点亮徽章</p>
+          <p className="empty__note">连续绿色出行、累计减排达到里程碑后，这里会出现对应徽章。</p>
+        </div>
+      </section>
+    </div>
   )
 }

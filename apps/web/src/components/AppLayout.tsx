@@ -1,9 +1,9 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Badge } from '@astryxdesign/core/Badge'
-import { Button } from '@astryxdesign/core/Button'
-import { fetchPing } from '@/lib/http'
+import { IconLeaf } from '@/components/icons'
+import { getSummary } from '@/services/points'
 import { getSession, logout } from '@/services/auth'
+import { formatPoints } from '@/lib/format'
 
 const NAV_ITEMS = [
   { to: '/', label: '首页', end: true },
@@ -14,21 +14,20 @@ const NAV_ITEMS = [
   { to: '/profile', label: '个人中心', end: false },
 ]
 
-/** 后端连通性徽标：证明前后端已打通。 */
-function BackendBadge() {
-  const { data, isPending, isError } = useQuery({
-    queryKey: ['ping'],
-    queryFn: fetchPing,
-  })
-
-  if (isPending) return <Badge label="后端检测中…" variant="neutral" />
-  if (isError) return <Badge label="后端未连接" variant="error" />
-  return <Badge label={`后端正常 · ${data.env}`} variant="success" />
-}
-
+/**
+ * 登录后的应用外壳：顶栏（品牌 / 导航 / 余额 / 退出）、内容区、页脚。
+ *
+ * 余额常驻在顶栏：积分是这个产品的核心货币，用户不该为了看一眼余额而换页面。
+ */
 export function AppLayout() {
   const navigate = useNavigate()
   const session = getSession()
+
+  const { data: summary } = useQuery({
+    queryKey: ['points', 'summary'],
+    queryFn: getSummary,
+    enabled: Boolean(session),
+  })
 
   const onLogout = () => {
     logout()
@@ -38,46 +37,47 @@ export function AppLayout() {
   return (
     <div className="app">
       <header className="app__header">
-        <div className="app__brand">
-          <span className="app__logo" aria-hidden="true">
-            🌿
+        <NavLink to="/" className="app__brand">
+          <span className="app__logo">
+            <IconLeaf size={22} />
           </span>
-          <div>
-            <h1 className="app__title">绿行积分</h1>
-            <p className="app__subtitle">城市绿色出行碳积分平台</p>
-          </div>
-        </div>
-        <div className="app__header-actions">
-          <BackendBadge />
+          <span>
+            <span className="app__title">绿行积分</span>
+            <span className="app__subtitle">城市绿色出行碳积分平台</span>
+          </span>
+        </NavLink>
+
+        <nav className="app__nav" aria-label="主导航">
+          {NAV_ITEMS.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.end}
+              className={({ isActive }) => (isActive ? 'nav-link is-active' : 'nav-link')}
+            >
+              {item.label}
+            </NavLink>
+          ))}
+        </nav>
+
+        <div className="app__aside">
+          {summary && (
+            <span className="balance-chip">可用 {formatPoints(summary.balance)} 分</span>
+          )}
+          {session && <span className="muted app__user">{session.nickname}</span>}
           {session && (
-            <>
-              <Badge label={session.nickname} variant="neutral" />
-              <Button label="退出" variant="ghost" size="sm" onClick={onLogout} />
-            </>
+            <button type="button" className="btn btn--ghost" onClick={onLogout}>
+              退出
+            </button>
           )}
         </div>
       </header>
-
-      <nav className="app__nav" aria-label="主导航">
-        {NAV_ITEMS.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            end={item.end}
-            className={({ isActive }) => (isActive ? 'nav-link nav-link--active' : 'nav-link')}
-          >
-            {item.label}
-          </NavLink>
-        ))}
-      </nav>
 
       <main className="app__main">
         <Outlet />
       </main>
 
-      <footer className="app__footer">
-        软件工程实验 · 第 14 题 碳中和绿色出行积分系统 · 前端已对接后端接口
-      </footer>
+      <footer className="app__footer">让每一次低碳出行，都被看见。</footer>
     </div>
   )
 }

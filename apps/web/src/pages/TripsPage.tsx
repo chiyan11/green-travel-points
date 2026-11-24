@@ -1,19 +1,19 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Badge } from '@astryxdesign/core/Badge'
-import { Button } from '@astryxdesign/core/Button'
-import { Card } from '@astryxdesign/core/Card'
-import { Field } from '@astryxdesign/core/Field'
-import { VStack } from '@astryxdesign/core/VStack'
+import { IconCheck, IconEmptyRoute, IconRoute } from '@/components/icons'
 import { TRAVEL_MODES, type TravelMode, type TripRecord } from '@/types/domain'
 import { validateDistance } from '@/lib/validators'
 import { listTrips, submitTrip } from '@/services/trips'
-import { formatDateTime, formatDistance, formatGrams } from '@/lib/format'
+import { formatDateTime, formatDistance, formatGrams, formatPoints } from '@/lib/format'
+import { modeEmoji, modeLabel } from '@/lib/travelMode'
 
-function modeMeta(mode: TravelMode) {
-  return TRAVEL_MODES.find((m) => m.code === mode) ?? { label: mode, emoji: '❓' }
-}
+const QUICK_DISTANCES = [
+  { label: '地铁 3 站 ≈ 5 km', value: '5' },
+  { label: '骑行 3 km', value: '3' },
+  { label: '步行 1.5 km', value: '1.5' },
+]
 
+/** 行程上报：选方式、填距离、看后端核算的结算单。 */
 export function TripsPage(): ReactNode {
   const queryClient = useQueryClient()
   const { data: trips = [] } = useQuery({
@@ -55,44 +55,48 @@ export function TripsPage(): ReactNode {
   }
 
   return (
-    <>
-      <section className="hero">
-        <h2>行程上报</h2>
-        <p>选择出行方式、填写距离，系统核算碳减排量并折算积分（前端为预览，最终以后端计算为准）。</p>
-      </section>
-
-      <Card padding={5} elevation="low">
-        <div className="section-head">
-          <h3>提交一次出行</h3>
-          <span className="muted">单日最多计 500 分</span>
+    <div className="page">
+      <div className="page__head">
+        <div>
+          <h1 className="page-title">行程上报</h1>
+          <p className="page-sub">选出行方式、填距离，碳减排和积分以后端核算为准。</p>
         </div>
+        <span className="badge badge--muted">单日最多计 500 分</span>
+      </div>
 
-        <form onSubmit={onSubmit}>
-          <VStack gap={4}>
-            <div className="form-field">
-              <span className="field-label">出行方式</span>
-              <div className="mode-grid">
-                {TRAVEL_MODES.map((m) => (
-                  <label key={m.code} className={mode === m.code ? 'mode-option mode-option--active' : 'mode-option'}>
-                    <input
-                      type="radio"
-                      name="mode"
-                      value={m.code}
-                      checked={mode === m.code}
-                      onChange={() => setMode(m.code)}
-                    />
-                    <span>
-                      {m.emoji} {m.label}
-                    </span>
-                  </label>
-                ))}
-              </div>
+      <section className="card">
+        <form className="form" onSubmit={onSubmit}>
+          <div className="field">
+            <span className="field__label">出行方式</span>
+            <div className="mode-grid">
+              {TRAVEL_MODES.map((m) => (
+                <label key={m.code} className={mode === m.code ? 'mode is-active' : 'mode'}>
+                  <input
+                    type="radio"
+                    name="mode"
+                    value={m.code}
+                    checked={mode === m.code}
+                    onChange={() => setMode(m.code)}
+                    className="visually-hidden"
+                  />
+                  <span className="mode__icon" aria-hidden="true">
+                    {m.emoji}
+                  </span>
+                  <span className="mode__label">{m.label}</span>
+                  <span className="mode__check" aria-hidden="true">
+                    <IconCheck size={16} />
+                  </span>
+                </label>
+              ))}
             </div>
+          </div>
 
-            <Field label="距离（km，允许 0.1 – 100）" inputID="distance">
+          <label className="field" htmlFor="distance">
+            <span className="field__label">距离（km，允许 0.1 – 100）</span>
+            <span className="input-wrap">
               <input
                 id="distance"
-                className="native-input"
+                className="native-input input--suffix"
                 type="number"
                 step="0.1"
                 min={0.1}
@@ -101,101 +105,120 @@ export function TripsPage(): ReactNode {
                 onChange={(e) => setDistanceInput(e.target.value)}
                 placeholder="例如 3.2"
               />
-            </Field>
-            {distanceError !== '' && <p className="field-error">{distanceError}</p>}
+              <span className="input-suffix">km</span>
+            </span>
+          </label>
 
-            <Field label="出发时间（可选，默认当前）" inputID="startedAt">
-              <input
-                id="startedAt"
-                className="native-input"
-                type="datetime-local"
-                value={startedAt}
-                onChange={(e) => setStartedAt(e.target.value)}
-              />
-            </Field>
+          <div className="quick-picks">
+            {QUICK_DISTANCES.map((q) => (
+              <button
+                type="button"
+                key={q.value}
+                className="quick-pick"
+                onClick={() => setDistanceInput(q.value)}
+              >
+                {q.label}
+              </button>
+            ))}
+          </div>
 
-            {submitError !== '' && <p className="field-error">{submitError}</p>}
+          {distanceError !== '' && <p className="field-error">{distanceError}</p>}
 
-            <div>
-              <Button label="上报行程" type="submit" variant="primary" />
-            </div>
-          </VStack>
+          <label className="field" htmlFor="startedAt">
+            <span className="field__label">出发时间（可选，默认当前）</span>
+            <input
+              id="startedAt"
+              className="native-input"
+              type="datetime-local"
+              value={startedAt}
+              onChange={(e) => setStartedAt(e.target.value)}
+            />
+          </label>
+
+          {submitError !== '' && <p className="field-error">{submitError}</p>}
+
+          <button type="submit" className="btn btn--primary btn--block">
+            上报行程
+          </button>
         </form>
 
         {last && (
-          <div className="result-panel">
-            <h3 style={{ marginTop: 0 }}>本次结果（后端核算）</h3>
-            <div className="result-grid">
+          <div className="settle" style={{ marginTop: '1.5rem' }}>
+            <div className="settle__head">
+              <h2 className="settle__title">本次结果（后端核算）</h2>
+              <span className="badge badge--ok">{last.cappedByDaily ? '已触单日上限' : '已入账'}</span>
+            </div>
+            <div className="settle__grid">
               <div>
-                <p className="stat-card__label">出行方式</p>
-                <p className="stat-card__value">{`${modeMeta(last.mode).emoji} ${modeMeta(last.mode).label}`}</p>
-                <p className="stat-card__hint">{formatDistance(last.distanceKm)}</p>
-              </div>
-              <div>
-                <p className="stat-card__label">碳减排量</p>
-                <p className="stat-card__value">{formatGrams(last.carbonSavedGrams)}</p>
-                <p className="stat-card__hint">相对燃油私家车</p>
-              </div>
-              <div>
-                <p className="stat-card__label">发放积分</p>
-                <p className="stat-card__value">{last.grantedPoints} 分</p>
-                <p className="stat-card__hint">
-                  原始 {last.rawPoints} 分{last.cappedByDaily ? ' · 已触单日上限' : ''}
+                <p className="settle__label">出行方式</p>
+                <p className="settle__value">
+                  {modeEmoji(last.mode)} {modeLabel(last.mode)}
                 </p>
+                <p className="settle__note">{formatDistance(last.distanceKm)}</p>
+              </div>
+              <div>
+                <p className="settle__label">碳减排量</p>
+                <p className="settle__value">{formatGrams(last.carbonSavedGrams)}</p>
+                <p className="settle__note">相对燃油私家车</p>
+              </div>
+              <div>
+                <p className="settle__label">本次发放</p>
+                <p className="settle__value settle__value--amber">
+                  {formatPoints(last.grantedPoints)} 分
+                </p>
+                <p className="settle__note">原始 {formatPoints(last.rawPoints)} 分</p>
               </div>
             </div>
-            <p className="muted" style={{ marginBottom: 0 }}>
-              同一次出行重复提交不会重复发分（后端按用户+方式+距离+时间做幂等，返回首次结果）。
+            <p className="settle__note">
+              同一次出行重复提交不会重复发分，后端会返回首次结果。
             </p>
           </div>
         )}
-      </Card>
+      </section>
 
-      <Card padding={5} elevation="low">
-        <div className="section-head">
-          <h3>最近行程</h3>
+      <section className="card">
+        <div className="card__head">
+          <h2 className="card__title">最近行程</h2>
           <span className="muted">共 {trips.length} 条</span>
         </div>
+
         {trips.length === 0 ? (
-          <p className="empty-state">还没有行程，先上报一次吧。</p>
+          <div className="empty">
+            <span className="empty__art">
+              <IconEmptyRoute size={48} />
+            </span>
+            <p className="empty__title">还没有行程记录</p>
+            <p className="empty__note">选好出行方式、填上距离，就能拿到第一笔碳积分。</p>
+            <button
+              type="button"
+              className="btn btn--primary"
+              onClick={() => document.getElementById('distance')?.focus()}
+            >
+              上报第一程
+            </button>
+          </div>
         ) : (
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>时间</th>
-                  <th>方式</th>
-                  <th>距离</th>
-                  <th>减排量</th>
-                  <th>原始/实发</th>
-                  <th>状态</th>
-                </tr>
-              </thead>
-              <tbody>
-                {trips.map((t) => (
-                  <tr key={t.id}>
-                    <td>{formatDateTime(t.startedAt)}</td>
-                    <td>
-                      {modeMeta(t.mode).emoji} {modeMeta(t.mode).label}
-                    </td>
-                    <td>{formatDistance(t.distanceKm)}</td>
-                    <td>{formatGrams(t.carbonSavedGrams)}</td>
-                    <td>
-                      {t.rawPoints} / <b>{t.grantedPoints}</b>
-                    </td>
-                    <td>
-                      <Badge
-                        label={t.status === 'VALID' ? '有效' : '已撤销'}
-                        variant={t.status === 'VALID' ? 'success' : 'neutral'}
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="list">
+            {trips.map((t) => (
+              <div className="list__row" key={t.id}>
+                <span className="list__icon">
+                  <IconRoute size={16} />
+                </span>
+                <div className="list__body">
+                  <p className="list__title">
+                    {modeEmoji(t.mode)} {modeLabel(t.mode)} · {formatDistance(t.distanceKm)}
+                  </p>
+                  <p className="list__meta">
+                    {formatDateTime(t.startedAt)} · 减排 {formatGrams(t.carbonSavedGrams)}
+                  </p>
+                </div>
+                <span className="badge badge--ok">{t.status === 'VALID' ? '有效' : '已撤销'}</span>
+                <span className="list__value list__value--amber">+{formatPoints(t.grantedPoints)}</span>
+              </div>
+            ))}
           </div>
         )}
-      </Card>
-    </>
+      </section>
+    </div>
   )
 }

@@ -28,9 +28,9 @@ function makeOrder(over: Partial<Order> = {}): Order {
   }
 }
 
-/** 状态文字同时出现在筛选按钮和表格徽标里，断言表格内的那一份。 */
-function table(): HTMLElement {
-  return screen.getByRole('table')
+/** 状态文字同时出现在筛选按钮和订单卡片徽标里，断言卡片内的那一份。 */
+function card(): HTMLElement {
+  return screen.getByRole('article')
 }
 
 describe('OrdersPage', () => {
@@ -48,13 +48,13 @@ describe('OrdersPage', () => {
     renderPage(<OrdersPage />)
     const user = userEvent.setup()
 
-    expect(await screen.findByRole('table')).toBeInTheDocument()
-    expect(within(table()).getByText('待支付')).toBeInTheDocument()
+    expect(await screen.findByRole('article')).toBeInTheDocument()
+    expect(within(card()).getByText('待支付')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: '取消并返还' }))
 
     await waitFor(() => expect(cancelCalls).toBe(1))
-    await waitFor(() => expect(within(table()).getByText('已取消')).toBeInTheDocument())
+    await waitFor(() => expect(within(card()).getByText('已取消')).toBeInTheDocument())
     // 已取消的订单不再给出取消按钮。
     expect(screen.queryByRole('button', { name: '取消并返还' })).not.toBeInTheDocument()
   })
@@ -72,7 +72,7 @@ describe('OrdersPage', () => {
     await user.click(await screen.findByRole('button', { name: '取消并返还' }))
 
     expect(await screen.findByText('订单已发货，不能取消')).toBeInTheDocument()
-    expect(within(table()).getByText('待支付')).toBeInTheDocument()
+    expect(within(card()).getByText('待支付')).toBeInTheDocument()
   })
 
   it('筛选已发货时显示对应空态', async () => {

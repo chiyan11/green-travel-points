@@ -122,7 +122,8 @@ flowchart LR
 | 迁移 | golang-migrate 风格的 `db/migrations` | — | up / down 成对，可回滚 |
 | 事件 | 事务性 Outbox 表 + 轮询 Worker | — | 不引入 Kafka / Redis，仍在关系库里保证"业务成功 ⇒ 事件必达"；**Worker 尚未实现**（见「系统架构」实现现状） |
 | 前端 | React + TypeScript 7 + Vite + TanStack Query | 19.3 / 7.0.2 / 8.3 / 5.104 | TS7 原生编译器（Go 实现），构建快；Query 统一服务端状态 |
-| 设计系统 | [Astryx](https://astryx.atmeta.com/)（`@astryxdesign/core` + `theme-neutral`，品牌子主题在 `apps/web/src/themes/green-travel/`） | 0.7.17 | `main.tsx` 按层导入 4 份样式表并挂 `Theme` + `LinkProvider`；控件用 Astryx，业务样式仍是一个 `styles.css`（token 层），无 StyleX/Tailwind 编译器 |
+| 设计系统 | [Astryx](https://astryx.atmeta.com/)（`@astryxdesign/core` + `theme-neutral`，品牌子主题在 `apps/web/src/themes/green-travel/`） | 0.7.17 | `main.tsx` 按层导入 4 份样式表并挂 `Theme` + `LinkProvider`；控件用 Astryx，业务样式仍是一个 `styles.css`（自带设计 token：品牌绿 / 积分琥珀 / 字号阶梯 / 12px 卡片圆角 / 单档阴影），无 StyleX/Tailwind 编译器 |
+| 图形 | 手写线性图标 + CSS 柱状图 | — | `src/components/icons.tsx` 是 24×24 单色 SVG 集合，不引图标库；近 7 日碳减排用 CSS 柱状（`CarbonTrendChart`），不引图表库 |
 | 接口契约 | OpenAPI 3.1 + swagger-typescript-api（devDependency） | 13.15 | `docs/api/openapi.yaml` 是唯一契约，`npm run gen:api` 生成 `apps/web/src/types/api.ts`，门禁校验生成物与 yaml 一致 |
 | 测试 | Go `testing` / Vitest + Testing Library + MSW / Playwright / k6 | 1.65 | 单测、页面测试、双链路 E2E 已落地；集成测试与性能压测待建 |
 | 数据库 | MySQL | 8.4+（本机 9.7） | `utf8mb4_0900_ai_ci`、`DATETIME(3)`、JSON 存事件负载 |
