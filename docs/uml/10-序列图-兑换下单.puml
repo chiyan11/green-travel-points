@@ -1,6 +1,6 @@
 @startuml 图2-7 序列图：兑换商品（UC-08 用例实现）
-' 依据：需求规格说明书 §2.3.2 UC-08 事件流；BR-09 / BR-12 / BR-15
-' 重点表达：幂等键、行锁、锁后复核、失败回滚、事务提交后异步
+' 依据：需求规格说明书 §2.3.2 UC-08；实际代码 apps/api/internal/repo/orders.go
+' 事实：没有 usecase；OrderHandler 调 repo.Store；sqlc 未启用；Worker 未实现
 
 skinparam defaultFontName "Microsoft YaHei"
 skinparam dpi 150
@@ -8,88 +8,127 @@ skinparam shadowing false
 autonumber
 
 actor "市民" as U
-participant "前端\n(RedeemConfirmPage)" as FE
-participant "HTTP 层" as API
-participant "RedeemUsecase\n(事务边界)" as UC
-participant "Repo\n(sqlc + Tx)" as R
-database "MySQL" as DB
-participant "Outbox Worker" as W
-participant "商户 / 运营" as M
+participant "前端\n(ProductDetailPage)" as FE
+participant "Router + 中间件\n(auth / timeout)" as API
+participant "OrderHandler\n(httpserver)" as H
+participant "OrderRepo\n(internal/repo，手写 SQL)" as R
+participant "domain\n(订单状态机)" as D
+database "MySQL\n(order / account / sku / batch / outbox)" as DB
 
-U -> FE : 点击"立即兑换"
-FE -> API : POST /api/v1/redeem-orders\n(Idempotency-Key: uuid)
+U -> FE : 点击“立即兑换”
+FE -> API : POST /api/v1/orders\nIdempotency-Key: <uuid>
 activate API
-API -> UC : Redeem(userID, skuID, idemKey)
-activate UC
+API -> H : CreateOrder(userID, productId, skuId, receiver)
+activate H
+H -> R : CreateOrder(cmd)
+activate R
 
-UC -> R : FindOrderByIdemKey(idemKey)
-R -> DB : SELECT * FROM redeem_order WHERE idempotency_key=?
-DB --> R : order?
-R --> UC : existing?
-
+R -> DB : findOrderByIdem(userID, idemKey)\nSELECT ... FROM redeem_order
+DB --> R : existing?
 alt 幂等键已处理（BR-15）
-  UC --> API : existing order
-  API --> FE : 200 {orderNo, redeemCode}（不重复扣分）
+  R --> H : existing order
+  H --> API : 200/201 {orderNo, redeemCode}（不重复扣分）
+  API --> FE : 展示原订单
 else 首次请求
-  UC -> R : BeginTx()
-  activate R
-  R -> DB : SELECT balance, frozen FROM point_account\nWHERE user_id=? FOR UPDATE
-  R -> DB : SELECT stock, status FROM product_sku\nWHERE id=? FOR UPDATE
-  Note right of DB : 两把行锁按固定顺序获取\n（account → sku），避免死锁
+  R -> DB : BEGIN
+  R -> DB : INSERT IGNORE point_account(user_id)
+  R -> DB : SELECT id, balance, frozen\nFROM point_account WHERE user_id=? FOR UPDATE
+  R -> DB : SELECT id, product_id, sku_name, points_price, stock\nFROM product_sku WHERE id=? FOR UPDATE
+  note right of DB
+    固定顺序：account → sku，避免死锁。
+    skuId 为空时按 product_id 取第一个 stock>0 的 SKU。
+  end note
+  R -> DB : SELECT name, status, limit_per_user\nFROM product WHERE id=?
+  DB --> R : product
+  R -> D : 锁后复核：ONLINE / stock>0 /\nbalance−frozen≥price / 未超限兑
+  D --> R : ok / ErrProductOffline / ErrOutOfStock /\nErrInsufficientPoints / ErrLimitExceeded
 
-  UC -> UC : 锁后复核（禁止先查后写）
-
-  alt 商品下架 / 库存不足 / 积分不足（BR-09）
+  alt 复核失败
     R -> DB : ROLLBACK
-    deactivate R
-    UC --> API : ErrOutOfStock / ErrInsufficientPoints
-    API --> FE : 409 {code, 剩余积分 / 库存}
-    FE --> U : 提示失败，账户无任何变化
+    R --> H : 哨兵错误
+    H --> API : 409 {code}
+    API --> FE : 提示失败，账户无变化
   else 复核通过
-    R -> DB : INSERT point_txn(type=REDEEM, amount=-points)
-    R -> DB : UPDATE point_account SET balance = balance - ?
-    R -> DB : UPDATE product_sku SET stock = stock - 1, sold_count = sold_count + 1
-    R -> DB : INSERT redeem_order(orderNo, status=PENDING, redeemCode)
-    R -> DB : INSERT event_outbox(OrderPaid)
+    R -> DB : INSERT redeem_order\n(status='PENDING', order_no, redeem_code,\n idempotency_key)
+    DB --> R : orderID
+    R -> DB : INSERT point_txn\n(REDEEM, -price, balance_after, redeem_order, orderID)
+    R -> DB : UPDATE point_account\nSET balance=?, version=version+1
+    R -> DB : UPDATE product_sku\nSET stock=stock-1, sold_count=sold_count+1
+    R -> DB : SELECT id, remaining FROM point_batch\nWHERE account_id=? AND status='ACTIVE'\nAND remaining>0\nORDER BY expires_at ASC, id ASC FOR UPDATE
+    DB --> R : batches
+    R -> DB : 逐批 UPDATE point_batch\nSET remaining=remaining-take,\n status='CONSUMED'（remaining=0）
+    R -> DB : INSERT point_batch_txn\n(batch_id, txn_id=REDEEM, amount=-take)
+    note right of DB
+      **批次 FIFO 已实现**（BR-11）。
+      扣减会写 point_batch_txn（负 amount）。
+      但发放端没有写 point_batch，
+      正常积分路径通常查不到批次；
+      consumeBatches 在批次不足时**不报错**，
+      只扣可用批次，余额仍按 price 减少，
+      因此余额与批次剩余可能不等（见 §4 D-03）。
+    end note
+    R -> DB : INSERT event_outbox\n(topic='OrderPaid', aggregate_type='order',\n aggregate_id=orderNo)
     R -> DB : COMMIT
-    deactivate R
-    UC --> API : {orderNo, redeemCode, 剩余积分}
-    API --> FE : 201 Created
+    R --> H : order, replayed=false
+    H --> API : 201 Created
+    API --> FE : {orderNo, redeemCode, 剩余积分}
     FE --> U : 展示核销码与订单详情
   end
 end
-deactivate UC
+deactivate R
+deactivate H
 deactivate API
 
-== 事务提交之后（异步，失败可重试） ==
+== 事务提交之后：事件只写不消费 ==
 
-W -> DB : 轮询 event_outbox (type=OrderPaid)
-DB --> W : events
-W -> M : 通知新订单（站内信 / 邮件模拟）
-M --> W : ack
-W -> DB : UPDATE event_outbox SET status='SENT'
+note over DB
+  event_outbox 已有 OrderPaid 记录；
+  **没有 Worker**，因此没有“通知商户/运营”的消费者箭头。
+  规划中的轮询条件与 09 序列图一致：
+  dispatched_at IS NULL AND available_at <= NOW()
+  AND dead_letter_at IS NULL。
+end note
 
-== 备选：订单取消（BR-12 原路回滚） ==
+== 备选：取消订单（BR-12 原路回滚） ==
 
 U -> FE : 取消订单
-FE -> API : POST /api/v1/redeem-orders/{no}/cancel
-API -> UC : Cancel(orderNo)
-activate UC
-UC -> R : BeginTx()
-R -> DB : SELECT * FROM redeem_order FOR UPDATE
-R -> DB : INSERT point_txn(type=REFUND, amount=+points)\n并 UPDATE point_account（补反向流水，不改原流水）
-R -> DB : UPDATE product_sku SET stock = stock + 1
-R -> DB : UPDATE redeem_order SET status='CANCELLED'
-R -> DB : COMMIT
+FE -> API : POST /api/v1/orders/{id}/cancel
+API -> H : CancelOrder(userID, orderID, reason)
+H -> R : CancelOrder(...)
+activate R
+R -> DB : BEGIN
+R -> DB : SELECT status, order_no, points_spent, sku_id\nFROM redeem_order WHERE id=? AND user_id=? FOR UPDATE
+alt 非 PENDING
+  R -> DB : ROLLBACK
+  R --> H : ErrIllegalTransition
+  H --> API : 409 ILLEGAL_TRANSITION
+else PENDING
+  R -> DB : SELECT id, balance FROM point_account\nWHERE user_id=? FOR UPDATE
+  R -> DB : INSERT point_txn\n(REFUND, +points, balance_after, redeem_order, orderID)
+  R -> DB : SELECT batch_id, amount FROM point_batch_txn\nWHERE txn_id=REDEEM txn\nORDER BY batch_id ASC
+  DB --> R : 该订单的批次消费明细（负数）
+  loop 每条消费明细
+    R -> DB : UPDATE point_batch\nSET remaining=remaining+(-amount),\n status='ACTIVE' WHERE id=batch_id
+    R -> DB : INSERT point_batch_txn\n(batch_id, txn_id=REFUND, amount=+qty)
+  end
+  R -> DB : 若原路回填 < points，\nINSERT point_batch(剩余部分，\n新有效期)
+  R -> DB : UPDATE point_account SET balance=balance+points
+  R -> DB : UPDATE product_sku\nSET stock=stock+1, sold_count=GREATEST(sold_count-1,0)
+  R -> DB : UPDATE redeem_order\nSET status='CANCELLED', cancelled_at=NOW(), cancel_reason=?
+  R -> DB : INSERT event_outbox('OrderCancelled', ...)
+  R -> DB : COMMIT
+  R --> H : order
+  H --> API : 200 {status: CANCELLED}
+  API --> FE : 提示积分已退回
+end
 deactivate R
-UC --> API : ok
-deactivate UC
-API --> FE : 200 {status: CANCELLED}
-FE --> U : 提示积分已退回
 
 note over R, DB
-  **append-only 的意义**：取消不修改原 REDEEM 流水，
-  而是补一条 REFUND。这样任何时刻都能回放"谁在何时扣了几分"（BR-08）。
+  **append-only**：取消不修改原 REDEEM 流水，而是补一条 REFUND；
+  优先按 point_batch_txn 把原批次回填为 ACTIVE（expires_at 不变），
+  找不到消费明细的历史数据才新建退款批次（BR-11/BR-12）。
+  但正常发放路径没有批次，导致“退款有批次、消费无批次”的不对称，
+  是 §4 偏差 D-03 的直接表现。
 end note
 
 @enduml

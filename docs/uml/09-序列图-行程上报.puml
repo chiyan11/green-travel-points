@@ -1,6 +1,6 @@
 @startuml 图2-6 序列图：上报出行行程（UC-02 用例实现）
-' 依据：需求规格说明书 §2.3.2 UC-02 事件流；对应代码 internal/usecase/trip.go
-' 重点表达：事务边界（activate/deactivate）、幂等命中分支、Outbox 异步
+' 依据：需求规格说明书 §2.3.2 UC-02；实际代码 apps/api/internal/httpserver/trips.go（2026-11-24）
+' 事实：没有 internal/usecase；TripHandler 直接持有 *sql.DB；Token 为自签 HMAC，不是标准 JWT
 
 skinparam defaultFontName "Microsoft YaHei"
 skinparam dpi 150
@@ -8,79 +8,91 @@ skinparam shadowing false
 autonumber
 
 actor "市民" as U
-participant "前端\n(TripReportPage)" as FE
-participant "HTTP 层\n(router + middleware)" as API
-participant "TripUsecase\n(应用服务 · 事务边界)" as UC
+participant "前端\n(TripsPage)" as FE
+participant "Router + 中间件\n(auth / timeout)" as API
+participant "TripHandler\n(httpserver，直写 SQL)" as H
 participant "domain\n(碳核算 / 积分纯函数)" as D
-participant "Repo\n(sqlc)" as R
-database "MySQL" as DB
-participant "Outbox Worker" as W
+database "MySQL\n(trip / carbon / point / outbox)" as DB
 
 U -> FE : 填写方式 / 距离 / 起止时间
-FE -> API : POST /api/v1/trips\n(Authorization: Bearer JWT)
+FE -> API : POST /api/v1/trips\nAuthorization: Bearer <token>\n（或开发头 X-User-Id）
 activate API
-API -> API : 认证 + 限流 + 参数校验
-API -> UC : ReportTrip(cmd)
-activate UC
+API -> API : 认证 + 请求体严格解码
+API -> H : ReportTrip(userID, cmd)
+activate H
 
-UC -> R : FindTrip(userID, tripHash)
-R -> DB : SELECT id FROM trip_record\nWHERE user_id=? AND trip_hash=?
-DB --> R : 结果集
-R --> UC : existing?
+H -> DB : SELECT ef_base, ef_actual FROM travel_mode\nWHERE code = ?
+DB --> H : emission
+H -> H : tripHash = hashTrip(userID, mode, distance, traveledAt)
+H -> DB : BEGIN
+H -> DB : scanTrip(userID, tripHash)\nSELECT ... FROM trip_record
+DB --> H : existing?
 
 alt 幂等命中（BR-06）
-  UC --> API : existing, deduplicated=true
+  H -> DB : COMMIT
+  H --> API : existing，deduplicated=true
   API --> FE : 200 {tripId, points(首次值), deduplicated:true}
-  FE --> U : 提示"该行程已申报，未重复发放"
+  FE --> U : 提示“该行程已申报，未重复发放”
 else 首次上报
-  UC -> R : LoadEmission(modeCode)
-  R -> DB : SELECT ef_base, ef_actual FROM travel_mode
-  DB --> R : ef
-  UC -> D : EvaluateTrip(distanceKm, ef, rule, alreadyToday)
+  H -> DB : SELECT COALESCE(SUM(amount),0)\nFROM point_txn JOIN point_account\nWHERE user_id=? AND txn_type='TRAVEL'\nAND occurred_at >= 当日 00:00
+  DB --> H : alreadyToday
+  H -> D : EvaluateTrip(distance, emission, rule, alreadyToday)
   activate D
   D -> D : carbon_saved = max(0, d×(EF_base−EF_actual))
   D -> D : points = floor(carbon_saved / carbon_per_point)
   D -> D : granted = min(points, dailyCap − alreadyToday)
-  D --> UC : Grant{碳减排量, raw, granted, cappedByDaily}
+  D --> H : Grant{碳减排量, raw, granted, cappedByDaily}
   deactivate D
 
   alt 距离越界 / 规则非法（BR-05）
-    UC --> API : ErrDistanceOutOfRange
+    H -> DB : ROLLBACK
+    H --> API : ErrDistanceOutOfRange
     API --> FE : 400 E_DISTANCE_OUT_OF_RANGE
     FE --> U : 提示允许区间 [0.1, 100] km
   else 校验通过
-    UC -> R : BeginTx()
-    activate R
-    R -> DB : INSERT trip_record
-    R -> DB : INSERT carbon_record
-    R -> DB : INSERT point_txn(+granted)
-    R -> DB : UPDATE point_account SET balance = balance + ?
-    R -> DB : INSERT event_outbox(TripVerified, PointsGranted)
-    R -> DB : COMMIT
-    deactivate R
-    UC --> API : {carbonSavedG, granted, capped}
-    API --> FE : 200 {tripId, points, carbonSavedG}
-    FE --> U : 展示"本次减排 xx g，获得 xx 积分"
+    H -> DB : INSERT IGNORE trip_record\n(user_id, mode_code, distance_km,\n started_at, ended_at, trip_hash)
+    DB --> H : tripID（0 = 唯一键冲突，幂等命中）
+    alt tripID == 0
+      H -> DB : scanTrip + COMMIT
+      H --> API : existing
+      API --> FE : 200 首次结果
+    else tripID > 0
+      H -> DB : INSERT carbon_record\n(trip_id, ef_base, ef_actual,\n carbon_saved_g, rule_snapshot)
+      H -> DB : INSERT IGNORE point_account(user_id)
+      H -> DB : SELECT id, balance FROM point_account\nWHERE user_id=? FOR UPDATE
+      DB --> H : accountID, balance
+      opt granted > 0
+        H -> DB : INSERT point_txn\n(TRAVEL, +granted, balance_after, trip_record, tripID)
+      end
+      H -> DB : UPDATE point_account\nSET balance=?, total_saved_g=total_saved_g+?,\n    version=version+1 WHERE id=?
+      H -> DB : INSERT event_outbox\n(topic=TopicTripVerified, aggregate_type='trip',\n aggregate_id=tripID, payload)
+      H -> DB : COMMIT
+      H --> API : {carbonSavedG, raw, granted, capped}
+      API --> FE : 200 {tripId, points, carbonSavedG}
+      FE --> U : 展示“本次减排 xx g，获得 xx 积分”
+    end
   end
 end
-deactivate UC
+deactivate H
 deactivate API
 
-== 事务提交之后（同一进程内异步，不阻塞响应） ==
-
-W -> DB : 轮询 SELECT * FROM event_outbox\nWHERE status='NEW' LIMIT 100
-DB --> W : events
-W -> W : 按 event_id 幂等消费\n（统计 / 徽章 / 通知）
-W -> DB : UPDATE event_outbox SET status='SENT'\n（失败则 retry_count+1，超限置 DEAD）
-
-note over UC, DB
-  **事务边界**：5 张表的写入 + outbox 在同一事务内，
-  要么全成，要么全不成（BR-07 账本等价的实现基础）。
+note over DB
+  **事务边界**：trip_record + carbon_record + point_txn
+  + point_account + event_outbox 同一事务，要么全成，要么全不成。
+  **当前缺口**：发放积分时只写 point_txn 与 account，
+  **没有写 point_batch**；批次 FIFO/过期因此没有数据来源（见设计说明书 §4）。
 end note
 
-note over W
-  消费失败**不影响**已发放的积分：
-  事件重试即可，这是"至少一次投递 + 消费幂等"的代价与收益（BR-13）。
+note over DB
+  **Outbox 现状：只写不消费**
+  event_outbox 实际列为：
+  attempts / available_at / dispatched_at / dead_letter_at / last_error，
+  **没有 status 列**。
+  规划中的 Worker 轮询条件（尚未实现）：
+  `dispatched_at IS NULL AND available_at <= NOW()
+   AND dead_letter_at IS NULL`；
+  成功后置 dispatched_at，失败 attempts+1，超限置 dead_letter_at。
+  当前没有 Worker 进程，序列到此为止。
 end note
 
 @enduml

@@ -1,0 +1,109 @@
+@startuml 图2-10 活动图：兑换下单与积分批次扣减
+' 依据：设计说明书 §2.2.2；实际代码 apps/api/internal/repo/orders.go
+' 用途：表达关键类 OrderHandler / Store / point_batch 的关键操作与事务边界
+
+skinparam defaultFontName "Microsoft YaHei"
+skinparam dpi 150
+skinparam shadowing false
+skinparam ActivityBackgroundColor #F5F9FF
+skinparam ActivityBorderColor #2E5C8A
+skinparam ActivityDiamondBackgroundColor #FFF6E5
+skinparam ActivityDiamondBorderColor #B8860B
+
+title 图2-10 活动图：兑换下单与积分批次扣减（2.2.2 关键程序逻辑）
+
+|#F5F9FF|市民 / 前端|
+start
+:选择 SKU，点击“立即兑换”;
+:生成 Idempotency-Key;
+:POST /api/v1/orders;
+
+|#FFF6E5|OrderHandler（httpserver）|
+:认证，解析 userID / productId / skuId / receiver;
+:调用 Store.CreateOrder;
+:按返回映射 201 / 409 / 500;
+
+|#EAF3EA|OrderRepo（internal/repo）|
+:findOrderByIdem(userID, idemKey);
+if (幂等键已存在?) then (是)
+  :返回原订单，replayed=true;
+  |#F5F9FF|市民 / 前端|
+  :展示原订单，不重复扣分;
+  stop
+else (否)
+endif
+:BEGIN;
+:INSERT IGNORE point_account(user_id);
+:SELECT point_account ... FOR UPDATE;
+:SELECT product_sku ... FOR UPDATE;
+:SELECT product.name/status/limit_per_user;
+if (商品 ONLINE?) then (否)
+  :ROLLBACK;
+  :ErrProductOffline;
+  |#FFF6E5|OrderHandler（httpserver）|
+  :409 PRODUCT_OFFLINE;
+  stop
+else (是)
+endif
+if (stock > 0?) then (否)
+  :ROLLBACK;
+  :ErrOutOfStock;
+  |#FFF6E5|OrderHandler（httpserver）|
+  :409 OUT_OF_STOCK;
+  stop
+else (是)
+endif
+if (balance − frozen ≥ price?) then (否)
+  :ROLLBACK;
+  :ErrInsufficientPoints;
+  |#FFF6E5|OrderHandler（httpserver）|
+  :409 INSUFFICIENT_POINTS;
+  stop
+else (是)
+endif
+if (limit_per_user > 0 且已兑数 ≥ 上限?) then (是)
+  :ROLLBACK;
+  :ErrLimitExceeded;
+  |#FFF6E5|OrderHandler（httpserver）|
+  :409 LIMIT_EXCEEDED;
+  stop
+else (否)
+endif
+
+:INSERT redeem_order(status='PENDING');
+:INSERT point_txn(REDEEM, -price, balance_after);
+:UPDATE point_account(balance, version+1);
+:UPDATE product_sku(stock−1, sold_count+1);
+
+:need = price;
+while (need > 0 且存在 ACTIVE 批次?) is (是)
+  :SELECT id, remaining FROM point_batch
+  WHERE account_id=? AND status='ACTIVE'
+  AND remaining>0
+  ORDER BY expires_at ASC, id ASC FOR UPDATE;
+  :take = min(remaining, need);
+  :UPDATE point_batch
+  SET remaining=remaining−take,
+  status = (remaining−take=0 ? 'CONSUMED' : 'ACTIVE');
+  :INSERT point_batch_txn
+  (batch_id, txn_id=REDEEM, amount=−take);
+  :need -= take;
+endwhile (否)
+note right
+  **批次不足不报错**：循环结束后 need 可能仍 >0，
+  只扣可用批次，余额仍按 price 减少，可能不等。
+  发放端尚未写 point_batch，正常积分路径通常无批次可扣。
+  这是 BR-11 FIFO 的实现偏差，见设计说明书 §4 表 4-1 D-03。
+end note
+
+:INSERT event_outbox(topic='OrderPaid');
+:COMMIT;
+
+|#FFF6E5|OrderHandler（httpserver）|
+:201 Created {orderNo, redeemCode, 剩余积分};
+
+|#F5F9FF|市民 / 前端|
+:展示核销码与订单详情;
+stop
+
+@enduml
