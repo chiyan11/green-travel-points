@@ -34,7 +34,7 @@ npm run gen:api     # 读 ../../docs/api/openapi.yaml，生成 src/types/api.ts�
 
 - 统一响应壳：`{"code":"OK","message":"ok","data":...}`；错误时 `data` 省略。
 - 分页参数：`page`（从 1 起，默认 1）、`pageSize`（默认 20，上限 100）；响应 `{items, page, pageSize, total}`。
-- 时间：RFC3339（带时区）。
+- 时间：RFC3339（带时区）。行程上报的 `traveledAt` 只能是服务器当前时间前 7 天内的时间；每日积分上限按服务器当前自然日统计，不能通过传入其他日期重置。
 - 金额/积分：整数 `int64`。
 - 身份：优先 `Authorization: Bearer <token>`（登录 / 注册响应里的 `token`）；仅 `APP_ENV != prod` 时缺失 token 可回退 `X-User-Id: <user_id>`。生产环境必须显式设置 `AUTH_SECRET`，并拒绝该身份头。
   运营接口额外要求角色为 `ADMIN`（`RequireAdmin`），越权返回 403 `FORBIDDEN`。

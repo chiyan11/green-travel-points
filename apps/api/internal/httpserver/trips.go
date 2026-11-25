@@ -63,6 +63,11 @@ func (h *TripHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Fail(w, http.StatusBadRequest, CodeInvalidArgument, "traveledAt 必须是 ISO 8601 时间")
 		return
 	}
+	now := time.Now()
+	if err := validateTraveledAt(traveledAt, now); err != nil {
+		Fail(w, http.StatusBadRequest, CodeInvalidArgument, err.Error())
+		return
+	}
 	if h.db == nil {
 		Fail(w, http.StatusServiceUnavailable, CodeUnavailable, "数据库不可用")
 		return
@@ -103,12 +108,14 @@ func (h *TripHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var alreadyToday int64
-	dayStart := time.Date(traveledAt.Year(), traveledAt.Month(), traveledAt.Day(), 0, 0, 0, 0, traveledAt.Location())
+	dayStart := startOfDay(now)
+	dayEnd := dayStart.AddDate(0, 0, 1)
 	err = tx.QueryRowContext(ctx, `
 		SELECT COALESCE(SUM(pt.amount), 0)
 		FROM point_txn pt
 		JOIN point_account pa ON pa.id = pt.account_id
-		WHERE pa.user_id = ? AND pt.txn_type = 'TRAVEL' AND pt.occurred_at >= ?`, userID, dayStart).Scan(&alreadyToday)
+		WHERE pa.user_id = ? AND pt.txn_type = 'TRAVEL'
+		  AND pt.occurred_at >= ? AND pt.occurred_at < ?`, userID, dayStart, dayEnd).Scan(&alreadyToday)
 	if err != nil {
 		_ = tx.Rollback()
 		FailInternal(w, h.logger, err)
@@ -343,6 +350,17 @@ func parseRawPoints(snapshot string) int64 {
 	}
 	n, _ := strconv.ParseInt(snapshot, 10, 64)
 	return n
+}
+
+func validateTraveledAt(traveledAt, now time.Time) error {
+	if traveledAt.After(now) || traveledAt.Before(now.AddDate(0, 0, -7)) {
+		return fmt.Errorf("traveledAt 必须在当前时间前 7 天内")
+	}
+	return nil
+}
+
+func startOfDay(now time.Time) time.Time {
+	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 }
 
 func hashTrip(userID int64, mode string, distance float64, at time.Time) string {
