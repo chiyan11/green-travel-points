@@ -15,7 +15,7 @@
 **当前进度：Sprint 0–S2 文档已补齐（需求规格 + 设计规格 + 用户故事地图/Backlog）；后端主链路与商城主体已实现；repo 集成测试与双链路 E2E 已落地；Outbox Worker、Docker 全栈实跑仍待补。**
 
 已实现：认证 / 行程上报与碳核算 / 积分账本与查询 / 商品目录 / 兑换订单与状态机 / 运营后台（含积分对账）；
-待补齐：Outbox Worker（事件只落库、暂无消费者）、Docker 编排实跑。前端 service 均已联调真实接口；repo 集成测试 10 例（`REPO_TEST_DSN` 门控）、消费者主链路 E2E（含 11 张验收截图）与运营后台 E2E 都已落地。
+待补齐：Outbox 业务处理器（Worker 已完成轮询、重试与死信；当前默认处理器仅记录投递）、Docker 编排实跑。前端 service 均已联调真实接口；repo 集成测试 10 例（`REPO_TEST_DSN` 门控）、消费者主链路 E2E（含 11 张验收截图）与运营后台 E2E 都已落地。
 
 进度与偏差详见 [Sprint 0 骨架说明](docs/Sprint0-骨架说明.md)，分工详见 [项目分工与迭代计划](docs/项目分工与迭代计划.md)，接口细节见 [P3 接口说明](docs/api/README.md)。
 
@@ -120,7 +120,7 @@ flowchart LR
 | 后端 | Go + [chi](https://github.com/go-chi/chi) | go 1.24 / chi v5.2.3 | 标准库 `net/http` 语义 + 轻量路由，无框架魔法，便于讲清分层 |
 | 数据访问 | `database/sql`，手写 SQL | mysql 驱动 v1.9.3 | SQL 可见可审；`apps/api/sqlc.yaml` 已就绪但 sqlc 尚未启用 |
 | 迁移 | golang-migrate 风格的 `db/migrations` | — | up / down 成对，可回滚 |
-| 事件 | 事务性 Outbox 表 + 轮询 Worker | — | 不引入 Kafka / Redis，仍在关系库里保证"业务成功 ⇒ 事件必达"；**Worker 尚未实现**（见「系统架构」实现现状） |
+| 事件 | 事务性 Outbox 表 + 轮询 Worker | — | 不引入 Kafka / Redis，仍在关系库里保证"业务成功 ⇒ 事件必达"；Worker 按批轮询、退避重试并写死信，业务处理器待各模块接入 |
 | 前端 | React + TypeScript 7 + Vite + TanStack Query | 19.3 / 7.0.2 / 8.3 / 5.104 | TS7 原生编译器（Go 实现），构建快；Query 统一服务端状态 |
 | 设计系统 | [Astryx](https://astryx.atmeta.com/)（`@astryxdesign/core` + `theme-neutral`，品牌子主题在 `apps/web/src/themes/green-travel/`） | 0.7.17 | `main.tsx` 按层导入 4 份样式表并挂 `Theme` + `LinkProvider`；控件用 Astryx，业务样式仍是一个 `styles.css`（自带设计 token：品牌绿 / 积分琥珀 / 字号阶梯 / 12px 卡片圆角 / 单档阴影），无 StyleX/Tailwind 编译器 |
 | 图形 | 手写线性图标 + CSS 柱状图 | — | `src/components/icons.tsx` 是 24×24 单色 SVG 集合，不引图标库；近 7 日碳减排用 CSS 柱状（`CarbonTrendChart`），不引图表库 |
@@ -141,12 +141,12 @@ flowchart LR
 上报行程（单事务）
   INSERT trip_record + INSERT carbon_record + INSERT point_txn
   + 更新 point_account + INSERT event_outbox(type=TripVerified, payload=...)
-后台 Worker（轮询 outbox）——**尚未实现，事件只入表**
+后台 Worker（轮询 outbox）——按批锁定待投递事件，成功后写 `dispatched_at`，失败按指数退避重试，达到上限写 `dead_letter_at`
   TripVerified → 更新碳减排统计 / 触发成就徽章 / 写排行榜
   OrderPaid    → 扣减库存 / 通知商户 / 生成核销码
 ```
 
-> **实现现状**：生产端已落地——行程上报、下单 / 取消、运营流转都在各自事务里 `INSERT event_outbox`；消费端未实现——`internal/eventbus` 只有 `Event` 与 `Handler` 契约，没有轮询循环，`event_outbox` 只增不消。订单侧已改用 `TopicOrderPaid` / `TopicOrderCancelled` 常量；`TopicRedeemOrderPaid` 仍存在但无人使用，接消费者前先清理或标注。
+> **实现现状**：生产端已落地——行程上报、下单 / 取消、运营流转都在各自事务里 `INSERT event_outbox`；消费端已具备轮询、行锁、指数退避和死信处理，默认处理器只记录投递。统计、徽章、通知等业务副作用尚未定义处理器，须由对应模块接入。事件主题已统一使用 `eventbus` 常量。
 
 选择 EDA 而非“经典分层同步调用”的理由、与其他架构方案的对比，写在 [设计规格说明书](docs/设计规格说明书.md) 的「2.1.1 架构决策与选型」（含候选方案对比、约束支持度与决策记录）；逻辑架构（包图）、物理架构（部署图）见 [docs/uml](docs/uml)。
 
@@ -165,7 +165,7 @@ green-travel-points/
 │   │       │   └── admin_test.go     # 运营后台接口用例（admin 列表返回 SKU 等，注入假存储不连 MySQL）
 │   │       ├── config/config.go      # 环境变量 → Config，含默认值与取值范围校验
 │   │       ├── domain/               # 纯业务规则：碳核算、积分换算、订单状态机（45 个用例）
-│   │       ├── eventbus/eventbus.go  # 领域事件主题与处理器契约（Worker 待实现）
+│   │       ├── eventbus/             # 领域事件主题、处理器契约与 Worker
 │   │       ├── httpserver/           # 路由、中间件、统一响应壳、各业务 handler（43 个测试函数）
 │   │       └── repo/                 # 手写 SQL：连接池、商品、积分、订单、运营后台；orders_test.go / audit_test.go 为 REPO_TEST_DSN 门控的集成测试（10 例）
 │   └── web/                          # React 前端：用户端 9 页 + 运营后台 3 页（/admin）
@@ -400,11 +400,15 @@ docker compose -f deploy/docker-compose.yml up -d --build
 | Sprint | 周期 | 目标 | 对齐实验 | 状态 |
 | --- | --- | --- | --- | --- |
 | S0 | 第 1 周 | 技术栈验证、业务规则冻结、骨架搭建 | 准备 | ✅ 已完成 |
+| S1 | 第 2–4 周 | 需求建模：角色 / 用例 / 活动图 / 域模型 / 非功能需求 | 实验一 | ✅ 已完成（12 张 UML 源图 + 成图） |
+| S2 | 第 5–7 周 | 设计建模 + 垂直切片（登录 → 上报 → 碳核算 → 积分） | 实验二 | ✅ 主链路已通（认证 + 行程 + 积分） |
+| S3 | 第 8–10 周 | 商城闭环 + 订单状态机 + Outbox Worker | 实验三 | 🚧 商城闭环、状态机与 Worker 已实现；业务处理器待接入 |
+| S4 | 第 11–13 周 | 三层测试 + 性能 + 容器化部署 + 报告四 / 五章 | 实验四 | ⏳ 未开始 |
 | S1 | 第 2–3 周 | 需求建模：角色 / 用例 / 活动图 / 域模型 / 非功能需求 + 故事地图 | 实验一 | ✅ 已完成（19 个用例、12 张分析图、40 条 Backlog） |
 | S2 | 第 4–5 周 | 设计建模：三方案对比、包图/部署图、表2-1/2-2/2-3 | 实验二 | 🚧 设计规格与 24 张 UML 已补（S1 13 + 本轮 11）；19 个用例中 10 个有 11 张实现图，9 个待补 |
-| S3 | 第 6–7 周 | 主链路：认证 → 行程 → 碳核算 → 积分发放 | 实验二/三 | ✅ 主链路已通（含幂等与日上限）；JWT/批次为临时实现 |
-| S4 | 第 8–9 周 | 商城闭环：商品 → 兑换 → 订单状态机 → 取消退分 | 实验三 | 🚧 兑换/订单/取消主体已实现；批次发放（`/trips` 写 `point_batch`）待补；并发/取消已有 repo 集成用例 |
-| S5 | 第 10–11 周 | 运营后台 + Outbox Worker + 对账/审计 | 实验三 | 🚧 运营 API 与后台三屏已实现（含参数配置 / 过期清算 / 调账与审计查询）；Worker、审计页面未做 |
+| S3 | 第 6–7 周 | 主链路：认证 → 行程 → 碳核算 → 积分发放 | 实验二/三 | ✅ 主链路已通（含幂等与日上限）；JWT 为临时实现 |
+| S4 | 第 8–9 周 | 商城闭环：商品 → 兑换 → 订单状态机 → 取消退分 | 实验三 | 🚧 兑换/订单/取消主体已实现；批次发放已接入 `/trips`；并发/取消已有 repo 集成用例 |
+| S5 | 第 10–11 周 | 运营后台 + Outbox Worker + 对账/审计 | 实验三 | 🚧 运营 API 与后台三屏已实现（含参数配置 / 过期清算 / 调账与审计查询）；Worker 业务处理器待接入 |
 | S6 | 第 12–13 周 | 三层测试、部署、报告四/五章、答辩 | 实验四 | ⏳ 未开始 |
 
 **Sprint 0 验收**

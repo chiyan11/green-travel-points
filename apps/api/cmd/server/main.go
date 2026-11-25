@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"greentravelpoints/internal/config"
+	"greentravelpoints/internal/eventbus"
 	"greentravelpoints/internal/httpserver"
 	"greentravelpoints/internal/repo"
 )
@@ -92,6 +93,10 @@ func run() error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	go eventbus.NewWorker(repo.NewOutbox(db), func(e eventbus.Event) error {
+		logger.Info("outbox 事件已投递", "event_id", e.ID, "topic", e.Topic)
+		return nil
+	}, logger).Run(ctx)
 
 	errCh := make(chan error, 1)
 	go func() {

@@ -81,13 +81,11 @@ deactivate API
 
 == 事务提交之后：事件只写不消费 ==
 
-note over DB
-  event_outbox 已有 OrderPaid 记录；
-  **没有 Worker**，因此没有“通知商户/运营”的消费者箭头。
-  规划中的轮询条件与 09 序列图一致：
-  dispatched_at IS NULL AND available_at <= NOW()
-  AND dead_letter_at IS NULL。
-end note
+W -> DB : 轮询待处理 event_outbox\n（行锁跳过已被其他 Worker 锁定的事件）
+DB --> W : events
+W -> M : 通知新订单（站内信 / 邮件模拟）
+M --> W : ack
+W -> DB : 成功写 dispatched_at\n失败退避重试，超限写 dead_letter_at
 
 == 备选：取消订单（BR-12 原路回滚） ==
 
