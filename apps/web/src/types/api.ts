@@ -634,7 +634,7 @@ export interface TripInput {
   /** 出行方式代码，与 travel_mode 表种子一致 */
   mode: TravelMode;
   /**
-   * RFC 3339，决定归属哪一天的单日上限
+   * RFC 3339，必须在服务器当前时间前 7 天内；单日上限按服务器当前自然日计算
    * @format date-time
    */
   traveledAt: string;
