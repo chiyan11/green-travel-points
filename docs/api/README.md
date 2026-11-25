@@ -2,7 +2,7 @@
 
 > 实现：`apps/api/internal/httpserver`（HTTP 层）+ `apps/api/internal/repo`（SQL 层）+ `apps/api/internal/app`（DTO 与端口）。
 > 对应报告：实验三"系统原型构建与实现"、实验二"设计类清单 / 序列图"。
-> 状态：✅ 已实现并通过单元测试 + 本地 MySQL 联调。身份已支持 `Authorization: Bearer <token>`（`POST /api/v1/auth/login` 自签签发，有效期 2 小时）；未带 token 时回退开发期请求头 `X-User-Id`，便于不登录联调。
+> 状态：✅ 已实现并通过单元测试 + 本地 MySQL 联调。身份已支持 `Authorization: Bearer <token>`（`POST /api/v1/auth/login` 自签签发，有效期 2 小时）；仅在非生产环境回退开发期请求头 `X-User-Id`，便于不登录联调。
 
 ## 机器可读契约：[openapi.yaml](openapi.yaml)
 
@@ -36,7 +36,7 @@ npm run gen:api     # 读 ../../docs/api/openapi.yaml，生成 src/types/api.ts�
 - 分页参数：`page`（从 1 起，默认 1）、`pageSize`（默认 20，上限 100）；响应 `{items, page, pageSize, total}`。
 - 时间：RFC3339（带时区）。
 - 金额/积分：整数 `int64`。
-- 身份：优先 `Authorization: Bearer <token>`（登录 / 注册响应里的 `token`）；缺失时回退 `X-User-Id: <user_id>`（开发期便利，生产须关闭）。
+- 身份：优先 `Authorization: Bearer <token>`（登录 / 注册响应里的 `token`）；仅 `APP_ENV != prod` 时缺失 token 可回退 `X-User-Id: <user_id>`。生产环境必须显式设置 `AUTH_SECRET`，并拒绝该身份头。
   运营接口额外要求角色为 `ADMIN`（`RequireAdmin`），越权返回 403 `FORBIDDEN`。
   注意：当前 token 是自签 HMAC-SHA256 的紧凑格式，并非标准 JWT（无 header 段），仅课程范围内可用。
 
