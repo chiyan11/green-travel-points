@@ -167,7 +167,7 @@ green-travel-points/
 │   │       ├── domain/               # 纯业务规则：碳核算、积分换算、订单状态机（45 个用例）
 │   │       ├── eventbus/             # 领域事件主题、处理器契约与 Worker
 │   │       ├── httpserver/           # 路由、中间件、统一响应壳、各业务 handler（43 个测试函数）
-│   │       └── repo/                 # 手写 SQL：连接池、商品、积分、订单、运营后台；orders_test.go / audit_test.go 为 REPO_TEST_DSN 门控的集成测试（10 例）
+│   │       └── repo/                 # 手写 SQL：连接池、商品、积分、订单、运营后台；orders_test.go / audit_test.go / batches_test.go 为 REPO_TEST_DSN 门控的集成测试（11 例）
 │   └── web/                          # React 前端：用户端 9 页 + 运营后台 3 页（/admin）
 │       ├── AGENTS.md                 # 前端专项代理指南（Astryx 工作流与规则，由 astryx init 维护）
 │       ├── src/{pages,components,services,lib,themes,types}/  # themes/ = Astryx 品牌主题；pages/admin = M8 后台三屏；types/api.ts = 生成契约
@@ -349,7 +349,7 @@ pwsh -File .\scripts\verify.ps1
 | 契约一致性 | `docs/api/openapi.yaml` ↔ `apps/web/src/types/api.ts` | `npm run gen:api` 后 `git diff --exit-code` | 已接入 `verify.ps1` 与 CI |
 | E2E（消费者主链路） | 注册 → 上报 → 积分到账 → 兑换 → 取消返还 | `E2E_API_TARGET=… npm run test:e2e` | 1 条用例绿，11 张截图在 `docs/screenshots/` |
 | E2E（运营后台） | 建商品 → 上架 → 改库存 → 下单 → 后台确认接单 | `npx playwright test`（apps/web） | 1 条用例绿；截图证据在 `docs/p5-evidence/` |
-| 集成测试 | repo + 真实 MySQL：兑换成功 / 积分不足 / 库存不足 / 限购 / 取消回填批次 / 20 并发防超卖 / 对账 / 人工调账与审计写入 | `REPO_TEST_DSN=… go test ./internal/repo -v` | `apps/api/internal/repo/orders_test.go`、`audit_test.go` 共 10 例（订单 7 + 调账与审计 3）；未设 DSN 时整包 SKIP；尚未进 CI |
+| 集成测试 | repo + 真实 MySQL：兑换成功 / 积分不足 / 库存不足 / 限购 / 取消回填批次 / 20 并发防超卖 / 对账 / 人工调账与审计写入 / 积分批次发放 | `REPO_TEST_DSN=… go test ./internal/repo -v` | `apps/api/internal/repo/orders_test.go`、`audit_test.go`、`batches_test.go` 共 11 例；未设 DSN 时数据库用例 SKIP；尚未进 CI |
 | 性能 | 行程上报、兑换并发 | 待建（k6） | 未建：计划 S6 起 |
 
 指导书要求的**基本路径法**（组件测试）与**等价类划分法**（功能测试）用例表，在 S6 补齐并写入测试报告。

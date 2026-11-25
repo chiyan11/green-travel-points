@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-sql-driver/mysql"
 	"greentravelpoints/internal/app"
 )
 
@@ -48,8 +49,12 @@ func newTestStore(t *testing.T) *Store {
 	if dsn == "" {
 		t.Skip("未设置 " + testDSNEnv + "，跳过 repo 集成测试（需要专用 MySQL 库，库名以 _test 结尾）")
 	}
-	if !strings.Contains(dsn, "_test") {
-		t.Fatalf("%s 必须指向以 _test 结尾的库，避免整表清空洗掉演示数据：%s", testDSNEnv, dsn)
+	parsedDSN, err := mysql.ParseDSN(dsn)
+	if err != nil {
+		t.Fatalf("解析 %s 失败: %v", testDSNEnv, err)
+	}
+	if !strings.HasSuffix(parsedDSN.DBName, "_test") {
+		t.Fatalf("%s 的数据库名必须以 _test 结尾，避免整表清空洗掉非测试数据", testDSNEnv)
 	}
 
 	db, err := sql.Open("mysql", dsn)
