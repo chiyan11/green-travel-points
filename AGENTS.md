@@ -237,8 +237,8 @@ domain ◄──────────────────────┘�
 
 - **流水只追加**：`point_txn` 不更新、不删除；余额变更必须同时写一条流水，`balance_after` 与该次变更后余额一致。
 - **审计只追加**：`audit_log` 不更新、不删除；调账与配置变更的审计写入与业务写在同一事务，调账流水以 `biz_ref_type='audit_log'`、`biz_ref_id=<审计 id>` 回指。
-- **一个业务事务一个事务**：行程上报 = `trip_record` + `carbon_record` + `point_txn` + `point_account` 余额 + `event_outbox`，全在一个 `tx`，任一步失败整体回滚。
-- **扣分按批次 FIFO**：先扣最早的 `point_batch`（`remaining`、`expires_at`），下单与取消都走批次，不直接改余额了事。**现状偏差**：行程发放尚未写 `point_batch`（`GrantPointsWithBatch` 已存在但未接入 `/trips`）；扣减/退款会写 `point_batch_txn`；批次不足时 `consumeBatches` 不报错、只扣可用批次，余额仍减；过期清算提供手动接口 `POST /api/v1/admin/points/expire`（无常驻定时任务），对账已有 repo 集成用例，见 §11。
+- **一个业务事务一个事务**：行程上报 = `trip_record` + `carbon_record` + `point_txn` + `point_batch` + `point_account` 余额 + `event_outbox`，全在一个 `tx`，任一步失败整体回滚。
+- **扣分按批次 FIFO**：先扣最早的 `point_batch`（`remaining`、`expires_at`），下单与取消都走批次，不直接改余额了事。行程发放在同一事务写 `point_txn` 与 `point_batch`，由 `grant_txn_id` 关联来源；`point_batch_txn` 仅记录扣减/退款映射。**现状偏差**：批次不足时 `consumeBatches` 不报错、只扣可用批次，余额仍减；过期清算提供手动接口 `POST /api/v1/admin/points/expire`（无常驻定时任务），对账已有 repo 集成用例，见 §11。
 - **并发安全**：涉及余额/库存的读改写必须 `SELECT ... FOR UPDATE`（现有实现见 `apps/api/internal/repo/orders.go` 的 `CreateOrder`）。账户不存在时先 `INSERT IGNORE INTO point_account` 建空账户，**且必须在事务外**：事务内先拿共享锁再升级排他锁会与并发的同名 INSERT 互等（MySQL 1213），见该文件注释。
 - **幂等**：`POST /orders` 支持 `Idempotency-Key`，命中即返回原订单，不重复扣分。
 
@@ -297,7 +297,7 @@ pages/*.tsx  ──►  services/*.ts  ──►  lib/http.ts  ──►  fetch
 | 领域单测 | `apps/api/internal/domain/*_test.go` | 12 个函数 / 45 例 | 表驱动，覆盖边界与非法输入 |
 | HTTP 单测 | `apps/api/internal/httpserver/*_test.go` | 43 例 | 注入假存储，**不连 MySQL**；断言响应壳与错误码 |
 | 参数校验单测 | `apps/api/internal/app/admin_test.go` | 2 个函数 / 34 例 | `sys_config` 数值规则与 `travel_mode` 更新校验，纯函数表驱动 |
-| repo 集成测试 | `apps/api/internal/repo/orders_test.go`、`audit_test.go` | 10 例（订单 7 + 调账与审计 3） | 真连 MySQL；`REPO_TEST_DSN` 未设置时整包 SKIP；DSN 库名必须以 `_test` 结尾 |
+| repo 集成测试 | `apps/api/internal/repo/orders_test.go`、`audit_test.go`、`batches_test.go` | 11 例（订单 7 + 调账与审计 3 + 批次发放 1） | 真连 MySQL；`REPO_TEST_DSN` 未设置时数据库用例 SKIP；DSN 数据库名必须以 `_test` 结尾 |
 | 启动日志单测 | `apps/api/cmd/server/dbendpoint_test.go` | 2 个函数 / 15 例 | 表驱动：默认 DSN、局域网 / ZeroTier、localhost、IPv6 回环、unix socket、省略地址、非法 DSN；另测 `WriteTimeout` 跟随请求超时 |
 | 前端单测 | `apps/web/src/lib/*.test.ts` | 2 文件 19 例 | `http.test.ts` 用 `vi.stubGlobal('fetch')` 测解包与错误映射；`validators.test.ts` 测校验规则 |
 | 前端页面测试 | `apps/web/src/pages/*.test.tsx` | 5 文件 16 例 | jsdom + Testing Library + MSW 3 拦截 `fetch`；`src/test/render.tsx` 提供 QueryClient/路由壳，`src/test/http.ts` 造 `{code,message,data}` 壳（测试里也重放后端协议，不是随手 mock） |
@@ -389,12 +389,12 @@ E2E **不在门禁里**：它需要真实后端 + 共享库，CI 没有这些环
 
 | 项 | 现状 | 若要接手 |
 | --- | --- | --- |
-| 积分批次 | 发放端未写 `point_batch`（`GrantPointsWithBatch` 未接入 `/trips`）；扣减/退款已写 `point_batch_txn`；`consumeBatches` 批次不足时不报错、只扣可用批次，余额仍减，余额与批次剩余可能不等。过期清算已有手动接口（`POST /admin/points/expire`），对账有 repo 集成用例，但无常驻定时任务 | `/trips` 接入 `GrantPointsWithBatch`；批次不足直接失败或补齐；补常驻过期任务 |
-| Outbox Worker | 事件只写入 `event_outbox`，**没有消费者**；`internal/eventbus` 只有契约。订单侧已用 `TopicOrderPaid` / `TopicOrderCancelled` 常量；`TopicRedeemOrderPaid` 仍存在但无人使用 | 清理或标注 `TopicRedeemOrderPaid`，再实现轮询 + 退避 + 死信，读 `dispatched_at IS NULL AND available_at <= NOW()` |
+| 积分批次 | 行程发放已在同一事务创建 `point_batch`，扣减/退款写 `point_batch_txn`；`consumeBatches` 批次不足时不报错、只扣可用批次，余额仍减，余额与批次剩余可能不等。过期清算已有手动接口（`POST /admin/points/expire`），无常驻定时任务 | 批次不足直接失败或补齐；补常驻过期任务 |
+| Outbox Worker | Worker 已实现轮询、重试与死信；默认处理器只记录投递，业务消费者尚未接入。订单主题已使用 `eventbus` 常量 | 由统计、通知等业务模块接入处理器，并补实际消费效果验收 |
 | 密码哈希 | 加盐 SHA-256（`sha256$salt$digest`），注释已标"临时方案" | 换 bcrypt / argon2，并给出存量数据迁移方案 |
 | Token | 自签 HMAC-SHA256 紧凑串，**不是标准 JWT**（无 header 段） | 需要标准 JWT 时统一改签发与校验两端 |
 | sqlc | `apps/api/sqlc.yaml` 已配置但未启用，repo 全是手写 SQL | 启用即要重写 repo 层，别半途混用 |
-| 集成 / E2E | repo 集成测试已建（`apps/api/internal/repo/orders_test.go`、`audit_test.go`，`REPO_TEST_DSN` 门控，默认 SKIP，共 10 例）；E2E 主链路与运营后台已建（真后端 + 共享库），二者均未进 CI | CI 需要 MySQL 服务容器（testcontainers 或 service）后再接入 |
+| 集成 / E2E | repo 集成测试已建（`orders_test.go`、`audit_test.go`、`batches_test.go`，`REPO_TEST_DSN` 门控，数据库用例默认 SKIP，共 11 例）；E2E 主链路与运营后台已建（真后端 + 共享库），二者均未进 CI | CI 需要 MySQL 服务容器（testcontainers 或 service）后再接入 |
 | 部署 | compose 只有 `mysql` + `api`；`web` 与 nginx 配置就绪但未编入；本机未实跑 docker | 补 web 服务与反向代理，留下实跑证据 |
 | 前端包体 | `vite build` 单包约 540 kB（gzip 163 kB）+ CSS 354 kB（gzip 54 kB）；移除 ECharts 后已从 1.95 MB 降下来，仍略超 500 kB 警告。 | 用路由级 `import()` 分包；预算从 gzip 163 kB 起算 |
 
