@@ -175,7 +175,8 @@ func (h *TripHandler) Create(w http.ResponseWriter, r *http.Request) {
 			INSERT INTO point_txn
 				(account_id, txn_type, amount, balance_after, biz_ref_type, biz_ref_id)
 			VALUES (?, 'TRAVEL', ?, ?, 'trip_record', ?)`,
-			accountID, grant.GrantedPoints, balance, tripID); err != nil {
+			accountID, grant.GrantedPoints, balance, tripID)
+		if err != nil {
 			_ = tx.Rollback()
 			FailInternal(w, h.logger, err)
 			return
