@@ -186,6 +186,20 @@ func TestPointsSummary(t *testing.T) {
 	}
 }
 
+func TestPointsSummaryRejectsHeaderFallbackInProd(t *testing.T) {
+	h := NewRouter(Options{
+		Logger:     discardLogger(),
+		Env:        "prod",
+		AuthSecret: "test-secret",
+		Points:     fakePoints{},
+	})
+	rec, env := doJSON(t, h, http.MethodGet, "/api/v1/points/summary", "",
+		map[string]string{"X-User-Id": "7"})
+	if rec.Code != http.StatusUnauthorized || env.Code != CodeUnauthorized {
+		t.Fatalf("生产环境应拒绝 X-User-Id，实际 %d/%s", rec.Code, env.Code)
+	}
+}
+
 // ---------- 订单 ----------
 
 func TestCreateOrderInsufficientPoints(t *testing.T) {

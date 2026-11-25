@@ -26,13 +26,14 @@ type ctxKey int
 const userIDKey ctxKey = iota
 
 type AuthHandler struct {
-	db     *sql.DB
-	secret []byte
-	logger *slog.Logger
+	db                  *sql.DB
+	secret              []byte
+	allowHeaderFallback bool
+	logger              *slog.Logger
 }
 
-func NewAuthHandler(db *sql.DB, secret string, logger *slog.Logger) *AuthHandler {
-	return &AuthHandler{db: db, secret: []byte(secret), logger: logger}
+func NewAuthHandler(db *sql.DB, secret string, allowHeaderFallback bool, logger *slog.Logger) *AuthHandler {
+	return &AuthHandler{db: db, secret: []byte(secret), allowHeaderFallback: allowHeaderFallback, logger: logger}
 }
 
 type authUser struct {
@@ -172,13 +173,13 @@ func (h *AuthHandler) Require(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
 		id, err := h.verify(raw)
-		if err != nil {
+		if err != nil && h.allowHeaderFallback {
 			// Keep the P3 test/development contract while JWT is the normal path.
 			id, err = strconv.ParseInt(r.Header.Get("X-User-Id"), 10, 64)
-			if err != nil || id <= 0 {
-				Fail(w, http.StatusUnauthorized, CodeUnauthorized, "需要登录")
-				return
-			}
+		}
+		if err != nil || id <= 0 {
+			Fail(w, http.StatusUnauthorized, CodeUnauthorized, "需要登录")
+			return
 		}
 		ctx := context.WithValue(r.Context(), authContextKey{}, id)
 		ctx = context.WithValue(ctx, userIDKey, id)

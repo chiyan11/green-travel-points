@@ -29,14 +29,19 @@ const DefaultDatabaseDSN = "greentravel:greentravel@tcp(127.0.0.1:3306)/green_tr
 
 // Load 读取环境变量并做基本校验。
 func Load() (Config, error) {
+	env := getEnv("APP_ENV", "dev")
+	authSecret := getEnv("AUTH_SECRET", "")
+	if env != "prod" && authSecret == "" {
+		authSecret = "dev-only-change-me"
+	}
 	cfg := Config{
-		Env:                 getEnv("APP_ENV", "dev"),
+		Env:                 env,
 		AppName:             getEnv("APP_NAME", "green-travel-points-api"),
 		HTTPAddr:            getEnv("HTTP_ADDR", ":8080"),
 		HTTPRequestTimeout:  getEnvDuration("HTTP_REQUEST_TIMEOUT", 15*time.Second),
 		HTTPShutdownTimeout: getEnvDuration("HTTP_SHUTDOWN_TIMEOUT", 10*time.Second),
 		DatabaseDSN:         getEnv("DB_DSN", DefaultDatabaseDSN),
-		AuthSecret:          getEnv("AUTH_SECRET", "dev-only-change-me"),
+		AuthSecret:          authSecret,
 		DBMaxOpenConns:      getEnvInt("DB_MAX_OPEN_CONNS", 20),
 		DBMaxIdleConns:      getEnvInt("DB_MAX_IDLE_CONNS", 10),
 		DBConnMaxLifetime:   getEnvDuration("DB_CONN_MAX_LIFETIME", 30*time.Minute),
@@ -46,6 +51,9 @@ func Load() (Config, error) {
 	}
 	if cfg.DatabaseDSN == "" {
 		return Config{}, fmt.Errorf("config: DB_DSN 不能为空")
+	}
+	if cfg.Env == "prod" && cfg.AuthSecret == "" {
+		return Config{}, fmt.Errorf("config: AUTH_SECRET 不能为空（APP_ENV=prod）")
 	}
 	return cfg, nil
 }

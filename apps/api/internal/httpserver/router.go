@@ -63,7 +63,7 @@ func NewRouter(opt Options) http.Handler {
 	r.Get("/healthz", health.Liveness)
 	r.Get("/readyz", health.Readiness)
 
-	auth := NewAuthHandler(opt.DB, opt.AuthSecret, logger)
+	auth := NewAuthHandler(opt.DB, opt.AuthSecret, opt.Env != "prod", logger)
 	catalog := catalogHandler{store: opt.Catalog, logger: logger}
 	points := pointsHandler{store: opt.Points, logger: logger}
 	orders := orderHandler{store: opt.Orders, logger: logger}
