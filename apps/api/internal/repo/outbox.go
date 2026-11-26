@@ -94,24 +94,37 @@ func (s *Outbox) recordFailure(ctx context.Context, tx *sql.Tx, e eventbus.Event
 	return err
 }
 
+// maxRetryDelaySeconds 是重试退避的上限。
+const maxRetryDelaySeconds = 300
+
+// retryDelay 返回第 attempts 次失败后的退避秒数（1, 2, 4, ... 封顶 300）。
+// 先按指数上限判断再移位，避免 attempts 很大时 1 << (attempts-1) 溢出成负数。
 func retryDelay(attempts int) int {
 	if attempts <= 1 {
 		return 1
 	}
+	if attempts-1 >= 9 { // 1<<9 = 512 已超过上限，再往上必然封顶
+		return maxRetryDelaySeconds
+	}
 	delay := 1 << (attempts - 1)
-	if delay > 300 {
-		return 300
+	if delay > maxRetryDelaySeconds {
+		return maxRetryDelaySeconds
 	}
 	return delay
 }
 
+// maxTruncatedErrorRunes 是写入 last_error 的最大字符数（按 rune 截断，保证不切坏 UTF-8）。
+const maxTruncatedErrorRunes = 1024
+
+// truncateError 把错误信息截断到 1024 个字符：按字节切会把多字节字符切成乱码，
+// last_error 是 varchar(utf8mb4) 且会被运营后台展示，因此必须按 rune 边界截断。
 func truncateError(err error) string {
-	const maxLen = 1024
 	message := fmt.Sprint(err)
-	if len(message) <= maxLen {
+	runes := []rune(message)
+	if len(runes) <= maxTruncatedErrorRunes {
 		return message
 	}
-	return message[:maxLen]
+	return string(runes[:maxTruncatedErrorRunes])
 }
 
 var _ eventbus.Dispatcher = (*Outbox)(nil)
