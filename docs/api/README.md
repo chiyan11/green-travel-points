@@ -341,7 +341,7 @@ curl -X POST -H "X-User-Id: 1002" http://127.0.0.1:8080/api/v1/admin/points/expi
 | 入参 | `userId > 0`、`amount ≠ 0`（正增负减）、`reason` 非空且 ≤255 字；缺一项 → `400` |
 | 扣减下限 | `balance + amount < 0` → `409 INSUFFICIENT_POINTS`，整笔不落库 |
 | 流水 | `point_txn(txn_type='ADJUST', amount=±, biz_ref_type='audit_log', biz_ref_id=auditId)`，积分变动可反查来源（NFR-12） |
-| 批次 | 调增同时写 `point_batch`（有效期取 `points_expire_days`）；调减按 FIFO 消耗批次，批次不足的部分只扣余额、差额由对账接口暴露 → 正常数据下仍满足 `Σbalance == Σremaining(ACTIVE)` |
+| 批次 | 调增同时写 `point_batch`（有效期取 `points_expire_days`）；调减按 FIFO 消耗批次，批次不足则整笔操作失败回滚，不允许只扣余额 |
 | 审计 | `audit_log(action='ADJUST', operator_id=当前管理员, target_key=userId, amount, before_value, after_value, reason)`，与流水、余额同事务 |
 | 幂等 | 不支持幂等键：调账是运营人工动作，重复提交就是两笔——这正是要留审计的原因 |
 

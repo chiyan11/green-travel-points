@@ -6,6 +6,8 @@ import (
 	"errors"
 	"sort"
 	"time"
+
+	"greentravelpoints/internal/app"
 )
 
 // GrantPointsWithBatch 在调用方事务内为一次积分发放写入 point_batch。
@@ -57,6 +59,13 @@ func consumeBatches(ctx context.Context, tx *sql.Tx, accountID, need, txnID int6
 		return err
 	}
 	_ = rows.Close()
+	var available int64
+	for _, b := range batches {
+		available += b.remaining
+	}
+	if available < need {
+		return app.ErrInsufficientPoints
+	}
 
 	left := need
 	for _, b := range batches {
