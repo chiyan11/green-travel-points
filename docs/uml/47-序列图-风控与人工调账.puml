@@ -38,7 +38,7 @@ else 管理员
     alt amount > 0
       S -> DB : GrantPointsWithBatch(...)\n（写 point_batch，有效期 points_expire_days）
     else amount < 0
-      S -> DB : consumeBatches(FIFO)\n（批次不足部分只扣余额，差额由对账暴露）
+      S -> DB : consumeBatches(FIFO)\n（批次不足返回错误并回滚）
     end
     S -> DB : UPDATE point_account\n(balance, version+1)
     S -> DB : COMMIT

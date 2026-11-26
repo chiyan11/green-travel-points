@@ -24,7 +24,7 @@ package "apps/api　后端（Go 1.24+）" as api {
   package "internal/app\nDTO + Ports 接口 + 哨兵错误" as app
   package "internal/domain\n碳核算 / 积分 / 订单状态机（纯函数）" as domain
   package "internal/repo\n手写 SQL / 事务 / 行锁 / Outbox 写入" as repo
-  package "internal/eventbus\n事件契约（无 Worker）" as eventbus
+  package "internal/eventbus\n事件契约 + Worker" as eventbus
   package "internal/config\n环境变量 → Config" as config
 }
 
