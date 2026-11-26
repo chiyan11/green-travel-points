@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-sql-driver/mysql"
 	"greentravelpoints/internal/app"
 )
 
@@ -48,8 +49,12 @@ func newTestStore(t *testing.T) *Store {
 	if dsn == "" {
 		t.Skip("未设置 " + testDSNEnv + "，跳过 repo 集成测试（需要专用 MySQL 库，库名以 _test 结尾）")
 	}
-	if !strings.Contains(dsn, "_test") {
-		t.Fatalf("%s 必须指向以 _test 结尾的库，避免整表清空洗掉演示数据：%s", testDSNEnv, dsn)
+	parsedDSN, err := mysql.ParseDSN(dsn)
+	if err != nil {
+		t.Fatalf("解析 %s 失败: %v", testDSNEnv, err)
+	}
+	if !strings.HasSuffix(parsedDSN.DBName, "_test") {
+		t.Fatalf("%s 的数据库名必须以 _test 结尾，避免整表清空洗掉非测试数据", testDSNEnv)
 	}
 
 	db, err := sql.Open("mysql", dsn)
@@ -214,6 +219,32 @@ func TestCreateOrderInsufficientPoints(t *testing.T) {
 	}
 	if got := mustQueryInt(t, store.db, `SELECT stock FROM product_sku WHERE id = ?`, testSKUID); got != 10 {
 		t.Fatalf("库存 = %d，期望 10（不应扣减）", got)
+	}
+}
+
+// TestCreateOrderRejectsInsufficientBatches 防止账实异常时只扣余额不扣批次。
+func TestCreateOrderRejectsInsufficientBatches(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	mustExec(t, store.db, `UPDATE point_batch SET remaining = 100 WHERE id = ?`, testBatchOld)
+	mustExec(t, store.db, `DELETE FROM point_batch WHERE id = ?`, testBatchNew)
+
+	_, _, err := store.CreateOrder(ctx, newOrderInput())
+	if !errors.Is(err, app.ErrInsufficientPoints) {
+		t.Fatalf("期望 ErrInsufficientPoints，实际 %v", err)
+	}
+	if got := mustQueryInt(t, store.db, `SELECT COUNT(*) FROM redeem_order`); got != 0 {
+		t.Fatalf("订单数 = %d，期望 0", got)
+	}
+	if got := mustQueryInt(t, store.db, `SELECT balance FROM point_account WHERE id = ?`, testAccountID); got != 1000 {
+		t.Fatalf("余额 = %d，期望 1000（不应扣分）", got)
+	}
+	if got := mustQueryInt(t, store.db, `SELECT stock FROM product_sku WHERE id = ?`, testSKUID); got != 10 {
+		t.Fatalf("库存 = %d，期望 10（不应扣减）", got)
+	}
+	if got := mustQueryInt(t, store.db, `SELECT COUNT(*) FROM point_txn WHERE txn_type = 'REDEEM'`); got != 0 {
+		t.Fatalf("兑换流水数 = %d，期望 0", got)
 	}
 }
 
