@@ -238,7 +238,7 @@ domain ◄──────────────────────┘�
 - **流水只追加**：`point_txn` 不更新、不删除；余额变更必须同时写一条流水，`balance_after` 与该次变更后余额一致。
 - **审计只追加**：`audit_log` 不更新、不删除；调账与配置变更的审计写入与业务写在同一事务，调账流水以 `biz_ref_type='audit_log'`、`biz_ref_id=<审计 id>` 回指。
 - **一个业务事务一个事务**：行程上报 = `trip_record` + `carbon_record` + `point_txn` + `point_batch` + `point_account` 余额 + `event_outbox`，全在一个 `tx`，任一步失败整体回滚。
-- **扣分按批次 FIFO**：先扣最早的 `point_batch`（`remaining`、`expires_at`），下单与取消都走批次，不直接改余额了事。行程发放在同一事务写 `point_txn` 与 `point_batch`，由 `grant_txn_id` 关联来源；`point_batch_txn` 仅记录扣减/退款映射。**现状偏差**：批次不足时 `consumeBatches` 不报错、只扣可用批次，余额仍减；过期清算提供手动接口 `POST /api/v1/admin/points/expire`（无常驻定时任务），对账已有 repo 集成用例，见 §11。
+- **扣分按批次 FIFO**：先扣最早的 `point_batch`（`remaining`、`expires_at`），下单与取消都走批次，不直接改余额了事。行程发放在同一事务写 `point_txn` 与 `point_batch`，由 `grant_txn_id` 关联来源；`point_batch_txn` 仅记录扣减/退款映射。批次不足时直接失败并回滚，不能只扣余额；过期清算提供手动接口 `POST /api/v1/admin/points/expire`（无常驻定时任务），对账已有 repo 集成用例，见 §11。
 - **并发安全**：涉及余额/库存的读改写必须 `SELECT ... FOR UPDATE`（现有实现见 `apps/api/internal/repo/orders.go` 的 `CreateOrder`）。账户不存在时先 `INSERT IGNORE INTO point_account` 建空账户，**且必须在事务外**：事务内先拿共享锁再升级排他锁会与并发的同名 INSERT 互等（MySQL 1213），见该文件注释。
 - **幂等**：`POST /orders` 支持 `Idempotency-Key`，命中即返回原订单，不重复扣分。
 
@@ -389,7 +389,7 @@ E2E **不在门禁里**：它需要真实后端 + 共享库，CI 没有这些环
 
 | 项 | 现状 | 若要接手 |
 | --- | --- | --- |
-| 积分批次 | 行程发放已在同一事务创建 `point_batch`，扣减/退款写 `point_batch_txn`；`consumeBatches` 批次不足时不报错、只扣可用批次，余额仍减，余额与批次剩余可能不等。过期清算已有手动接口（`POST /admin/points/expire`），无常驻定时任务 | 批次不足直接失败或补齐；补常驻过期任务 |
+| 积分批次 | 行程发放已在同一事务创建 `point_batch`，扣减/退款写 `point_batch_txn`；扣减严格按 FIFO，批次不足直接失败回滚。过期清算已有手动接口（`POST /admin/points/expire`），无常驻定时任务 | 补常驻过期任务 |
 | Outbox Worker | Worker 已实现轮询、重试与死信；repo 集成用例覆盖失败后重投成功及达到上限进入死信；默认处理器只记录投递，业务消费者尚未接入 | 由统计、通知等业务模块接入处理器 |
 | 密码哈希 | 加盐 SHA-256（`sha256$salt$digest`），注释已标"临时方案" | 换 bcrypt / argon2，并给出存量数据迁移方案 |
 | Token | 自签 HMAC-SHA256 紧凑串，**不是标准 JWT**（无 header 段） | 需要标准 JWT 时统一改签发与校验两端 |
