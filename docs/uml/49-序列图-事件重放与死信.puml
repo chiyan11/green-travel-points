@@ -1,0 +1,49 @@
+@startuml 图2-42 序列图：事件重放与死信（UC-17 用例实现 · 部分目标态）
+' 依据：需求规格说明书用例清单；代码 apps/api/internal/httpserver 与 repo（2026-11-26）
+skinparam defaultFontName "Microsoft YaHei"
+skinparam dpi 150
+skinparam shadowing false
+autonumber
+
+participant "Outbox Worker\n(eventbus.Worker)" as W
+participant "Outbox\n(repo/outbox.go)" as O
+database "MySQL\n(event_outbox)" as DB
+actor "运营管理员" as A
+participant "AdminHandler\n(目标：死信管理)" as H
+
+W -> O : Dispatch(ctx, limit=50,\n maxAttempts=5, handler)
+O -> DB : BEGIN
+O -> DB : SELECT ... FROM event_outbox\nWHERE dispatched_at IS NULL\nAND dead_letter_at IS NULL\nAND available_at <= NOW(3)\nORDER BY id LIMIT ? FOR UPDATE SKIP LOCKED
+DB --> O : events
+loop 每条事件
+  O -> O : handler(event)
+  alt 处理成功
+    O -> DB : UPDATE event_outbox\nSET dispatched_at=NOW(3), last_error=NULL
+  else 处理失败
+    O -> O : attempts = event.Attempts + 1
+    alt attempts >= maxAttempts
+      O -> DB : UPDATE ... SET attempts=?, last_error=?,\n dead_letter_at=NOW(3)
+    else 未到上限
+      O -> DB : UPDATE ... SET attempts=?, last_error=?,\n available_at=NOW(3)+退避秒数
+    end
+  end
+end
+O -> DB : COMMIT
+O --> W : processed
+
+A -> H : 查看积压 / 死信
+H -> DB : SELECT ... WHERE dispatched_at IS NULL\nOR dead_letter_at IS NOT NULL（目标态）
+A -> H : 手动重放某条死信
+H -> DB : UPDATE event_outbox\nSET dead_letter_at=NULL, attempts=0, available_at=NOW(3)\nWHERE id=?（目标态）
+H -> DB : INSERT audit_log(EVENT_REPLAY)
+
+note over W, DB
+  Worker 已实现：启动即跑一轮，之后每 2s 轮询；批大小 50；
+  失败按 1/2/4/8... 秒指数退避（上限 300s），5 次后进死信。
+end note
+note over H, DB
+  **管理接口未实现**：当前没有死信查询/手动重放的 HTTP 接口与页面，
+  也没有重放审计；H 与最后两步属目标态。
+end note
+
+@enduml

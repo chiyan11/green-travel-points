@@ -1,0 +1,58 @@
+@startuml 图2-18 鲁棒图：注册与登录（UC-01 用例实现 · 参与者：市民、运营、商户）
+' 依据：需求规格说明书用例清单；代码 apps/api/internal/httpserver 与 repo（2026-11-26）
+' 鲁棒图非 UML 标准图：边界类只连 actor/控制类，实体类只连控制类。
+skinparam defaultFontName "Microsoft YaHei"
+skinparam dpi 150
+skinparam shadowing false
+left to right direction
+skinparam rectangle {
+  BackgroundColor #FFFFFF
+  BorderColor #2E5C8A
+}
+
+actor "市民 / 运营 / 商户" as U
+
+boundary "注册页\nRegisterPage" as B1
+boundary "登录页\nLoginPage" as B2
+boundary "个人中心\nProfilePage" as B3
+
+control "认证控制器\nAuthController" as C1
+control "口令哈希器\nPasswordHasher" as C2
+control "令牌签发器\nTokenIssuer" as C3
+
+entity "用户 User" as E1
+entity "积分账户 PointAccount" as E2
+entity "系统参数 SysConfig" as E3
+
+' ---------- 主成功场景与主要备选流 ----------
+U --> B1 : 填写手机号 / 口令
+B1 --> C1 : register(phone, password)
+C1 --> C2 : hash(password)
+C2 --> E1 : 查重并写入 password_hash
+C1 --> E2 : 初始化空积分账户
+C1 --> C3 : issue(userId, role)
+C3 --> B1 : 返回 token（2h）
+U --> B2 : 输入手机号 / 口令
+B2 --> C1 : login(phone, password)
+C1 --> E1 : SELECT id, role, status, password_hash
+C1 --> C2 : verify(password, hash)
+C1 --> C3 : issue(userId, role)
+C3 --> B2 : 返回 token / 401
+U --> B3 : 查看资料
+B3 --> C1 : me()
+C1 --> E1 : 读用户资料
+C1 --> E2 : 读余额
+
+note bottom of C1
+  **实现状态：已实现**（auth.go Register / Login / Require）。
+  当前口令为加盐 SHA-256、Token 为自签 HMAC 紧凑串，
+  属 DEV-02 临时方案；生产需换 bcrypt/argon2 与标准 JWT。
+  开发期仍允许 X-User-Id 回退，生产必须关闭。
+end note
+
+legend right
+  边界类：B1–B3　控制类：C1–C3　实体类：E1–E3
+  注册与登录共用 AuthController；SysConfig 预留给口令/令牌策略
+endlegend
+
+@enduml

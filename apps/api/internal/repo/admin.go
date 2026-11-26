@@ -390,7 +390,7 @@ func (s *Store) ReconcilePoints(ctx context.Context) (app.ReconcileResult, error
 //
 // 账本一致性（与批次恒等式对齐）：
 //   - 调增：同时写 point_batch（有效期取 sys_config.points_expire_days），保证 Σbalance == Σremaining(ACTIVE)；
-//   - 调减：按 FIFO 消耗批次；批次不足的部分只扣余额（历史数据常见），差额由对账接口暴露。
+//   - 调减：按 FIFO 消耗批次；批次不足返回 app.ErrInsufficientPoints 并回滚，差额由对账接口暴露。
 func (s *Store) AdjustPoints(ctx context.Context, operatorID int64, in app.AdjustPointsInput) (app.AdjustResult, error) {
 	reason := strings.TrimSpace(in.Reason)
 	if in.UserID <= 0 || in.Amount == 0 || reason == "" {

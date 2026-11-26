@@ -1,0 +1,51 @@
+@startuml 图2-39 序列图：商户入驻与结算（UC-13 用例实现 · 目标态）
+' 依据：需求规格说明书用例清单；代码 apps/api/internal/httpserver 与 repo（2026-11-26）
+skinparam defaultFontName "Microsoft YaHei"
+skinparam dpi 150
+skinparam shadowing false
+autonumber
+
+actor "商户" as M
+actor "运营管理员" as A
+participant "前端\n(MerchantApplyPage)" as FE
+participant "Router + 中间件" as API
+participant "MerchantHandler\n(目标)" as H
+database "MySQL\n(merchant / product / redeem_order / audit)" as DB
+
+M -> FE : 提交商户资料
+FE -> API : POST /api/v1/merchant/apply
+API -> H : Apply(userID, input)
+H -> DB : INSERT merchant(status='PENDING')
+H -> DB : INSERT audit_log(MERCHANT_APPLY)
+H --> API : 201 {merchantId, status}
+API --> FE : 响应壳
+FE --> M : 提示“待运营审核”
+
+A -> FE : 打开商户审核
+FE -> API : GET /api/v1/admin/merchants?status=PENDING
+API -> H : ListMerchants(query)
+H -> DB : SELECT ... FROM merchant
+H --> API : 待审核列表
+A -> FE : 通过 / 驳回
+FE -> API : POST /api/v1/admin/merchants/{id}/review\n{approved, reason}
+API -> H : Review()
+H -> DB : UPDATE merchant SET status=?
+H -> DB : INSERT audit_log(MERCHANT_REVIEW)
+H --> API : 200
+API --> FE : 响应壳
+
+A -> FE : 生成结算单
+FE -> API : GET /api/v1/admin/merchants/{id}/settlement?period=2026-11
+API -> H : Settlement(merchantID, period)
+H -> DB : SELECT SUM(points_spent)\nFROM redeem_order\nWHERE merchant_id=? AND status='COMPLETED'\nAND completed_at IN period
+H -> DB : SELECT ... FROM product WHERE merchant_id=?
+H --> API : 200 {amount, orders}
+API --> FE : 响应壳
+
+note over H, DB
+  **当前未实现**：只有 merchant 表与 product.merchant_id；
+  没有入驻/审核/结算 API、页面与结算单表。
+  落地前需先定商户状态机、结算周期与退款冲减口径。
+end note
+
+@enduml

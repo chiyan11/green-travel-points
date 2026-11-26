@@ -101,7 +101,7 @@ note right
   **批次不足必须失败**：循环结束 need > 0 时
   ROLLBACK 并返回 409 BATCH_INCONSISTENT，
   不允许“只扣可用批次、余额仍减”。
-  发放端必须写 point_batch（图2-15）；当前代码未改，属 DEV-03。
+  发放端已写 point_batch（图2-15）；不足失败已实现（PR #40）；剩余缺口是过期过滤，属 DEV-03。
 end note
 
 :INSERT event_outbox(topic='OrderPaid');

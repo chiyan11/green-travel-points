@@ -1,0 +1,53 @@
+@startuml 图2-21 鲁棒图：碳减排核算（UC-04 用例实现 · 参与者：市民、系统）
+' 依据：需求规格说明书用例清单；代码 apps/api/internal/httpserver 与 repo（2026-11-26）
+' 鲁棒图非 UML 标准图：边界类只连 actor/控制类，实体类只连控制类。
+skinparam defaultFontName "Microsoft YaHei"
+skinparam dpi 150
+skinparam shadowing false
+left to right direction
+skinparam rectangle {
+  BackgroundColor #FFFFFF
+  BorderColor #2E5C8A
+}
+
+actor "市民 / 系统" as U
+
+boundary "碳核算详情页\nCarbonDetailPage" as B1
+boundary "碳趋势页\nCarbonTrendPage" as B2
+boundary "行程结果页\nTripResultPage" as B3
+
+control "碳核算控制器\nCarbonController" as C1
+control "碳排放计算器\nCarbonCalculator" as C2
+
+entity "出行方式 TravelMode" as E1
+entity "行程记录 TripRecord" as E2
+entity "碳记录 CarbonRecord" as E3
+entity "系统参数 SysConfig" as E4
+
+' ---------- 主成功场景与主要备选流 ----------
+U --> B1 : 查看某次行程碳核算
+B1 --> C1 : detail(tripId)
+C1 --> E3 : 读取 carbon_saved_g 与规则快照
+C1 --> E1 : 读取 ef_base / ef_actual
+U --> B2 : 查看近 7 日趋势
+B2 --> C1 : trend(days=7)
+C1 --> E3 : 按日聚合 carbon_saved_g
+U --> B3 : 上报成功后看结果
+B3 --> C2 : evaluate(distance, factors)
+C2 --> E1 : 读取排放因子
+C2 --> E3 : 写入碳记录
+C2 --> E4 : 读取基准/距离/积分参数
+
+note bottom of C1
+  **实现状态：已实现**（domain/carbon.go）。
+  公式：carbon_saved = max(0, d × (ef_base − ef_actual))；
+  基准 192 g/km，步行/骑行/共享单车 0，地铁 41，公交 68；
+  规则快照随碳记录落库，后续改参数不追溯改写历史。
+end note
+
+legend right
+  边界类：B1–B3　控制类：C1–C2　实体类：E1–E4
+  领域层纯函数，无 I/O；handler 只编排与持久化
+endlegend
+
+@enduml

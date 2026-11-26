@@ -81,6 +81,8 @@ npm run gen:api     # 读 ../../docs/api/openapi.yaml，生成 src/types/api.ts�
 
 批次一致性（BR-11）：
 - 扣减严格按 `expires_at, id` 升序（真 FIFO），每笔消耗写入 `point_batch_txn`（`amount` 为负）；
+- 批次不足时返回 `409 INSUFFICIENT_POINTS`，订单事务整体回滚，不允许只扣余额；
+- 已知缺口：`consumeBatches` 仍未加 `expires_at > NOW()` 过滤，过期批次可能被优先扣减，见 §6.2 与 DEV-03；
 - 取消订单时按 `point_batch_txn` 原路回填到**原批次**（`expires_at` 不变，`amount` 为正）；
   找不到消费明细（历史数据）才按 `points_expire_days` 新建批次；
 - 恒等式：`Σ(point_account.balance) − Σ(point_batch.remaining WHERE status='ACTIVE') = 0`；
@@ -322,8 +324,7 @@ curl -X POST -H "X-User-Id: 1002" http://127.0.0.1:8080/api/v1/admin/points/expi
 #    GET /api/v1/points/transactions?type=EXPIRE → 能看到「积分过期」流水
 ```
 
-> 已知前提：行程发分侧尚未写 `point_batch`（P2 待接 `GrantPointsWithBatch`），所以本地库里
-> 「行程发的分」没有批次，过期清算只会动到批次里真实存在的量；批次对账差值不是本接口引入的。
+> 已知前提：`/trips` 发分已在同一事务写 `point_batch`；批次不足已改为整笔失败回滚（PR #40），但 `consumeBatches` 仍未过滤 `expires_at`，过期批次可能被优先扣减，本地库若存在过期批次，余额与批次剩余可能不等。过期清算只动批次里真实存在的量，对账差值不是本接口引入的；过期过滤属 DEV-03。
 
 ### 6.3 人工调账与审计（UC-15 / UC-19，BR-14 / NFR-12）
 
@@ -384,8 +385,10 @@ go build ./...
 
 ### 7.1 repo 集成测试（真连 MySQL）
 
-`internal/repo/orders_test.go` 覆盖兑换成功 / 积分不足 / 库存不足 / 限购 / 取消退款回填 /
-20 并发防超卖 / 对账。**未设置 `REPO_TEST_DSN` 时全部跳过**，所以 CI 与没装库的机器不受影响。
+`internal/repo/orders_test.go` 覆盖兑换成功 / 积分不足 / 批次不足拒绝 / 库存不足 / 限购 / 取消退款回填 /
+20 并发防超卖 / 对账；`audit_test.go` 覆盖人工调账与审计；`batches_test.go` 覆盖行程发批次后的账本平衡；
+`outbox_integration_test.go` 覆盖失败重投与死信。共 13 例，**未设置 `REPO_TEST_DSN` 时数据库用例全部跳过**，
+所以 CI 与没装库的机器不受影响。
 
 用例会**整表清空**，因此 DSN 指向的库名必须以 `_test` 结尾，防止误洗演示库。
 

@@ -1,0 +1,58 @@
+@startuml 图2-29 鲁棒图：参数配置（UC-14 用例实现 · 参与者：运营管理员）
+' 依据：需求规格说明书用例清单；代码 apps/api/internal/httpserver 与 repo（2026-11-26）
+' 鲁棒图非 UML 标准图：边界类只连 actor/控制类，实体类只连控制类。
+skinparam defaultFontName "Microsoft YaHei"
+skinparam dpi 150
+skinparam shadowing false
+left to right direction
+skinparam rectangle {
+  BackgroundColor #FFFFFF
+  BorderColor #2E5C8A
+}
+
+actor "运营管理员" as U
+
+boundary "参数配置页\nAdminConfigPage" as B1
+boundary "出行方式页\nTravelModePage" as B2
+boundary "配置历史页\nConfigHistoryPage" as B3
+
+control "配置控制器\nConfigController" as C1
+control "出行方式控制器\nTravelModeController" as C2
+control "配置校验器\nConfigValidator" as C3
+
+entity "系统参数 SysConfig" as E1
+entity "出行方式 TravelMode" as E2
+entity "审计日志 AuditLog" as E3
+entity "用户 User" as E4
+
+' ---------- 主成功场景与主要备选流 ----------
+U --> B1 : 打开参数页
+B1 --> C1 : listConfig()
+C1 --> E1 : SELECT 全部参数
+U --> B1 : 批量修改参数
+B1 --> C3 : validate(key, valueType, value)
+C3 --> E1 : 读 value_type 与旧值
+C3 --> C1 : 校验通过
+C1 --> E1 : UPDATE config_value
+C1 --> E3 : INSERT CONFIG_UPDATE 审计
+U --> B2 : 修改出行方式
+B2 --> C2 : updateTravelMode(code, patch)
+C2 --> C3 : validate(efActual < efBase)
+C2 --> E2 : UPDATE name / factors / enabled
+C2 --> E3 : INSERT TRAVEL_MODE_UPDATE 审计
+U --> B3 : 查看变更历史
+B3 --> C1 : listAuditLogs(action=CONFIG_UPDATE)
+
+note bottom of C1
+  **实现状态：后端已实现，前端部分实现**。
+  GET/PUT /admin/config 与 PUT /admin/travel-modes/{code} 已上线；
+  后台前端目前只有商品/订单三屏，参数页尚未挂载；
+  batch 更新整批回滚，距离区间 min < max 在事务内复核。
+end note
+
+legend right
+  边界类：B1–B3　控制类：C1–C3　实体类：E1–E4
+  审计与配置更新同一事务；值未变化不写审计
+endlegend
+
+@enduml

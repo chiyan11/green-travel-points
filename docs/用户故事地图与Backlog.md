@@ -69,7 +69,7 @@
 | US-09 | R1 | 作为市民，我要在行程通过后收到积分 | 同一事务写 `point_txn(TRAVEL)` + `point_account`；余额增加 | P0 | 3 | S3 | 已实现 |
 | US-10 | R1 | 作为市民，单日积分不要超过上限 | 日上限 500；超出部分削减，响应 `cappedByDaily=true` | P0 | 2 | S3 | 已实现 |
 | US-11 | R2/R4 | 作为运营，我要余额与流水随时对得上 | 任意账户 `balance == SUM(point_txn.amount)`；对账接口无差异 | P0 | 3 | S5 | 部分（有接口，无 DB 集成测试） |
-| US-12 | R6 | 作为系统，我要按批次 FIFO 扣减并处理过期 | 发放写 `point_batch`；扣减按 `expires_at,id`；过期置 `EXPIRED` | P0 | 5 | S5 | 部分（扣减/退款已写批次流水；发放与过期未完成） |
+| US-12 | R6 | 作为系统，我要按批次 FIFO 扣减并处理过期 | 发放写 `point_batch`；扣减按 `expires_at,id`；过期置 `EXPIRED` | P0 | 5 | S5 | 部分（发放已写批次；批次不足已失败回滚（PR #40）；过期批次过滤与常驻过期未完成） |
 | US-13 | R1 | 作为市民，我要看余额与累计减碳 | `GET /points/summary` 返回 balance/totalSavedG | P0 | 2 | S3 | 已实现 |
 | US-14 | R1 | 作为市民，我要按类型/时间筛选流水分页 | `GET /points/transactions?page&pageSize&type` 返回分页 | P0 | 2 | S4 | 已实现 |
 | US-15 | R1 | 作为市民，我要浏览商品列表 | `GET /products` 返回上架商品；空库返回空列表 | P0 | 2 | S4 | 已实现 |
@@ -95,7 +95,7 @@
 | US-35 | R2/R4 | 作为运营，我要对账并导出差异 | `GET /admin/points/reconcile` 返回差异；无差异时为空 | P0 | 3 | S5 | 部分（HTTP 假存储用例 + repo 集成用例 `TestReconcileAfterOrderAndCancel`；导出与页面未做） |
 | US-36 | R2/R4 | 作为审计，我要查关键操作 | 配置变更/调账/状态流转写审计；按人/对象/时间检索 | P1 | 5 | S6 | 部分（audit_log + 调账/参数/出行方式审计 + 查询接口；页面未做） |
 | US-37 | R4 | 作为风控，我要重放死信 | 查看失败事件、手动重放、标记死信 | P2 | 5 | S6 | 未开始（Worker 未做） |
-| US-38 | P1–P5 | 作为团队，我要有可重复的测试 | domain/HTTP/前端单测通过；集成/E2E 覆盖主链路；覆盖率门槛 | P0 | 8 | S6 | 部分（domain/HTTP/app 单测 + repo 集成 10 例 + E2E 主链路；覆盖率门槛未做，E2E 未进 CI） |
+| US-38 | P1–P5 | 作为团队，我要有可重复的测试 | domain/HTTP/前端单测通过；集成/E2E 覆盖主链路；覆盖率门槛 | P0 | 8 | S6 | 部分（domain/HTTP/app 单测 + repo 集成 13 例 + E2E 主链路；覆盖率门槛未做，E2E 未进 CI） |
 | US-39 | P5 | 作为团队，我要一条命令部署 | `docker compose up -d` 拉起 mysql+api+web+nginx；有访问 URL | P1 | 5 | S6 | 未满足（compose 仅 mysql+api） |
 | US-40 | P1 | 作为团队，我要可提交的报告 | 五章报告 + 表5-1 + AI 记录 + UML 成图 + 演示脚本 | P0 | 5 | S6 | 部分（本文件所在批次补齐） |
 

@@ -1,0 +1,56 @@
+@startuml 图2-27 鲁棒图：商品与 SKU 管理（UC-11 用例实现 · 参与者：运营管理员）
+' 依据：需求规格说明书用例清单；代码 apps/api/internal/httpserver 与 repo（2026-11-26）
+' 鲁棒图非 UML 标准图：边界类只连 actor/控制类，实体类只连控制类。
+skinparam defaultFontName "Microsoft YaHei"
+skinparam dpi 150
+skinparam shadowing false
+left to right direction
+skinparam rectangle {
+  BackgroundColor #FFFFFF
+  BorderColor #2E5C8A
+}
+
+actor "运营管理员" as U
+
+boundary "后台商品列表页\nAdminProductListPage" as B1
+boundary "商品编辑页\nAdminProductFormPage" as B2
+boundary "SKU 库存页\nAdminSkuPage" as B3
+
+control "商品管理控制器\nAdminProductController" as C1
+control "库存控制器\nStockController" as C2
+
+entity "商品 Product" as E1
+entity "商品规格 ProductSku" as E2
+entity "商户 Merchant" as E3
+entity "审计日志 AuditLog" as E4
+
+' ---------- 主成功场景与主要备选流 ----------
+U --> B1 : 打开后台商品列表
+B1 --> C1 : listAll(status, keyword, page)
+C1 --> E1 : 查全部状态商品
+C1 --> E2 : 批量补 SKU 明细
+C1 --> E3 : 校验商户
+U --> B2 : 新建 / 编辑商品
+B2 --> C1 : create / update
+C1 --> E3 : 校验 merchant_id 存在
+C1 --> E1 : INSERT / UPDATE product
+C1 --> E2 : INSERT / 更新 SKU
+C1 --> E4 : INSERT 商品变更审计
+U --> B3 : 修改库存
+B3 --> C2 : setStock(skuId, stock)
+C2 --> E2 : UPDATE stock（stock ≥ 0）
+C2 --> E4 : INSERT 库存变更审计
+
+note bottom of C1
+  **实现状态：后端已实现，前端已实现**。
+  路由：GET/POST /admin/products、PATCH /admin/products/{id}、
+  PUT /admin/skus/{id}/stock；后台三屏在 pages/admin/。
+  注：SetSKUStock 当前未写 audit_log，审计列为目标态。
+end note
+
+legend right
+  边界类：B1–B3　控制类：C1–C2　实体类：E1–E4
+  商品与 SKU 同事务创建，任一步失败整体回滚
+endlegend
+
+@enduml

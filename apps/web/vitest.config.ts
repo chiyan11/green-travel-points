@@ -1,5 +1,5 @@
 import { defineConfig, mergeConfig } from 'vitest/config'
-import viteConfig from './vite.config'
+import viteConfig from './vite.config.ts'
 
 /**
  * 测试专用配置：复用 `vite.config.ts` 的插件与 `@` 别名，只覆盖测试期需要的东西。
@@ -13,6 +13,9 @@ export default mergeConfig(
   defineConfig({
     test: {
       environment: 'jsdom',
+      // Windows 受限沙箱禁止 fork 子进程；worker_threads 不需要 spawn，
+      // 测试隔离仍由 Vitest 按文件划分。
+      pool: 'threads',
       setupFiles: ['./src/test/setup.ts'],
       // lib 层是 .test.ts、页面层是 .test.tsx，两种都要收。
       include: ['src/**/*.test.{ts,tsx}'],

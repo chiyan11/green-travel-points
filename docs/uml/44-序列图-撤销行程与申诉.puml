@@ -1,0 +1,66 @@
+@startuml 图2-37 序列图：撤销行程与申诉（UC-10 用例实现 · 目标态）
+' 依据：需求规格说明书用例清单；代码 apps/api/internal/httpserver 与 repo（2026-11-26）
+skinparam defaultFontName "Microsoft YaHei"
+skinparam dpi 150
+skinparam shadowing false
+autonumber
+
+actor "市民" as U
+actor "运营管理员" as A
+participant "前端\n(TripDetailPage)" as FE
+participant "Router + 中间件\n(auth / timeout)" as API
+participant "TripHandler\n(目标：撤销 / 申诉)" as H
+database "MySQL\n(trip / carbon / point / appeal / audit / outbox)" as DB
+
+U -> FE : 打开行程详情，点击“撤销”
+FE -> API : POST /api/v1/trips/{id}/revoke\n{reason}
+API -> H : RevokeTrip(userID, tripID, reason)
+H -> DB : BEGIN
+H -> DB : SELECT user_id, status FROM trip_record\nWHERE id=? FOR UPDATE
+DB --> H : trip
+alt 非本人
+  H -> DB : ROLLBACK
+  H --> API : 403 FORBIDDEN
+  API --> FE : {code: FORBIDDEN}
+else 已撤销 / 不可撤销
+  H -> DB : ROLLBACK
+  H --> API : 409 CONFLICT
+  API --> FE : {code: CONFLICT}
+else 可撤销
+  H -> DB : INSERT point_txn(REVOKE, -granted,\n biz_ref_type='trip', biz_ref_id=tripID)
+  H -> DB : UPDATE point_account\nSET balance=balance-granted, version=version+1
+  H -> DB : UPDATE point_batch / point_batch_txn\n（回填或核销对应批次）
+  H -> DB : UPDATE carbon_record SET voided=1\nUPDATE trip_record SET status='REVOKED'
+  H -> DB : INSERT audit_log(TRIP_REVOKE)
+  H -> DB : INSERT event_outbox(TripRevoked)
+  H -> DB : COMMIT
+  H --> API : 200 {tripId, reversedPoints}
+  API --> FE : 响应壳
+  FE --> U : 展示撤销结果
+end
+
+U -> FE : 对结果有异议，提交申诉
+FE -> API : POST /api/v1/appeals\n{tripId, reason}
+API -> H : SubmitAppeal(userID, input)
+H -> DB : INSERT appeal(PENDING)
+H -> DB : INSERT audit_log(APPEAL_SUBMIT)
+H --> API : 201 {appealId}
+API --> FE : 响应壳
+
+A -> API : GET /api/v1/admin/appeals?status=PENDING
+API -> H : ListAppeals()
+H --> API : 待处理申诉
+A -> API : POST /api/v1/admin/appeals/{id}/review
+API -> H : ReviewAppeal()
+H -> DB : UPDATE appeal + INSERT audit_log
+
+note over H, DB
+  **当前未实现**：没有撤销/申诉路由、页面、appeal 表与 trip.status 字段；
+  本图是目标设计，落地前需先补迁移、端口接口与路由。
+end note
+note over H
+  撤销必须整笔回滚：流水、余额、批次、碳记录、行程状态同一事务；
+  禁止只改余额不改批次（会破坏批次守恒）。
+end note
+
+@enduml

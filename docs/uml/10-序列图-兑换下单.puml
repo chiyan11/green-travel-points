@@ -1,6 +1,6 @@
 @startuml 图2-10 序列图：兑换商品（UC-08 用例实现）
 ' 依据：需求规格说明书 §2.3.2 UC-08；实际代码 apps/api/internal/repo/orders.go
-' 事实：没有 usecase；OrderHandler 调 repo.Store；sqlc 未启用；Worker 未实现
+' 事实：没有 usecase；OrderHandler 调 repo.Store；sqlc 未启用；Worker 已实现（业务消费未接入）
 
 skinparam defaultFontName "Microsoft YaHei"
 skinparam dpi 150
@@ -61,11 +61,11 @@ else 首次请求
     note right of DB
       **批次 FIFO 已实现**（BR-11）。
       扣减会写 point_batch_txn（负 amount）。
-      但发放端没有写 point_batch，
-      正常积分路径通常查不到批次；
-      consumeBatches 在批次不足时**不报错**，
-      只扣可用批次，余额仍按 price 减少，
-      因此余额与批次剩余可能不等（见 §4 DEV-03）。
+      发放端已写 point_batch；
+      批次不足时返回 INSUFFICIENT_POINTS
+      并整体回滚（PR #40）；
+      剩余缺口是未过滤 expires_at，
+      过期批次仍可能被扣（见 §4 DEV-03）。
     end note
     R -> DB : INSERT event_outbox\n(topic='OrderPaid', aggregate_type='order',\n aggregate_id=orderNo)
     R -> DB : COMMIT
