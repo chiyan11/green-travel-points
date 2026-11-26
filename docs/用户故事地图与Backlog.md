@@ -69,7 +69,7 @@
 | US-09 | R1 | 作为市民，我要在行程通过后收到积分 | 同一事务写 `point_txn(TRAVEL)` + `point_account`；余额增加 | P0 | 3 | S3 | 已实现 |
 | US-10 | R1 | 作为市民，单日积分不要超过上限 | 日上限 500；超出部分削减，响应 `cappedByDaily=true` | P0 | 2 | S3 | 已实现 |
 | US-11 | R2/R4 | 作为运营，我要余额与流水随时对得上 | 任意账户 `balance == SUM(point_txn.amount)`；对账接口无差异 | P0 | 3 | S5 | 部分（有接口，无 DB 集成测试） |
-| US-12 | R6 | 作为系统，我要按批次 FIFO 扣减并处理过期 | 发放写 `point_batch`；扣减按 `expires_at,id`；过期置 `EXPIRED` | P0 | 5 | S5 | 部分（扣减/退款已写批次流水；发放与过期未完成） |
+| US-12 | R6 | 作为系统，我要按批次 FIFO 扣减并处理过期 | 发放写 `point_batch`；扣减按 `expires_at,id`；过期置 `EXPIRED` | P0 | 5 | S5 | 部分（发放已写批次；过期批次过滤、不足失败与常驻过期未完成） |
 | US-13 | R1 | 作为市民，我要看余额与累计减碳 | `GET /points/summary` 返回 balance/totalSavedG | P0 | 2 | S3 | 已实现 |
 | US-14 | R1 | 作为市民，我要按类型/时间筛选流水分页 | `GET /points/transactions?page&pageSize&type` 返回分页 | P0 | 2 | S4 | 已实现 |
 | US-15 | R1 | 作为市民，我要浏览商品列表 | `GET /products` 返回上架商品；空库返回空列表 | P0 | 2 | S4 | 已实现 |

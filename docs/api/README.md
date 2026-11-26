@@ -322,8 +322,7 @@ curl -X POST -H "X-User-Id: 1002" http://127.0.0.1:8080/api/v1/admin/points/expi
 #    GET /api/v1/points/transactions?type=EXPIRE → 能看到「积分过期」流水
 ```
 
-> 已知前提：行程发分侧尚未写 `point_batch`（P2 待接 `GrantPointsWithBatch`），所以本地库里
-> 「行程发的分」没有批次，过期清算只会动到批次里真实存在的量；批次对账差值不是本接口引入的。
+> 已知前提：`/trips` 发分已在同一事务写 `point_batch`；但 `consumeBatches` 尚未过滤过期批次、批次不足时静默成功，本地库若存在历史或过期批次，余额与批次剩余可能不等。过期清算只动批次里真实存在的量，对账差值不是本接口引入的；过期过滤与不足失败属 DEV-03。
 
 ### 6.3 人工调账与审计（UC-15 / UC-19，BR-14 / NFR-12）
 
