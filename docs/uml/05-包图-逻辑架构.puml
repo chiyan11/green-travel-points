@@ -24,7 +24,7 @@ package "apps/api　后端（Go 1.24+）" as api {
   package "internal/app\nDTO + Ports 接口 + 哨兵错误" as app
   package "internal/domain\n碳核算 / 积分 / 订单状态机（纯函数）" as domain
   package "internal/repo\n手写 SQL / 事务 / 行锁 / Outbox 写入" as repo
-  package "internal/eventbus\n事件契约（无 Worker）" as eventbus
+  package "internal/eventbus\n事件契约与轮询 Worker" as eventbus
   package "internal/config\n环境变量 → Config" as config
 }
 
@@ -59,25 +59,25 @@ note bottom of domain
 end note
 
 note right of eventbus
-  **当前只到“写”这一半**
+  **已实现投递机制**
   repo 在业务事务内写 event_outbox；
-  eventbus 只定义 Topic / Event / Handler，
-  **没有消费者、重试与死信 Worker**。
-  设计目标见设计说明书 §2.1.1，实现缺口见 §4。
+  Worker 轮询、重试并写死信。
+  默认处理器只记录投递；统计、通知等
+  业务消费者仍待对应模块接入。
 end note
 
 note bottom of repo
   **实现偏差（如实标注）**
-  auth.go 的 AuthHandler 与 trips.go 的 TripHandler
-  都直接持有 *sql.DB 并在 handler 内写 SQL，尚未抽到 repo；
-  其余订单/积分/商品路径已走 repo。
+  trips.go 的 TripHandler 通过 app.TripStore 调用 repo/trips.go，
+  行程 SQL 已移出 handler；
+  auth.go 的 AuthHandler 仍直接持有 *sql.DB，待后续重构。
   详见设计说明书 §4 表 4-1A DEV-01。
 end note
 
 legend right
   依赖方向：web → services → http → app/domain
             repo → app/domain → db
-  eventbus 仅为契约；Worker 未实现。
+  eventbus 提供契约与 Worker；业务消费者待接入。
   违反方向（如 domain import repo）= 架构评审不通过。
 endlegend
 

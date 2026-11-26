@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"greentravelpoints/internal/app"
 )
@@ -82,17 +83,35 @@ func (f fakeOrders) CancelOrder(_ context.Context, userID, orderID int64, reason
 	return f.cancel(userID, orderID, reason)
 }
 
+type fakeTrips struct {
+	create func(app.CreateTripInput) (app.Trip, error)
+	list   func(int64) ([]app.Trip, error)
+}
+
+func (f fakeTrips) CreateTrip(_ context.Context, in app.CreateTripInput) (app.Trip, error) {
+	return f.create(in)
+}
+
+func (f fakeTrips) ListTrips(_ context.Context, userID int64) ([]app.Trip, error) {
+	return f.list(userID)
+}
+
 func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
 func newTestRouter(c app.CatalogStore, p app.PointsStore, o app.OrderStore) http.Handler {
+	return newTestRouterWithTrips(c, p, o, nil)
+}
+
+func newTestRouterWithTrips(c app.CatalogStore, p app.PointsStore, o app.OrderStore, trips app.TripStore) http.Handler {
 	return NewRouter(Options{
 		Logger:  discardLogger(),
 		Env:     "test",
 		Catalog: c,
 		Points:  p,
 		Orders:  o,
+		Trips:   trips,
 	})
 }
 
@@ -160,6 +179,51 @@ func TestProductDetailInvalidID(t *testing.T) {
 }
 
 // ---------- 积分 ----------
+
+func TestCreateTrip(t *testing.T) {
+	traveledAt := time.Now().Add(-time.Hour).Truncate(time.Second)
+	trips := fakeTrips{create: func(in app.CreateTripInput) (app.Trip, error) {
+		if in.UserID != 7 || in.Mode != "bus" || in.DistanceKm != 10 || !in.TraveledAt.Equal(traveledAt) {
+			t.Fatalf("透传参数不符: %+v", in)
+		}
+		return app.Trip{ID: "trip_1", Mode: in.Mode, DistanceKm: in.DistanceKm, TraveledAt: in.TraveledAt,
+			CarbonSavedGrams: 1240, RawPoints: 12, GrantedPoints: 12, Status: "VERIFIED"}, nil
+	}}
+	h := newTestRouterWithTrips(nil, nil, nil, trips)
+	rec, env := doJSON(t, h, http.MethodPost, "/api/v1/trips",
+		`{"mode":"bus","distanceKm":10,"traveledAt":"`+traveledAt.Format(time.RFC3339)+`"}`,
+		map[string]string{"X-User-Id": "7"})
+	if rec.Code != http.StatusOK || env.Code != CodeOK {
+		t.Fatalf("期望 200/OK，实际 %d/%s", rec.Code, env.Code)
+	}
+}
+
+func TestCreateTripInvalidInput(t *testing.T) {
+	trips := fakeTrips{create: func(app.CreateTripInput) (app.Trip, error) {
+		return app.Trip{}, app.ErrInvalidInput
+	}}
+	h := newTestRouterWithTrips(nil, nil, nil, trips)
+	rec, env := doJSON(t, h, http.MethodPost, "/api/v1/trips",
+		`{"mode":"bus","distanceKm":10,"traveledAt":"`+time.Now().Add(-time.Hour).Format(time.RFC3339)+`"}`,
+		map[string]string{"X-User-Id": "7"})
+	if rec.Code != http.StatusBadRequest || env.Code != CodeInvalidArgument {
+		t.Fatalf("期望 400/INVALID_ARGUMENT，实际 %d/%s", rec.Code, env.Code)
+	}
+}
+
+func TestListTrips(t *testing.T) {
+	trips := fakeTrips{list: func(userID int64) ([]app.Trip, error) {
+		if userID != 7 {
+			t.Fatalf("userID = %d，期望 7", userID)
+		}
+		return []app.Trip{{ID: "trip_1", Mode: "walk", Status: "VERIFIED"}}, nil
+	}}
+	h := newTestRouterWithTrips(nil, nil, nil, trips)
+	rec, env := doJSON(t, h, http.MethodGet, "/api/v1/trips", "", map[string]string{"X-User-Id": "7"})
+	if rec.Code != http.StatusOK || env.Code != CodeOK || !strings.Contains(string(env.Data), "trip_1") {
+		t.Fatalf("期望行程列表，实际 %d/%s", rec.Code, env.Data)
+	}
+}
 
 func TestPointsSummaryRequiresUser(t *testing.T) {
 	h := newTestRouter(nil, fakePoints{}, nil)

@@ -166,8 +166,8 @@ green-travel-points/
 │   │       ├── config/config.go      # 环境变量 → Config，含默认值与取值范围校验
 │   │       ├── domain/               # 纯业务规则：碳核算、积分换算、订单状态机（45 个用例）
 │   │       ├── eventbus/             # 领域事件主题、处理器契约与 Worker
-│   │       ├── httpserver/           # 路由、中间件、统一响应壳、各业务 handler（43 个测试函数）
-│   │       └── repo/                 # 手写 SQL：连接池、商品、积分、订单、运营后台；orders_test.go / audit_test.go / batches_test.go 为 REPO_TEST_DSN 门控的集成测试（11 例）
+│   │       ├── httpserver/           # 路由、中间件、统一响应壳、各业务 handler（48 个测试函数）
+│   │       └── repo/                 # 手写 SQL：连接池、行程、商品、积分、订单、运营后台；orders_test.go / audit_test.go / batches_test.go / outbox_integration_test.go 为 REPO_TEST_DSN 门控的集成测试（13 例）
 │   └── web/                          # React 前端：用户端 9 页 + 运营后台 3 页（/admin）
 │       ├── AGENTS.md                 # 前端专项代理指南（Astryx 工作流与规则，由 astryx init 维护）
 │       ├── src/{pages,components,services,lib,themes,types}/  # themes/ = Astryx 品牌主题；pages/admin = M8 后台三屏；types/api.ts = 生成契约
@@ -339,7 +339,7 @@ pwsh -File .\scripts\verify.ps1
 | 层级 | 范围 | 命令 | 现状 |
 | --- | --- | --- | --- |
 | 单元测试（Go · domain） | 碳核算、积分换算、日上限、订单状态机 | `go test ./internal/domain -v` | 12 个测试函数 / 45 个用例（含表驱动子用例），全绿 |
-| 单元测试（Go · http） | 路由、中间件、认证、各 handler（假存储，不连库） | `go test ./internal/httpserver -v` | 43 个测试函数 / 43 例，全绿 |
+| 单元测试（Go · http） | 路由、中间件、认证、各 handler（假存储，不连库） | `go test ./internal/httpserver -v` | 48 个测试函数 / 48 例，全绿 |
 | 单元测试（Go · app） | `sys_config` / `travel_mode` 参数校验（UC-14） | `go test ./internal/app -v` | 2 个函数 / 34 例（表驱动），全绿 |
 | 单元测试（Go · cmd/server） | 启动日志的 DSN 目标判定：本机 / 局域网 / ZeroTier / socket / 非法 DSN；写超时与请求超时的关系 | `go test ./cmd/server -v` | 2 个函数 / 15 个用例 |
 | 单元测试（前端） | Envelope 解包、错误映射、表单校验 | `npx vitest run` | 2 个文件 19 例（http 5 + validators 14） |
@@ -349,7 +349,7 @@ pwsh -File .\scripts\verify.ps1
 | 契约一致性 | `docs/api/openapi.yaml` ↔ `apps/web/src/types/api.ts` | `npm run gen:api` 后 `git diff --exit-code` | 已接入 `verify.ps1` 与 CI |
 | E2E（消费者主链路） | 注册 → 上报 → 积分到账 → 兑换 → 取消返还 | `E2E_API_TARGET=… npm run test:e2e` | 1 条用例绿，11 张截图在 `docs/screenshots/` |
 | E2E（运营后台） | 建商品 → 上架 → 改库存 → 下单 → 后台确认接单 | `npx playwright test`（apps/web） | 1 条用例绿；截图证据在 `docs/p5-evidence/` |
-| 集成测试 | repo + 真实 MySQL：兑换成功 / 积分不足 / 库存不足 / 限购 / 取消回填批次 / 20 并发防超卖 / 对账 / 人工调账与审计写入 / 积分批次发放 | `REPO_TEST_DSN=… go test ./internal/repo -v` | `apps/api/internal/repo/orders_test.go`、`audit_test.go`、`batches_test.go` 共 11 例；未设 DSN 时数据库用例 SKIP；尚未进 CI |
+| 集成测试 | repo + 真实 MySQL：兑换成功 / 积分不足 / 批次不足回滚 / 库存不足 / 限购 / 取消回填批次 / 20 并发防超卖 / 对账 / 人工调账与审计写入 / 积分批次发放 / Outbox 重试与死信 | `REPO_TEST_DSN=… go test ./internal/repo -v` | `apps/api/internal/repo/orders_test.go`、`audit_test.go`、`batches_test.go`、`outbox_integration_test.go` 共 13 例；未设 DSN 时数据库用例 SKIP；尚未进 CI |
 | 性能 | 行程上报、兑换并发 | 待建（k6） | 未建：计划 S6 起 |
 
 指导书要求的**基本路径法**（组件测试）与**等价类划分法**（功能测试）用例表，在 S6 补齐并写入测试报告。

@@ -144,3 +144,24 @@ type DailyCarbonPoint struct {
 	Date  string  `json:"date"`
 	Grams float64 `json:"grams"`
 }
+
+// Trip 是行程接口的返回数据。
+type Trip struct {
+	ID               string    `json:"id"`
+	Mode             string    `json:"mode"`
+	DistanceKm       float64   `json:"distanceKm"`
+	TraveledAt       time.Time `json:"traveledAt"`
+	CarbonSavedGrams float64   `json:"carbonSavedGrams"`
+	RawPoints        int64     `json:"rawPoints"`
+	GrantedPoints    int64     `json:"grantedPoints"`
+	CappedByDaily    bool      `json:"cappedByDaily"`
+	Status           string    `json:"status"`
+}
+
+// CreateTripInput 是行程上报的入参。
+type CreateTripInput struct {
+	UserID     int64
+	Mode       string
+	DistanceKm float64
+	TraveledAt time.Time
+}
