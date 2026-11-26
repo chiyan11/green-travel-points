@@ -2,7 +2,7 @@
 
 > 实现：`apps/api/internal/httpserver`（HTTP 层）+ `apps/api/internal/repo`（SQL 层）+ `apps/api/internal/app`（DTO 与端口）。
 > 对应报告：实验三"系统原型构建与实现"、实验二"设计类清单 / 序列图"。
-> 状态：✅ 已实现并通过单元测试 + 本地 MySQL 联调。身份已支持 `Authorization: Bearer <token>`（`POST /api/v1/auth/login` 自签签发，有效期 2 小时）；仅在非生产环境回退开发期请求头 `X-User-Id`，便于不登录联调。
+> 状态：✅ 已实现并通过单元测试 + 本地 MySQL 联调。身份**只认** `Authorization: Bearer <token>`（`POST /api/v1/auth/login` 自签签发，有效期 2 小时）；开发期脚本要指定用户时，必须显式设 `AUTH_ALLOW_DEV_HEADER=true` 才接受 `X-User-Id`，`APP_ENV=prod` 开启会拒绝启动。
 
 ## 机器可读契约：[openapi.yaml](openapi.yaml)
 
@@ -36,7 +36,7 @@ npm run gen:api     # 读 ../../docs/api/openapi.yaml，生成 src/types/api.ts�
 - 分页参数：`page`（从 1 起，默认 1）、`pageSize`（默认 20，上限 100）；响应 `{items, page, pageSize, total}`。
 - 时间：RFC3339（带时区）。行程上报的 `traveledAt` 只能是服务器当前时间前 7 天内的时间；每日积分上限按服务器当前自然日统计，不能通过传入其他日期重置。
 - 金额/积分：整数 `int64`。
-- 身份：优先 `Authorization: Bearer <token>`（登录 / 注册响应里的 `token`）；仅 `APP_ENV != prod` 时缺失 token 可回退 `X-User-Id: <user_id>`。生产环境必须显式设置 `AUTH_SECRET`，并拒绝该身份头。
+- 身份：只认 `Authorization: Bearer <token>`（登录 / 注册响应里的 `token`）；无 token 一律 401。仅当显式设置 `AUTH_ALLOW_DEV_HEADER=true` 时才接受 `X-User-Id: <正整数>`（`APP_ENV=prod` 开启该开关会直接拒绝启动；生产还必须显式设置 `AUTH_SECRET`）。
   运营接口额外要求角色为 `ADMIN`（`RequireAdmin`），越权返回 403 `FORBIDDEN`。
   注意：当前 token 是自签 HMAC-SHA256 的紧凑格式，并非标准 JWT（无 header 段），仅课程范围内可用。
 
@@ -107,9 +107,13 @@ npm run gen:api     # 读 ../../docs/api/openapi.yaml，生成 src/types/api.ts�
 状态推进全部在运营侧。演示时用运营身份（种子 `1002` 是 ADMIN）推进：
 
 ```powershell
-curl -X POST -H "X-User-Id: 1002" http://127.0.0.1:8080/api/v1/admin/orders/1/confirm
-curl -X POST -H "X-User-Id: 1002" http://127.0.0.1:8080/api/v1/admin/orders/1/ship
-curl -X POST -H "X-User-Id: 1002" http://127.0.0.1:8080/api/v1/admin/orders/1/complete
+# 先用管理员登录拿 token，再带 Bearer 推进订单
+$TOKEN = (curl -s -X POST -H "Content-Type: application/json" `
+  --data-binary '{"account":"13800000002","password":"admin123456"}' `
+  http://127.0.0.1:8080/api/v1/auth/login | ConvertFrom-Json).data.token
+curl -X POST -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/api/v1/admin/orders/1/confirm
+curl -X POST -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/api/v1/admin/orders/1/ship
+curl -X POST -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/api/v1/admin/orders/1/complete
 ```
 
 ## 4. 业务错误码
@@ -117,7 +121,7 @@ curl -X POST -H "X-User-Id: 1002" http://127.0.0.1:8080/api/v1/admin/orders/1/co
 | HTTP | code | 场景 |
 | --- | --- | --- |
 | 400 | `INVALID_ARGUMENT` | 参数非法 / 请求体不是合法 JSON |
-| 401 | `UNAUTHORIZED` | 缺少 `X-User-Id`（或未来 JWT 失效） |
+| 401 | `UNAUTHORIZED` | 缺少或过期的 Bearer token（token 2 小时过期） |
 | 404 | `NOT_FOUND` | 商品 / 订单不存在或已下架 |
 | 409 | `INSUFFICIENT_POINTS` | 积分不足 |
 | 409 | `OUT_OF_STOCK` | 库存不足 |
@@ -142,10 +146,13 @@ cd apps/api; go run ./cmd/server
 
 # 4) 冒烟
 curl http://127.0.0.1:8080/api/v1/products
-curl -H "X-User-Id: 1001" http://127.0.0.1:8080/api/v1/points/summary
+$TOKEN = (curl -s -X POST -H "Content-Type: application/json" `
+  --data-binary '{"account":"13800000001","password":"demo123456"}' `
+  http://127.0.0.1:8080/api/v1/auth/login | ConvertFrom-Json).data.token
+curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/api/v1/points/summary
 ```
 
-种子账号可直接登录，不需要再靠 `X-User-Id` 回退（口令与 `apps/web/e2e` 的默认值一致）：
+种子账号可直接登录（口令与 `apps/web/e2e` 的默认值一致）：
 
 | 账号 | 手机号 | 口令 | 角色 | 用途 |
 | --- | --- | --- | --- | --- |
@@ -178,20 +185,45 @@ curl -X POST -H "Content-Type: application/json" `
 > ```sql
 > -- 让共享库的 13800000002 能登 /admin（口令改为 admin123456，与种子/前端 E2E 一致）
 > UPDATE user SET password_hash =
->   'sha256$f6b61c75d1b8eb0d6939a5c363b03f12$ae2a6d8dd0f42821f2791d813f4fc5fa5c5ce9d4ee05658433d9669b3fe783d3'
+>   'pbkdf2$600000$d7c70205c118c39362068f18228ba181$ee77a3f2e8192eacb832ed92ea70b3ba59f93cb0af243af7641f4b4c9176cd3a'
 >  WHERE id = 1002;
 > -- 若共享库的「演示用户」也要能登录（id=1，口令 demo123456），同样只改这一列
 > UPDATE user SET password_hash =
->   'sha256$726211e994a96a50be61dd7bd08aedee$e5b7d2e7e88ce334803ac33029c83cb451059ee6207f55309ecce7d0e8ca80d4'
+>   'pbkdf2$600000$1c6c8a14a974468260b76b73c2738b6f$0fdee6e87892fbe574a4901f42cdbd86093d85585cf2fd9f7876e17364e763aa'
 >  WHERE id = 1;
 > ```
 
 > ⚠️ Windows 下用 curl 传中文 JSON 时，命令行参数可能被转成 GBK 导致入库乱码；
 > 中文请求体建议写入 UTF-8 文件后 `--data-binary @file.json`。
 
+### 5.2 口令存储格式（PBKDF2）
+
+`user.password_hash` 统一存 `pbkdf2$<迭代数>$<hex salt>$<hex digest>`：
+
+| 参数 | 值 |
+| --- | --- |
+| KDF | PBKDF2-HMAC-SHA256（Go 标准库 `crypto/pbkdf2`） |
+| 迭代数 | 600000（校验时要求 ≥ 100000 且 ≤ 5000000，否则视为无效记录） |
+| 盐 | 16 字节随机数，hex 编码 32 字符 |
+| 派生长度 | 32 字节，hex 编码 64 字符 |
+| 比较 | `crypto/subtle.ConstantTimeCompare`，不用 `==` |
+
+旧的 `sha256$<salt>$<digest>` 记录**后端已一律拒绝**（不会回退兼容）。改过口令算法后，本地/共享库里的旧记录必须重设：
+
+```sql
+-- 把 13800000001 的口令重设为 demo123456（pbkdf2，600000 次迭代）
+UPDATE user SET password_hash =
+  'pbkdf2$600000$1c6c8a14a974468260b76b73c2738b6f$0fdee6e87892fbe574a4901f42cdbd86093d85585cf2fd9f7876e17364e763aa'
+ WHERE phone = '13800000001';
+```
+
+要生成新口令哈希，跑 `go test ./internal/httpserver -run TestPasswordHashRoundTrip -v` 看 `passwordHash` 的用法，或临时写一段调用 `passwordHash("新口令")` 的小程序；**不要**再用单轮 SHA-256。
+
+> ⚠️ 共享库禁止整份重跑 `db/seed/dev_demo.sql`（会插入重复的 1001 系列行），只按上面这种定向 `UPDATE` 改口令。
+
 ## 6. 运营后台（M8，需 ADMIN 身份）
 
-开发期要求 `X-User-Id` 对应用户的 `role = 'ADMIN'`（种子数据里 1002 是管理员），否则返回 403。
+运营接口要求 Bearer 对应用户的 `role = 'ADMIN'`（种子数据里 1002 是管理员），否则返回 403。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
@@ -316,7 +348,7 @@ mysql --user=greentravel --password=greentravel --host=127.0.0.1 green_travel_po
   -e "UPDATE point_batch SET expires_at = NOW(3) - INTERVAL 1 DAY WHERE id = 1001;"
 
 # 2) 触发清算（1002 是 ADMIN）
-curl -X POST -H "X-User-Id: 1002" http://127.0.0.1:8080/api/v1/admin/points/expire
+curl -X POST -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/api/v1/admin/points/expire
 # → {"batches":1,"points":1200,"accounts":1}
 
 # 3) 复核：余额归零、批次 EXPIRED、账本仍平

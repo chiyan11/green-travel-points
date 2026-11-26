@@ -173,7 +173,7 @@ green-travel-points/
 │       ├── src/{pages,components,services,lib,themes,types}/  # themes/ = Astryx 品牌主题；pages/admin = M8 后台三屏；types/api.ts = 生成契约
 │       └── e2e/ + playwright.config.ts                        # 消费者主链路（*.spec.ts）与运营后台（*.e2e.ts）用例
 ├── db/
-│   ├── migrations/                   # 7 组 up/down：参数与出行方式 / 发件箱 / 账本 / 用户行程碳记录 / 商城订单 / 批次流水 / 审计日志
+│   ├── migrations/                   # 8 组 up/down：参数与出行方式 / 发件箱 / 账本 / 用户行程碳记录 / 商城订单 / 批次流水 / 审计日志 / 规则快照改 JSON（数据迁移）
 │   └── seed/dev_demo.sql             # 演示数据：用户 1001（1200 分）+ 3 个上架商品
 ├── deploy/                           # Dockerfile.api / Dockerfile.web / nginx.conf / docker-compose.yml
 ├── docs/
@@ -260,7 +260,7 @@ $env:DB_DSN = "root:root@tcp(127.0.0.1:3306)/green_travel_points?parseTime=true&
 
 无数据库时服务仍可启动（启动日志只 Warn）：`/healthz` 返回 200，`/readyz` 返回 503，便于前端先联调。
 
-> 演示账号可直接登录：`db/seed/dev_demo.sql` 自带 `sha256$salt$digest` 口令哈希（PR #25）——市民 `13800000001` / `demo123456`（user 1001，1200 分），运营管理员 `13800000002` / `admin123456`（user 1002，`/admin` 用它登录）。也可注册新账号（`POST /api/v1/auth/register` 或登录页「注册」），或在开发期继续用 `X-User-Id: 1001` 身份头。 共享库（`10.213.180.114`）仍是旧占位哈希且「演示用户」id=1，**禁止重跑 seed**，按 `db/seed/dev_demo.sql` 头部说明做定向 UPDATE。
+> 演示账号可直接登录：`db/seed/dev_demo.sql` 自带 `pbkdf2$600000$salt$digest` 口令哈希——市民 `13800000001` / `demo123456`（user 1001，1200 分），运营管理员 `13800000002` / `admin123456`（user 1002，`/admin` 用它登录）。也可注册新账号（`POST /api/v1/auth/register` 或登录页「注册」）；开发期身份头 `X-User-Id: 1001` 只在显式设置 `AUTH_ALLOW_DEV_HEADER=true` 时可用，`APP_ENV=prod` 开启会拒绝启动。共享库（`10.213.180.114`）仍是旧占位哈希且「演示用户」id=1，**禁止重跑 seed**，按 `db/seed/dev_demo.sql` 头部说明做定向 UPDATE。
 
 ### 4. 启动前端
 
@@ -297,7 +297,7 @@ pwsh -File .\scripts\verify.ps1
 | 兑换 | `POST /api/v1/orders`、`GET /api/v1/orders`、`POST /api/v1/orders/{id}/cancel` | 支持 `Idempotency-Key`；按 FIFO 消耗积分批次 |
 | 运营 | `/api/v1/admin/products`、`/api/v1/admin/skus/{id}/stock`、`/api/v1/admin/orders`（含 confirm / ship / complete）、`POST /api/v1/admin/points/adjust`、`/api/v1/admin/points/reconcile`、`/api/v1/admin/audit-logs`、`/api/v1/admin/points/expire`、`/api/v1/admin/config`、`/api/v1/admin/travel-modes/{code}` | 需 `ADMIN` 角色，非法流转返回 409 |
 
-**身份鉴权**：优先读 `Authorization: Bearer <token>`（登录颁发），未带 token 时回退开发期请求头 `X-User-Id: <id>`；运营后台再叠加 `RequireAdmin` 角色校验。
+**身份鉴权**：只认 `Authorization: Bearer <token>`（登录颁发，2 小时过期），未带 token 即 401；开发期要在脚本里指定用户，必须显式设 `AUTH_ALLOW_DEV_HEADER=true` 才接受 `X-User-Id: <正整数>`，`APP_ENV=prod` 开启会拒绝启动。运营后台再叠加 `RequireAdmin` 角色校验。
 
 **路由可裁剪**：`NewRouter` 的 `Catalog` / `Points` / `Orders` / `Admin` / `Roles` 端口为 nil 时不挂载对应分组，单测可以只测目标模块。
 
@@ -362,7 +362,7 @@ pwsh -File .\scripts\verify.ps1
 docker compose -f deploy/docker-compose.yml up -d --build
 ```
 
-当前 compose 只编排 `mysql` + `api` 两个服务：MySQL 首次启动按文件名顺序导入 7 组迁移，API 等 `mysql` 健康检查通过后启动。
+当前 compose 只编排 `mysql` + `api` 两个服务：MySQL 首次启动按文件名顺序导入 8 组迁移，API 等 `mysql` 健康检查通过后启动。
 
 `web` 与反向代理 nginx 的镜像配置已就绪（`deploy/Dockerfile.web` 多阶段构建 → nginx 托管 `dist/`，`deploy/nginx.conf` 含 SPA 回退与 `/api` 反代），但尚未编入 compose。物理部署拓扑见 [部署图](docs/uml/06-部署图.puml)。
 
@@ -416,7 +416,7 @@ docker compose -f deploy/docker-compose.yml up -d --build
 - [x] 前后端可独立启动，`/healthz` `/readyz` `/api/v1/ping` 行为符合预期
 - [x] 领域规则单元测试全绿（12 个测试函数 / 45 个用例：碳核算、积分换算、日上限、订单状态机）
 - [x] 前端 TS7 类型检查通过、单测 19 例通过、生产构建成功
-- [x] 五组迁移可执行（`000001`–`000005`；Sprint 0 当时口径，现为 7 组 / 15 张表，见 `db/migrations/` 与 AGENTS §6），种子数据 `db/seed/dev_demo.sql` 可导入
+- [x] 五组迁移可执行（`000001`–`000005`；Sprint 0 当时口径，现为 8 组 / 15 张表，见 `db/migrations/` 与 AGENTS §6），种子数据 `db/seed/dev_demo.sql` 可导入
 - [x] CI 配置就绪（Go + Node 双 job）
 - [x] 数据库连通性与 `migrate up` 实跑：2026-10-20 本机 MySQL 9.7.2，`/readyz` 返回 `{"database":"up"}`
 
@@ -447,7 +447,7 @@ icacls "D:\coding\green-travel-points" /grant "$env:USERNAME:(OI)(CI)F" /T /C
 ```
 
 **7. 前端页面报 401 / 列表为空**
-前端已全部走真实接口，先确认后端在跑并导入种子：`db/seed/dev_demo.sql`（用户 1001 / 管理员 1002）。未登录时 `lib/http.ts` 回退带 `X-User-Id: 1`，所以不登录也能看商城；登录页登录后改走 `Authorization: Bearer <token>`。401 会由 `http.ts` 统一清会话并跳 `/login`。
+前端已全部走真实接口，先确认后端在跑并导入种子：`db/seed/dev_demo.sql`（用户 1001 / 管理员 1002）。前端只带 `Authorization: Bearer <token>`，不再注入 `X-User-Id`；未登录的匿名请求会 401，由 `http.ts` 统一清会话并跳 `/login`。
 
 ---
 

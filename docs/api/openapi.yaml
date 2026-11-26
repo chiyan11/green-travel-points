@@ -15,7 +15,7 @@ info:
 
     ## 身份
     - 正式路径：`Authorization: Bearer <token>`，token 由 `/auth/login` 或 `/auth/register` 签发（2 小时有效）。
-    - 联调回退：未带 Bearer 时接受 `X-User-Id: <数字用户 ID>`（仅供本地联调与接口测试，生产不启用）。
+    - 联调回退：仅当服务端显式设置 `AUTH_ALLOW_DEV_HEADER=true` 时才接受 `X-User-Id: <正整数>`；默认关闭，`APP_ENV=prod` 开启会拒绝启动。
     - 运营后台额外要求调用者具备 ADMIN 角色，否则 403 `FORBIDDEN`。
 
     ## 契约来源
@@ -720,7 +720,7 @@ components:
       type: apiKey
       in: header
       name: X-User-Id
-      description: 联调回退：直接指定数字用户 ID，仅在未携带 Bearer 时生效。
+      description: 联调回退：直接指定正整数用户 ID，仅在 `AUTH_ALLOW_DEV_HEADER=true` 且未携带有效 Bearer 时生效；默认关闭。
   parameters:
     Page:
       name: page
