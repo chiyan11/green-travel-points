@@ -1,6 +1,6 @@
 @startuml 图2-4 序列图：上报出行行程（UC-02 用例实现）
 ' 依据：需求规格说明书 §2.3.2 UC-02；实际代码 apps/api/internal/httpserver/trips.go（2026-11-24）
-' 事实：没有 internal/usecase；TripHandler 直接持有 *sql.DB；Token 为自签 HMAC，不是标准 JWT
+' 事实：没有 internal/usecase；TripHandler 依赖 app.TripStore，SQL 在 repo/trips.go；Token 为自签 HMAC，不是标准 JWT
 
 skinparam defaultFontName "Microsoft YaHei"
 skinparam dpi 150
@@ -10,7 +10,7 @@ autonumber
 actor "市民" as U
 participant "前端\n(TripsPage)" as FE
 participant "Router + 中间件\n(auth / timeout)" as API
-participant "TripHandler\n(httpserver，直写 SQL)" as H
+participant "TripHandler → TripStore\n(httpserver → repo/trips.go)" as H
 participant "domain\n(碳核算 / 积分纯函数)" as D
 database "MySQL\n(trip / carbon / point / outbox)" as DB
 

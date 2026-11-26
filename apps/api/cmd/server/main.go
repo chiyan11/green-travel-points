@@ -78,6 +78,7 @@ func run() error {
 			Catalog:        store,
 			Points:         store,
 			Orders:         store,
+			Trips:          store,
 			Admin:          store,
 			Roles:          store,
 		}),

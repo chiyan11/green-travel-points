@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     批量渲染 docs\uml\*.puml → docs\uml\out\（PNG / SVG）。
 

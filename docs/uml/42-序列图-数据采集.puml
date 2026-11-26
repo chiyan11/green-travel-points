@@ -8,7 +8,7 @@ autonumber
 actor "市民" as U
 participant "前端\n(TripCapturePage)" as FE
 participant "Router + 中间件\n(auth / timeout)" as API
-participant "TripHandler\n(httpserver/trips.go)" as H
+participant "TripHandler → TripStore\n(httpserver → repo/trips.go)" as H
 participant "domain\n(carbon / points)" as D
 database "MySQL\n(travel_mode / trip / carbon / point / outbox)" as DB
 
@@ -57,8 +57,8 @@ note over H
   由用户在表单手工填写；trip_hash 幂等与真实采集共用同一条上报路径。
 end note
 note over H, DB
-  现实情况：TripHandler 直接持有 *sql.DB 并在 handler 内写 SQL（设计偏差 D-01），
-  目标态应下沉到 repo/trips.go 或 usecase；本图按实际调用顺序绘制。
+  现实情况：TripHandler 通过 app.TripStore 调 repo/trips.go，行程 SQL 已移出 handler
+  （D-01 已关闭）；本图按实际调用顺序绘制。
 end note
 
 @enduml

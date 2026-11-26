@@ -24,6 +24,7 @@ type Options struct {
 	Catalog app.CatalogStore
 	Points  app.PointsStore
 	Orders  app.OrderStore
+	Trips   app.TripStore
 
 	// M8 运营后台；Roles 用于校验管理员身份。
 	Admin app.AdminStore
@@ -68,7 +69,7 @@ func NewRouter(opt Options) http.Handler {
 	points := pointsHandler{store: opt.Points, logger: logger}
 	orders := orderHandler{store: opt.Orders, logger: logger}
 	admin := adminHandler{store: opt.Admin, logger: logger}
-	trips := NewTripHandler(opt.DB, logger)
+	trips := NewTripHandler(opt.Trips, logger)
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Get("/ping", func(w http.ResponseWriter, r *http.Request) {
 			OK(w, map[string]string{"pong": "green-travel-points", "env": opt.Env})

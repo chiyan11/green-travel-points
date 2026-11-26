@@ -68,9 +68,9 @@ end note
 
 note bottom of repo
   **实现偏差（如实标注）**
-  auth.go 的 AuthHandler 与 trips.go 的 TripHandler
-  都直接持有 *sql.DB 并在 handler 内写 SQL，尚未抽到 repo；
-  其余订单/积分/商品路径已走 repo。
+  trips.go 的 TripHandler 通过 app.TripStore 调用 repo/trips.go，
+  行程 SQL 已移出 handler；
+  auth.go 的 AuthHandler 仍直接持有 *sql.DB，待后续重构。
   详见设计说明书 §4 表 4-1A DEV-01。
 end note
 
