@@ -9,6 +9,9 @@ import (
 	"greentravelpoints/internal/app"
 )
 
+// maxCarbonDays 限制 daily-carbon 的查询窗口，避免一次拉取过多年份的逐日数据。
+const maxCarbonDays = 365
+
 type pointsHandler struct {
 	store  app.PointsStore
 	logger *slog.Logger
@@ -53,6 +56,10 @@ func (h pointsHandler) dailyCarbon(w http.ResponseWriter, r *http.Request) {
 	days, _ := strconv.Atoi(r.URL.Query().Get("days"))
 	if days <= 0 {
 		days = 7
+	}
+	if days > maxCarbonDays {
+		Fail(w, http.StatusBadRequest, CodeInvalidArgument, "days 取值范围 1–365")
+		return
 	}
 	list, err := h.store.DailyCarbon(r.Context(), UserID(r.Context()), days)
 	if err != nil {

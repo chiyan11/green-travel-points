@@ -14,8 +14,10 @@ import (
 
 // Options 是构造路由所需的依赖。
 type Options struct {
-	DB             *sql.DB
-	AuthSecret     string
+	DB         *sql.DB
+	AuthSecret string
+	// AllowDevHeader 为真时才接受 X-User-Id 开发身份头（默认关闭）。
+	AllowDevHeader bool
 	Logger         *slog.Logger
 	Env            string
 	RequestTimeout time.Duration
@@ -64,7 +66,7 @@ func NewRouter(opt Options) http.Handler {
 	r.Get("/healthz", health.Liveness)
 	r.Get("/readyz", health.Readiness)
 
-	auth := NewAuthHandler(opt.DB, opt.AuthSecret, opt.Env != "prod", logger)
+	auth := NewAuthHandler(opt.DB, opt.AuthSecret, opt.AllowDevHeader, logger)
 	catalog := catalogHandler{store: opt.Catalog, logger: logger}
 	points := pointsHandler{store: opt.Points, logger: logger}
 	orders := orderHandler{store: opt.Orders, logger: logger}

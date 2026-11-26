@@ -35,7 +35,11 @@ type tripRequest struct {
 func (h *TripHandler) Create(w http.ResponseWriter, r *http.Request) {
 	userID, _ := r.Context().Value(authContextKey{}).(int64)
 	var in tripRequest
-	if err := decodeJSONBody(r, &in); err != nil || strings.TrimSpace(in.Mode) == "" {
+	if err := decodeJSONBody(w, r, &in); err != nil {
+		failDecode(w, err)
+		return
+	}
+	if strings.TrimSpace(in.Mode) == "" {
 		Fail(w, http.StatusBadRequest, CodeInvalidArgument, "请求参数非法")
 		return
 	}
@@ -73,12 +77,13 @@ func (h *TripHandler) List(w http.ResponseWriter, r *http.Request) {
 		Fail(w, http.StatusServiceUnavailable, CodeUnavailable, "数据库不可用")
 		return
 	}
-	items, err := h.store.ListTrips(r.Context(), userID)
+	page, pageSize := parsePaging(r)
+	res, err := h.store.ListTrips(r.Context(), app.TripQuery{UserID: userID, Page: page, PageSize: pageSize})
 	if err != nil {
 		FailInternal(w, h.logger, err)
 		return
 	}
-	OK(w, map[string]any{"items": items, "page": 1, "pageSize": len(items), "total": len(items)})
+	OK(w, res)
 }
 
 func validateTraveledAt(traveledAt, now time.Time) error {

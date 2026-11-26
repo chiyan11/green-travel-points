@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -17,11 +18,13 @@ type Config struct {
 	HTTPRequestTimeout  time.Duration
 	HTTPShutdownTimeout time.Duration
 
-	DatabaseDSN       string
-	AuthSecret        string
-	DBMaxOpenConns    int
-	DBMaxIdleConns    int
-	DBConnMaxLifetime time.Duration
+	DatabaseDSN string
+	AuthSecret  string
+	// AuthAllowDevHeader 控制是否接受 X-User-Id 开发身份头；默认关闭，APP_ENV=prod 开即拒启。
+	AuthAllowDevHeader bool
+	DBMaxOpenConns     int
+	DBMaxIdleConns     int
+	DBConnMaxLifetime  time.Duration
 }
 
 // DefaultDatabaseDSN 与 deploy/docker-compose.yml 中的 MySQL 服务保持一致。
@@ -42,6 +45,7 @@ func Load() (Config, error) {
 		HTTPShutdownTimeout: getEnvDuration("HTTP_SHUTDOWN_TIMEOUT", 10*time.Second),
 		DatabaseDSN:         getEnv("DB_DSN", DefaultDatabaseDSN),
 		AuthSecret:          authSecret,
+		AuthAllowDevHeader:  getEnvBool("AUTH_ALLOW_DEV_HEADER", false),
 		DBMaxOpenConns:      getEnvInt("DB_MAX_OPEN_CONNS", 20),
 		DBMaxIdleConns:      getEnvInt("DB_MAX_IDLE_CONNS", 10),
 		DBConnMaxLifetime:   getEnvDuration("DB_CONN_MAX_LIFETIME", 30*time.Minute),
@@ -54,6 +58,9 @@ func Load() (Config, error) {
 	}
 	if cfg.Env == "prod" && cfg.AuthSecret == "" {
 		return Config{}, fmt.Errorf("config: AUTH_SECRET 不能为空（APP_ENV=prod）")
+	}
+	if cfg.Env == "prod" && cfg.AuthAllowDevHeader {
+		return Config{}, fmt.Errorf("config: APP_ENV=prod 时不允许开启 AUTH_ALLOW_DEV_HEADER")
 	}
 	return cfg, nil
 }
@@ -69,6 +76,18 @@ func getEnvInt(key string, fallback int) int {
 	if v, ok := os.LookupEnv(key); ok && v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			return n
+		}
+	}
+	return fallback
+}
+
+func getEnvBool(key string, fallback bool) bool {
+	if v, ok := os.LookupEnv(key); ok && v != "" {
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "1", "true", "yes", "on":
+			return true
+		case "0", "false", "no", "off":
+			return false
 		}
 	}
 	return fallback

@@ -56,6 +56,13 @@ type PointTxn struct {
 
 // TxnQuery 是流水查询条件。Types 支持 DB 枚举值，
 // 也接受前端历史别名 EARN / SPEND / REVERSE。
+// TripQuery 是 GET /api/v1/trips 的查询条件（分页）。
+type TripQuery struct {
+	UserID   int64
+	Page     int
+	PageSize int
+}
+
 type TxnQuery struct {
 	UserID   int64
 	Page     int

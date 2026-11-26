@@ -1,7 +1,6 @@
 package httpserver
 
 import (
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -15,16 +14,6 @@ import (
 type adminHandler struct {
 	store  app.AdminStore
 	logger *slog.Logger
-}
-
-func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
-	dec.DisallowUnknownFields() // 多余字段直接 400，避免前后端字段漂移悄悄通过
-	if err := dec.Decode(dst); err != nil {
-		Fail(w, http.StatusBadRequest, CodeInvalidArgument, "请求体不是合法 JSON")
-		return false
-	}
-	return true
 }
 
 // listProducts 后台商品列表：GET /api/v1/admin/products?status=&keyword=&page=
@@ -146,8 +135,9 @@ func (h adminHandler) transition(action, target string) http.HandlerFunc {
 		var body struct {
 			Reason string `json:"reason"`
 		}
-		if r.Body != nil {
-			_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&body)
+		if err := decodeJSONOptional(w, r, &body); err != nil {
+			failDecode(w, err)
+			return
 		}
 		order, err := h.store.TransitionOrder(r.Context(), id, target, body.Reason)
 		if err != nil {
