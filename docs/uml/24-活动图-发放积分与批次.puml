@@ -1,5 +1,5 @@
 @startuml 图2-15 活动图：发放积分与批次写入
-' 依据：设计说明书 2.2.2；目标设计，代码当前未接 GrantPointsWithBatch
+' 依据：设计说明书 2.2.2；现状：/trips 已调 GrantPointsWithBatch 写 point_batch，缺口见 note
 skinparam defaultFontName "Microsoft YaHei"
 skinparam dpi 150
 skinparam shadowing false
@@ -14,9 +14,8 @@ start
 if (granted > 0?) then (是)
   :BEGIN;
   :INSERT point_txn(TRAVEL, +granted);
+  :INSERT point_batch\n(granted_amount=granted,\n remaining=granted,\n expires_at=now+days,\n grant_txn_id=txn.id);
   :UPDATE point_account\n(balance, total_saved_g, version);
-  :INSERT point_batch\n(granted_amount=granted,\n remaining=granted,\n expires_at=now+days);
-  :UPDATE point_batch\nSET grant_txn_id = txn.id;
   :INSERT event_outbox(PointsGranted);
   :COMMIT;
 else (否)
@@ -28,6 +27,7 @@ note right
   发放与扣减必须对称：
   每笔 TRAVEL 流水有且仅有 1 条 point_batch；
   日上限只影响 granted，不改变余额/批次一致性。
-  当前 /trips 未接 GrantPointsWithBatch，属 DEV-03。
+  当前 /trips 已接 GrantPointsWithBatch 写批次；
+  剩余缺口是过期过滤与不足失败，属 DEV-03。
 end note
 @enduml

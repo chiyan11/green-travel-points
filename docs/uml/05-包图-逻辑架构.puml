@@ -59,11 +59,11 @@ note bottom of domain
 end note
 
 note right of eventbus
-  **当前只到“写”这一半**
+  **Worker 已实现，业务消费未接入**
   repo 在业务事务内写 event_outbox；
-  eventbus 只定义 Topic / Event / Handler，
-  **没有消费者、重试与死信 Worker**。
-  设计目标见设计说明书 §2.1.1，实现缺口见 §4。
+  eventbus 提供 Topic / Event / Handler，并运行轮询、
+  重试、退避与死信处理；业务 handler 目前只记日志。
+  设计目标见设计说明书 §2.1.1，缺口见 §4 DEV-04。
 end note
 
 note bottom of repo
@@ -77,7 +77,7 @@ end note
 legend right
   依赖方向：web → services → http → app/domain
             repo → app/domain → db
-  eventbus 仅为契约；Worker 未实现。
+  eventbus 提供契约与 Worker；业务消费未接入。
   违反方向（如 domain import repo）= 架构评审不通过。
 endlegend
 

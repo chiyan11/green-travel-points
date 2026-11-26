@@ -1,0 +1,56 @@
+@startuml 图2-33 鲁棒图：积分清算与过期（UC-18 用例实现 · 参与者：运营管理员、系统）
+' 依据：需求规格说明书用例清单；代码 apps/api/internal/httpserver 与 repo（2026-11-26）
+' 鲁棒图非 UML 标准图：边界类只连 actor/控制类，实体类只连控制类。
+skinparam defaultFontName "Microsoft YaHei"
+skinparam dpi 150
+skinparam shadowing false
+left to right direction
+skinparam rectangle {
+  BackgroundColor #FFFFFF
+  BorderColor #2E5C8A
+}
+
+actor "运营管理员 / 系统" as U
+
+boundary "批次管理页\nAdminBatchPage" as B1
+boundary "过期清算页\nAdminExpirePage" as B2
+boundary "清算结果页\nExpireResultPage" as B3
+
+control "过期清算控制器\nExpireController" as C1
+control "批次过期器\nBatchExpirer" as C2
+control "余额扣减器\nBalanceDebiter" as C3
+
+entity "积分批次 PointBatch" as E1
+entity "积分账户 PointAccount" as E2
+entity "积分流水 PointTxn" as E3
+entity "批次流水 PointBatchTxn" as E4
+
+' ---------- 主成功场景与主要备选流 ----------
+U --> B1 : 查看 ACTIVE / 过期批次
+B1 --> C1 : listBatches()
+C1 --> E1 : 按 expires_at 排序
+U --> B2 : 手动触发清算
+B2 --> C1 : expire()
+C1 --> C2 : 查到期批次账户（升序）
+C2 --> E2 : SELECT balance FOR UPDATE
+C2 --> E1 : SELECT ... FOR UPDATE
+C2 --> E1 : UPDATE remaining=0, status=EXPIRED
+C1 --> C3 : deduct(account, min(remaining, balance))
+C3 --> E3 : INSERT EXPIRE 流水
+C3 --> E4 : INSERT 批次扣减明细
+C3 --> E2 : UPDATE balance / version
+C1 --> B3 : 返回 batches / points / accounts
+
+note bottom of C1
+  **实现状态：手动清算已实现，自动任务未实现**。
+  POST /admin/points/expire 单事务、按账户升序加锁；
+  每批次最多一条 EXPIRE 流水，重复执行幂等；
+  当前没有常驻定时任务，需运营手动触发；也不写 audit_log。
+end note
+
+legend right
+  边界类：B1–B3　控制类：C1–C3　实体类：E1–E4
+  过期量取 min(batch.remaining, account.balance)
+endlegend
+
+@enduml

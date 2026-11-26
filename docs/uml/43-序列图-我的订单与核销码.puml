@@ -1,0 +1,41 @@
+@startuml 图2-36 序列图：我的订单与核销码（UC-09 用例实现）
+' 依据：需求规格说明书用例清单；代码 apps/api/internal/httpserver 与 repo（2026-11-26）
+skinparam defaultFontName "Microsoft YaHei"
+skinparam dpi 150
+skinparam shadowing false
+autonumber
+
+actor "市民" as U
+participant "前端\n(OrdersPage)" as FE
+participant "Router + 中间件\n(auth / timeout)" as API
+participant "OrderHandler\n(httpserver/orders.go)" as H
+database "MySQL\n(redeem_order / product / product_sku)" as DB
+
+U -> FE : 打开“我的订单”
+FE -> API : GET /api/v1/orders?page=1&status=
+API -> H : list(userID, query)
+H -> DB : SELECT COUNT(*) FROM redeem_order\nWHERE user_id=?
+DB --> H : total
+H -> DB : SELECT ... FROM redeem_order\nWHERE user_id=? ORDER BY id DESC\nLIMIT ? OFFSET ?
+DB --> H : orders（含 order_no / redeem_code）
+H --> API : 200 Page<Order>
+API --> FE : 响应壳
+FE --> U : 订单卡片（状态 / 积分 / 时间）
+
+U -> FE : 打开订单详情 / 出示核销码
+alt 订单为 PENDING / PAID / SHIPPED
+  FE --> U : 展示 redeemCode 文本（二维码由前端渲染）
+else 订单已 CANCELLED / COMPLETED
+  FE --> U : 不展示可用核销码，显示终态
+end
+
+note over H, DB
+  订单 DTO 已含 redeemCode；当前**没有独立的核销码接口**，
+  前端直接使用列表/详情返回值。核销动作属 UC-12（运营后台）。
+end note
+note over FE
+  核销码是订单字段，不是新的领域对象；
+  若后续要动态短码，需新增签名/过期策略，不能只改前端。
+end note
+
+@enduml

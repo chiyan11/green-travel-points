@@ -1,0 +1,54 @@
+@startuml 图2-43 序列图：积分清算与过期（UC-18 用例实现）
+' 依据：需求规格说明书用例清单；代码 apps/api/internal/httpserver 与 repo（2026-11-26）
+skinparam defaultFontName "Microsoft YaHei"
+skinparam dpi 150
+skinparam shadowing false
+autonumber
+
+actor "运营管理员" as A
+participant "前端\n(AdminExpirePage)" as FE
+participant "Router + RequireAdmin" as API
+participant "AdminHandler\n(httpserver/admin.go)" as H
+participant "Store\n(repo/points.go)" as S
+database "MySQL\n(point_batch / point_account / point_txn / point_batch_txn)" as DB
+
+A -> FE : 点击“执行过期清算”
+FE -> API : POST /api/v1/admin/points/expire
+API -> API : RequireAdmin
+alt 非管理员
+  API --> FE : 403 FORBIDDEN
+else 管理员
+  API -> H : expirePoints()
+  H -> S : ExpirePoints()
+  S -> DB : BEGIN
+  S -> DB : SELECT DISTINCT account_id\nFROM point_batch\nWHERE status='ACTIVE' AND remaining>0\nAND expires_at<=NOW(3)\nORDER BY account_id ASC
+  DB --> S : accountIDs
+  loop 每个账户
+    S -> DB : SELECT balance FROM point_account\nWHERE id=? FOR UPDATE
+    S -> DB : SELECT id, remaining FROM point_batch\nWHERE account_id=? AND status='ACTIVE'\nAND remaining>0 AND expires_at<=NOW(3)\nORDER BY expires_at, id FOR UPDATE
+    loop 每个到期批次
+      S -> DB : UPDATE point_batch\nSET remaining=0, status='EXPIRED'
+      opt expire = min(remaining, balance) > 0
+        S -> DB : INSERT point_txn(EXPIRE, -expire,\n biz_ref_type='point_batch', biz_ref_id=batchID)
+        S -> DB : INSERT point_batch_txn(batch_id, txn_id, -expire)
+      end
+    end
+    opt 余额发生变化
+      S -> DB : UPDATE point_account\nSET balance=?, version=version+1
+    end
+  end
+  S -> DB : COMMIT
+  S --> H : {batches, points, accounts}
+  H --> API : 200
+  API --> FE : 响应壳
+  FE --> A : 展示清算批次 / 过期积分 / 影响账户数
+end
+
+note over S, DB
+  手动接口已实现；**没有常驻定时任务**，需运营触发。
+  每批次最多一条 EXPIRE 流水（uk_point_txn_biz 幂等）；
+  过期量取 min(batch.remaining, account.balance)；
+  当前清算不写 audit_log（是否补记需确认）。
+end note
+
+@enduml

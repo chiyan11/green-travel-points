@@ -1,0 +1,60 @@
+@startuml 图2-40 序列图：风控与人工调账（UC-15 用例实现）
+' 依据：需求规格说明书用例清单；代码 apps/api/internal/httpserver 与 repo（2026-11-26）
+skinparam defaultFontName "Microsoft YaHei"
+skinparam dpi 150
+skinparam shadowing false
+autonumber
+
+actor "运营管理员" as A
+participant "前端\n(AdminAdjustPage)" as FE
+participant "Router + RequireAdmin" as API
+participant "AdminHandler\n(httpserver/admin.go)" as H
+participant "Store\n(repo/admin.go)" as S
+database "MySQL\n(point_account / point_txn / point_batch / audit_log)" as DB
+
+A -> FE : 填写 userId / amount / reason
+FE -> API : POST /api/v1/admin/points/adjust
+API -> API : RequireAdmin
+alt 非管理员
+  API --> FE : 403 FORBIDDEN
+else 管理员
+  API -> H : adjustPoints()
+  H -> H : 校验 userId>0、amount≠0、reason 非空
+  H -> S : AdjustPoints(operatorID, input)
+  S -> DB : INSERT IGNORE point_account(user_id)（事务外）
+  S -> DB : BEGIN
+  S -> DB : SELECT id, balance FROM point_account\nWHERE user_id=? FOR UPDATE
+  alt 账户不存在
+    S -> DB : ROLLBACK
+    S --> H : ErrNotFound
+    H --> API : 404 NOT_FOUND
+  else 调减后余额 < 0
+    S -> DB : ROLLBACK
+    S --> H : ErrInsufficientPoints
+    H --> API : 409 INSUFFICIENT_POINTS
+  else 可调账
+    S -> DB : INSERT audit_log(ADJUST,\n before/after/amount/reason)
+    S -> DB : INSERT point_txn(ADJUST, amount,\n biz_ref_type='audit_log', biz_ref_id=auditID)
+    alt amount > 0
+      S -> DB : GrantPointsWithBatch(...)\n（写 point_batch，有效期 points_expire_days）
+    else amount < 0
+      S -> DB : consumeBatches(FIFO)\n（批次不足部分只扣余额，差额由对账暴露）
+    end
+    S -> DB : UPDATE point_account\n(balance, version+1)
+    S -> DB : COMMIT
+    S --> H : {accountId, balance, auditId}
+    H --> API : 200
+    API --> FE : 响应壳
+  end
+end
+
+note over S, DB
+  调账与审计、流水、批次、余额在同一事务（事务外先 INSERT IGNORE 建账户）。
+  调增必写批次；调减按 FIFO 消耗批次；余额不足直接拒绝，不允许负余额。
+end note
+note over H
+  参数 reason 上限 255 字（repo 校验）；自动风控规则与预警页**尚未实现**，
+  本图只覆盖已落地的人工调账路径。
+end note
+
+@enduml

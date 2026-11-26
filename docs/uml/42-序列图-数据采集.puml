@@ -1,0 +1,64 @@
+@startuml 图2-35 序列图：出行数据采集（模拟）（UC-03 用例实现）
+' 依据：需求规格说明书用例清单；代码 apps/api/internal/httpserver 与 repo（2026-11-26）
+skinparam defaultFontName "Microsoft YaHei"
+skinparam dpi 150
+skinparam shadowing false
+autonumber
+
+actor "市民" as U
+participant "前端\n(TripCapturePage)" as FE
+participant "Router + 中间件\n(auth / timeout)" as API
+participant "TripHandler\n(httpserver/trips.go)" as H
+participant "domain\n(carbon / points)" as D
+database "MySQL\n(travel_mode / trip / carbon / point / outbox)" as DB
+
+U -> FE : 选择方式、手工输入距离与起止时间
+FE -> API : POST /api/v1/trips
+API -> API : Bearer 验签 / 开发头回退
+API -> H : ReportTrip(userID, cmd)
+H -> DB : SELECT ef_base, ef_actual\nFROM travel_mode WHERE code = ?
+DB --> H : factors
+H -> D : CheckRule(distance, rule)
+alt 距离越界 / 方式停用
+  H --> API : 400 E_DISTANCE_OUT_OF_RANGE
+  API --> FE : {code: E_DISTANCE_OUT_OF_RANGE}
+  FE --> U : 提示允许区间 [0.1, 100] km
+else 采集数据合法
+  H -> H : tripHash = hashTrip(userID, mode, distance, startedAt)
+  H -> DB : BEGIN
+  H -> DB : SELECT ... FROM trip_record\nWHERE user_id=? AND trip_hash=?
+  alt 幂等命中
+    H -> DB : COMMIT
+    H --> API : 200 首次结果 + deduplicated=true
+    API --> FE : 响应壳
+    FE --> U : 提示“该行程已申报，未重复发分”
+  else 首次采集
+    H -> DB : INSERT trip_record\n(mode_code, distance_km,\n started_at, ended_at, trip_hash)
+    H -> D : EvaluateTrip(distance, factors, rule, alreadyToday)
+    D --> H : carbonSavedG / raw / granted / capped
+    H -> DB : INSERT carbon_record\n(trip_id, ef_base, ef_actual,\n carbon_saved_g, rule_snapshot)
+    H -> DB : INSERT IGNORE point_account(user_id)
+    H -> DB : SELECT id, balance FROM point_account\nWHERE user_id=? FOR UPDATE
+    opt granted > 0
+      H -> DB : INSERT point_txn(TRAVEL, +granted)
+      H -> DB : GrantPointsWithBatch(...)
+    end
+    H -> DB : UPDATE point_account\n(balance, total_saved_g, version)
+    H -> DB : INSERT event_outbox(TripVerified)
+    H -> DB : COMMIT
+    H --> API : 201 {tripId, carbonSavedG, points}
+    API --> FE : 响应壳
+    FE --> U : 展示本次减排与积分
+  end
+end
+
+note over H
+  **当前是“模拟采集”**：没有 GPS / 设备 / 第三方运动接口，
+  由用户在表单手工填写；trip_hash 幂等与真实采集共用同一条上报路径。
+end note
+note over H, DB
+  现实情况：TripHandler 直接持有 *sql.DB 并在 handler 内写 SQL（设计偏差 D-01），
+  目标态应下沉到 repo/trips.go 或 usecase；本图按实际调用顺序绘制。
+end note
+
+@enduml

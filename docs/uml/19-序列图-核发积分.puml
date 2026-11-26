@@ -26,8 +26,8 @@ H -> DB : COMMIT
 H --> S : 本次积分 + 是否触顶
 
 note over DB
-  当前实现只写 point_txn / point_account，
-  未写 point_batch；图2-15 是目标设计，
-  代码未改前属 DEV-03。
+  当前实现已写 point_txn / point_account / point_batch；
+  剩余缺口是 consumeBatches 未过滤过期、批次不足静默成功，
+  图2-15 按“现状 + 缺口”标注，属 DEV-03。
 end note
 @enduml

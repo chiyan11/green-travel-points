@@ -1,0 +1,39 @@
+@startuml 图2-44 序列图：审计日志查询（UC-19 用例实现 · 后端已实现）
+' 依据：需求规格说明书用例清单；代码 apps/api/internal/httpserver 与 repo（2026-11-26）
+skinparam defaultFontName "Microsoft YaHei"
+skinparam dpi 150
+skinparam shadowing false
+autonumber
+
+actor "运营管理员" as A
+participant "前端\n(AdminAuditPage)" as FE
+participant "Router + RequireAdmin" as API
+participant "AdminHandler\n(httpserver/admin.go)" as H
+participant "Store\n(repo/audit.go)" as S
+database "MySQL\n(audit_log / user)" as DB
+
+A -> FE : 输入操作人 / 动作 / 目标 / 页码
+FE -> API : GET /api/v1/admin/audit-logs?\noperatorId=&action=&targetType=&targetKey=&page=1
+API -> API : RequireAdmin
+alt 非管理员
+  API --> FE : 403 FORBIDDEN
+else 管理员
+  API -> H : auditLogs()
+  H -> S : ListAuditLogs(query)
+  S -> DB : SELECT COUNT(*) FROM audit_log\nWHERE 动态条件
+  DB --> S : total
+  S -> DB : SELECT id, operator_id, action, target_type,\n target_id, target_key, amount,\n before_value, after_value, reason, created_at\nFROM audit_log WHERE ...\nORDER BY id DESC LIMIT ? OFFSET ?
+  DB --> S : logs
+  S --> H : Page<AuditLog>
+  H --> API : 200
+  API --> FE : 响应壳
+  FE --> A : 列表（最新在前）
+end
+
+note over S, DB
+  过滤条件全部可缺省：operatorId / action / targetType / targetKey；
+  只读、只追加，不提供更新/删除接口。
+  后台前端目前尚未挂审计页；接口已可被 curl / E2E 调用。
+end note
+
+@enduml

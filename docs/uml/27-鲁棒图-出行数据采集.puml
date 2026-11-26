@@ -1,0 +1,54 @@
+@startuml 图2-20 鲁棒图：出行数据采集（模拟）（UC-03 用例实现 · 参与者：市民）
+' 依据：需求规格说明书用例清单；代码 apps/api/internal/httpserver 与 repo（2026-11-26）
+' 鲁棒图非 UML 标准图：边界类只连 actor/控制类，实体类只连控制类。
+skinparam defaultFontName "Microsoft YaHei"
+skinparam dpi 150
+skinparam shadowing false
+left to right direction
+skinparam rectangle {
+  BackgroundColor #FFFFFF
+  BorderColor #2E5C8A
+}
+
+actor "市民" as U
+
+boundary "数据采集页\nTripCapturePage" as B1
+boundary "行程确认页\nTripConfirmPage" as B2
+boundary "采集结果页\nCaptureResultPage" as B3
+
+control "采集控制器\nCaptureController" as C1
+control "行程指纹器\nTripFingerprint" as C2
+control "碳核算器\nCarbonCalculator" as C3
+
+entity "出行方式 TravelMode" as E1
+entity "行程记录 TripRecord" as E2
+entity "碳记录 CarbonRecord" as E3
+entity "用户 User" as E4
+
+' ---------- 主成功场景与主要备选流 ----------
+U --> B1 : 选择方式 / 手工输入距离与时间
+B1 --> C1 : collect(mode, distance, period)
+C1 --> E1 : 校验方式已启用
+C1 --> C2 : hash(userId, mode, distance, startedAt)
+C2 --> E2 : 查重 trip_hash
+C1 --> B2 : 展示预估碳减排与积分
+U --> B2 : 确认提交
+B2 --> C1 : submit()
+C1 --> E2 : INSERT trip_record
+C1 --> C3 : evaluate(distance, factors)
+C3 --> E3 : INSERT carbon_record
+C1 --> B3 : 返回采集结果
+
+note bottom of C1
+  **实现状态：部分实现（模拟）**。
+  当前没有 GPS / 设备 / 第三方运动接口，
+  由用户在 TripsPage 手工填写，等价于“模拟采集”；
+  trip_hash 幂等与真实采集共用同一条上报路径。
+end note
+
+legend right
+  边界类：B1–B3　控制类：C1–C3　实体类：E1–E4
+  采集与上报共用 TripRecord / CarbonRecord，不另建表
+endlegend
+
+@enduml

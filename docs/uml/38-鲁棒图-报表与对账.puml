@@ -1,0 +1,57 @@
+@startuml 图2-31 鲁棒图：报表与对账（UC-16 用例实现 · 参与者：运营管理员）
+' 依据：需求规格说明书用例清单；代码 apps/api/internal/httpserver 与 repo（2026-11-26）
+' 鲁棒图非 UML 标准图：边界类只连 actor/控制类，实体类只连控制类。
+skinparam defaultFontName "Microsoft YaHei"
+skinparam dpi 150
+skinparam shadowing false
+left to right direction
+skinparam rectangle {
+  BackgroundColor #FFFFFF
+  BorderColor #2E5C8A
+}
+
+actor "运营管理员" as U
+
+boundary "对账页\nAdminReconcilePage" as B1
+boundary "报表页\nAdminReportPage" as B2
+boundary "导出页\nExportPage" as B3
+
+control "对账控制器\nReconcileController" as C1
+control "报表聚合器\nReportAggregator" as C2
+control "导出器\nExporter" as C3
+
+entity "积分账户 PointAccount" as E1
+entity "积分流水 PointTxn" as E2
+entity "积分批次 PointBatch" as E3
+entity "批次流水 PointBatchTxn" as E4
+entity "兑换订单 RedeemOrder" as E5
+entity "碳记录 CarbonRecord" as E6
+
+' ---------- 主成功场景与主要备选流 ----------
+U --> B1 : 触发积分对账
+B1 --> C1 : reconcile()
+C1 --> E1 : 读全部账户余额
+C1 --> E2 : 按账户汇总流水
+C1 --> E3 : 汇总 ACTIVE 批次剩余
+C1 --> E4 : 汇总批次消耗/回填
+C1 --> B1 : 返回 ok / mismatches
+U --> B2 : 查看运营报表
+B2 --> C2 : daily / category / merchant
+C2 --> E5 : 聚合兑换订单
+C2 --> E6 : 聚合碳减排
+U --> B3 : 导出报表
+B3 --> C3 : export(format)
+C3 --> E2 : 读取明细数据
+
+note bottom of C1
+  **实现状态：对账已实现，报表/导出未实现**。
+  GET /admin/points/reconcile 只校验 balance == Σ(point_txn.amount)；
+  不校验批次守恒；报表与导出页属目标态。
+end note
+
+legend right
+  边界类：B1–B3　控制类：C1–C3　实体类：E1–E6
+  对账口径以流水为准，批次差值单独列为 TODO
+endlegend
+
+@enduml

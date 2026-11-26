@@ -1,0 +1,60 @@
+@startuml 图2-38 序列图：处理兑换订单（UC-12 用例实现）
+' 依据：需求规格说明书用例清单；代码 apps/api/internal/httpserver 与 repo（2026-11-26）
+skinparam defaultFontName "Microsoft YaHei"
+skinparam dpi 150
+skinparam shadowing false
+autonumber
+
+actor "运营管理员" as A
+participant "前端\n(AdminOrdersPage)" as FE
+participant "Router + RequireAdmin" as API
+participant "AdminHandler\n(httpserver/admin.go)" as H
+participant "Store\n(repo/admin.go)" as S
+database "MySQL\n(redeem_order / outbox)" as DB
+
+A -> FE : 打开后台订单列表
+FE -> API : GET /api/v1/admin/orders?status=PAID
+API -> API : RequireAdmin（role=ADMIN）
+alt 非管理员
+  API --> FE : 403 FORBIDDEN
+else 管理员
+  API -> H : listOrders()
+  H -> S : ListAllOrders(query)
+  S -> DB : COUNT + SELECT ... LIMIT/OFFSET
+  DB --> S : orders
+  S --> H : Page<Order>
+  H --> API : 200
+  API --> FE : 响应壳
+end
+
+A -> FE : 确认收款 / 发货 / 完成
+FE -> API : POST /api/v1/admin/orders/{id}/confirm\n{reason}
+API -> H : transition("PAID")
+H -> H : 解析 id；reason 可选
+H -> S : TransitionOrder(id, target, reason)
+S -> DB : BEGIN
+S -> DB : SELECT status, order_no\nFROM redeem_order WHERE id=? FOR UPDATE
+alt 订单不存在
+  S -> DB : ROLLBACK
+  S --> H : ErrNotFound
+  H --> API : 404 NOT_FOUND
+else 非法跃迁
+  S -> DB : ROLLBACK
+  S --> H : ErrIllegalTransition
+  H --> API : 409 ILLEGAL_TRANSITION
+else 合法
+  S -> DB : UPDATE redeem_order SET status=?, shipped_at/completed_at
+  S -> DB : INSERT event_outbox(OrderConfirmed/Shipped/Completed)
+  S -> DB : COMMIT
+  S --> H : Order
+  H --> API : 200
+  API --> FE : 响应壳
+  FE --> A : 刷新订单状态
+end
+
+note over S, DB
+  状态机：PENDING → PAID | CANCELLED；PAID → SHIPPED | CANCELLED；
+  SHIPPED → COMPLETED | CANCELLED。confirm/ship/complete 三个入口复用同一方法。
+end note
+
+@enduml

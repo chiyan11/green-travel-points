@@ -1,0 +1,45 @@
+@startuml 图2-41 序列图：报表与对账（UC-16 用例实现 · 部分目标态）
+' 依据：需求规格说明书用例清单；代码 apps/api/internal/httpserver 与 repo（2026-11-26）
+skinparam defaultFontName "Microsoft YaHei"
+skinparam dpi 150
+skinparam shadowing false
+autonumber
+
+actor "运营管理员" as A
+participant "前端\n(AdminReconcilePage)" as FE
+participant "Router + RequireAdmin" as API
+participant "AdminHandler\n(httpserver/admin.go)" as H
+participant "Store\n(repo/admin.go)" as S
+database "MySQL\n(point_account / point_txn / point_batch / redeem_order)" as DB
+
+A -> FE : 触发积分对账
+FE -> API : GET /api/v1/admin/points/reconcile
+API -> API : RequireAdmin
+alt 非管理员
+  API --> FE : 403 FORBIDDEN
+else 管理员
+  API -> H : reconcile()
+  H -> S : ReconcilePoints()
+  S -> DB : SELECT COUNT(*) FROM point_account
+  DB --> S : accounts
+  S -> DB : SELECT a.id, a.user_id, a.balance,\n COALESCE(SUM(t.amount),0) AS ledger_sum\nFROM point_account a LEFT JOIN point_txn t\nGROUP BY a.id HAVING a.balance <> ledger_sum
+  DB --> S : mismatches
+  S --> H : {ok, accounts, mismatches}
+  H --> API : 200
+  API --> FE : 响应壳
+  FE --> A : 显示账实不符账户
+end
+
+A -> FE : 查看运营报表 / 导出
+FE -> API : GET /api/v1/admin/reports?...
+API -> H : report()（目标态）
+H --> API : 501 / 未实现
+API --> FE : 当前无此接口
+
+note over S, DB
+  已实现对账只校验 balance == Σ(point_txn.amount)，
+  **不校验批次守恒**（granted == Σ消耗 + Σ回填 + remaining）。
+  报表聚合与导出属目标态，当前没有对应路由与页面。
+end note
+
+@enduml

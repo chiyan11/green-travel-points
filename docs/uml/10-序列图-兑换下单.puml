@@ -1,6 +1,6 @@
 @startuml 图2-10 序列图：兑换商品（UC-08 用例实现）
 ' 依据：需求规格说明书 §2.3.2 UC-08；实际代码 apps/api/internal/repo/orders.go
-' 事实：没有 usecase；OrderHandler 调 repo.Store；sqlc 未启用；Worker 未实现
+' 事实：没有 usecase；OrderHandler 调 repo.Store；sqlc 未启用；Worker 已实现（业务消费未接入）
 
 skinparam defaultFontName "Microsoft YaHei"
 skinparam dpi 150
