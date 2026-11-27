@@ -3,12 +3,10 @@ package httpserver
 import (
 	"context"
 	"crypto/hmac"
-	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -26,14 +24,16 @@ type ctxKey int
 const userIDKey ctxKey = iota
 
 type AuthHandler struct {
-	db                  *sql.DB
-	secret              []byte
-	allowHeaderFallback bool
-	logger              *slog.Logger
+	db             *sql.DB
+	secret         []byte
+	allowDevHeader bool
+	logger         *slog.Logger
 }
 
-func NewAuthHandler(db *sql.DB, secret string, allowHeaderFallback bool, logger *slog.Logger) *AuthHandler {
-	return &AuthHandler{db: db, secret: []byte(secret), allowHeaderFallback: allowHeaderFallback, logger: logger}
+// NewAuthHandler 构造认证处理器。allowDevHeader 只在 AUTH_ALLOW_DEV_HEADER=true 时为真，
+// 此时才允许在没有有效 Bearer 的情况下读取 X-User-Id 开发身份头。
+func NewAuthHandler(db *sql.DB, secret string, allowDevHeader bool, logger *slog.Logger) *AuthHandler {
+	return &AuthHandler{db: db, secret: []byte(secret), allowDevHeader: allowDevHeader, logger: logger}
 }
 
 type authUser struct {
@@ -52,7 +52,11 @@ type authRequest struct {
 
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	var in authRequest
-	if err := decodeJSONBody(r, &in); err != nil || len(in.Password) < 6 {
+	if err := decodeJSONBody(w, r, &in); err != nil {
+		failDecode(w, err)
+		return
+	}
+	if len(in.Password) < 6 {
 		Fail(w, http.StatusBadRequest, CodeInvalidArgument, "密码至少 6 位")
 		return
 	}
@@ -117,7 +121,11 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var in authRequest
-	if err := decodeJSONBody(r, &in); err != nil || in.Password == "" {
+	if err := decodeJSONBody(w, r, &in); err != nil {
+		failDecode(w, err)
+		return
+	}
+	if in.Password == "" {
 		Fail(w, http.StatusBadRequest, CodeInvalidArgument, "账号和密码不能为空")
 		return
 	}
@@ -173,9 +181,9 @@ func (h *AuthHandler) Require(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
 		id, err := h.verify(raw)
-		if err != nil && h.allowHeaderFallback {
-			// Keep the P3 test/development contract while JWT is the normal path.
-			id, err = strconv.ParseInt(r.Header.Get("X-User-Id"), 10, 64)
+		if err != nil && h.allowDevHeader {
+			// 仅在显式开启开发身份头时回退；id 必须是正整数。
+			id, err = strconv.ParseInt(strings.TrimSpace(r.Header.Get("X-User-Id")), 10, 64)
 		}
 		if err != nil || id <= 0 {
 			Fail(w, http.StatusUnauthorized, CodeUnauthorized, "需要登录")
@@ -183,18 +191,6 @@ func (h *AuthHandler) Require(next http.Handler) http.Handler {
 		}
 		ctx := context.WithValue(r.Context(), authContextKey{}, id)
 		ctx = context.WithValue(ctx, userIDKey, id)
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
-}
-
-func RequireUser(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		id, err := strconv.ParseInt(r.Header.Get("X-User-Id"), 10, 64)
-		if err != nil || id <= 0 {
-			Fail(w, http.StatusUnauthorized, CodeUnauthorized, "需要登录")
-			return
-		}
-		ctx := context.WithValue(r.Context(), userIDKey, id)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -302,33 +298,4 @@ func (h *AuthHandler) verify(token string) (int64, error) {
 	return id, nil
 }
 
-// shortcut: SHA-256 is only a temporary dependency-free hash; replace with bcrypt before production.
-func passwordHash(password string) (string, error) {
-	salt := make([]byte, 16)
-	if _, err := rand.Read(salt); err != nil {
-		return "", err
-	}
-	sum := sha256.Sum256(append(salt, []byte(password)...))
-	return "sha256$" + hex.EncodeToString(salt) + "$" + hex.EncodeToString(sum[:]), nil
-}
-
-func passwordMatches(encoded, password string) bool {
-	parts := strings.Split(encoded, "$")
-	if len(parts) != 3 || parts[0] != "sha256" {
-		return false
-	}
-	salt, err := hex.DecodeString(parts[1])
-	if err != nil {
-		return false
-	}
-	sum := sha256.Sum256(append(salt, []byte(password)...))
-	return hmac.Equal([]byte(parts[2]), []byte(hex.EncodeToString(sum[:])))
-}
-
 func userID(id int64) string { return fmt.Sprintf("u_%d", id) }
-
-func decodeJSONBody(r *http.Request, dst any) error {
-	dec := json.NewDecoder(r.Body)
-	dec.DisallowUnknownFields()
-	return dec.Decode(dst)
-}

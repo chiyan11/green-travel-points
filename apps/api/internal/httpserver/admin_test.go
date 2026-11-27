@@ -111,11 +111,12 @@ func (f fakeAdmin) ListAuditLogs(_ context.Context, q app.AuditQuery) (app.Page[
 
 func newAdminRouter(admin app.AdminStore, roles app.RoleStore) http.Handler {
 	return NewRouter(Options{
-		Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
-		Env:     "test",
-		Admin:   admin,
-		Roles:   roles,
-		Catalog: fakeCatalog{},
+		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Env:            "test",
+		AllowDevHeader: true,
+		Admin:          admin,
+		Roles:          roles,
+		Catalog:        fakeCatalog{},
 	})
 }
 

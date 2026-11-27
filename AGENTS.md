@@ -58,7 +58,7 @@ docker compose -f deploy/docker-compose.yml up -d --build
 1. **配置只来自环境变量。** `internal/config/config.go` 只调用 `os.LookupEnv`，**不解析 `.env` 文件**；复制 `.env.example` 成 `.env` 不会生效。默认值可直接连本机库：`greentravel:greentravel@tcp(127.0.0.1:3306)/green_travel_points`。
 2. **端口写死。** 后端 `:8080`，前端 `5173`（`apps/web/vite.config.ts`），代理规则 `/api → 127.0.0.1:8080`。改端口要同时改这两处。
 3. **缓存重定向。** 若全局缓存目录不可写（受限沙箱、只读用户目录），先执行 `. .\scripts\dev-env.ps1`，它把 `GOCACHE` / `GOMODCACHE` / `npm` 缓存指到仓库内 `.cache/`。
-4. **种子账号可直接登录。** `db/seed/dev_demo.sql` 自带合法的 `sha256$<salt>$<digest>` 口令哈希（PR #25 起）：市民 `13800000001` / `demo123456`（user 1001，1200 分），运营管理员 `13800000002` / `admin123456`（user 1002，运营后台 `/admin` 用它登录）。也可注册新账号，或用开发期身份头 `X-User-Id: 1001`。**仅限按 seed 初始化的本地库**：共享库（`docs/dev/shared-db.md`）仍是旧占位哈希且演示用户 id=1，seed 明令禁止在共享库执行，只可按头部说明做定向 UPDATE。
+4. **种子账号可直接登录。** `db/seed/dev_demo.sql` 自带合法的 `pbkdf2$600000$<salt>$<digest>` 口令哈希：市民 `13800000001` / `demo123456`（user 1001，1200 分），运营管理员 `13800000002` / `admin123456`（user 1002，运营后台 `/admin` 用它登录）。也可注册新账号；开发期身份头 `X-User-Id: 1001` 仅在显式设置 `AUTH_ALLOW_DEV_HEADER=true` 时生效（`APP_ENV=prod` 开启会拒绝启动）。**仅限按 seed 初始化的本地库**：共享库（`docs/dev/shared-db.md`）仍是旧占位哈希且演示用户 id=1，seed 明令禁止在共享库执行，只可按头部说明做定向 UPDATE。
 
 > **团队共享库（ZeroTier 内网）**：连接方式见 [`docs/dev/shared-db.md`](dev/shared-db.md)。
 > 该链路延迟较高，后端启动需带 `HTTP_REQUEST_TIMEOUT=60s`，`DB_DSN` 要加 `timeout/readTimeout/writeTimeout`；
@@ -121,7 +121,7 @@ green-travel-points/
 │       ├── scripts/fix-generated.mjs  生成后处理：去掉 @ts-nocheck、加来源说明
 │       └── vite.config.ts        端口 5173 + /api 代理（VITE_API_TARGET 可改目标）
 ├── db/
-│   ├── migrations/               7 组 up/down 迁移（见 §6）
+│   ├── migrations/               8 组 up/down 迁移（见 §6）
 │   └── seed/dev_demo.sql         演示数据：用户 1001、管理员 1002、3 个商品
 ├── deploy/                       docker-compose.yml、Dockerfile.api、Dockerfile.web、nginx.conf
 ├── docs/                         需求规格、设计规格、故事地图/Backlog、实验报告、分工计划、Sprint 0 记录、数据库记录、接口说明、前端接口清单、UML
@@ -178,7 +178,7 @@ domain ◄──────────────────────┘�
 - **响应壳统一**：`{"code":"OK","message":"ok","data":...}`，用 `httpserver.OK` / `Fail` / `FailInternal` 写，别自己 `json.NewEncoder`。
 - **错误码稳定**：`OK` / `INVALID_ARGUMENT` / `UNAUTHORIZED` / `FORBIDDEN` / `NOT_FOUND` / `CONFLICT` / `INTERNAL` / `UNAVAILABLE`，以及业务细分 `INSUFFICIENT_POINTS` / `OUT_OF_STOCK` / `LIMIT_EXCEEDED` / `ILLEGAL_TRANSITION`（见 `internal/httpserver/response.go`）。码是给前端和测试断言的契约，不要随改随变。
 - **内部错误不外泄**：用 `FailInternal`（日志记详情、客户端只看到「服务器内部错误」）。
-- **请求体严格解码**：用 `DisallowUnknownFields`，多余字段直接 400，避免前后端字段漂移悄悄通过。
+- **请求体严格解码**：统一走 `decodeJSONBody`（1 MiB 上限 + `DisallowUnknownFields` + 拒绝尾随内容），多余字段直接 400；可空请求体用 `decodeJSONOptional`。
 - **日志**：`log/slog` 结构化，key 用小写短词（`"err"`、`"user_id"`）；handler 不打印业务数据明细。
 - **超时与关闭**：中间件 `Timeout` 取 `HTTP_REQUEST_TIMEOUT`（默认 15s）；`main.go` 用 `HTTP_SHUTDOWN_TIMEOUT` 优雅关闭，改动启动逻辑时不要绕过。
 - **路由可裁剪**：`NewRouter` 的 `Catalog` / `Points` / `Orders` / `Admin` / `Roles` 为 nil 时不挂载该组，单测可只装被测模块——新加端口时保持这个惯例。
@@ -195,7 +195,7 @@ domain ◄──────────────────────┘�
 | 兑换 | `POST /api/v1/orders`、`GET /api/v1/orders`、`POST /api/v1/orders/{id}/cancel` | 需身份 |
 | 运营 | `GET|POST /api/v1/admin/products`、`PATCH /api/v1/admin/products/{id}`、`PUT /api/v1/admin/skus/{id}/stock`、`GET /api/v1/admin/orders`、`POST /api/v1/admin/orders/{id}/(confirm|ship|complete)`、`POST /api/v1/admin/points/adjust`、`GET /api/v1/admin/points/reconcile`、`GET /api/v1/admin/audit-logs`、`POST /api/v1/admin/points/expire`、`GET|PUT /api/v1/admin/config`、`PUT /api/v1/admin/travel-modes/{code}` | 需 ADMIN |
 
-身份：优先 `Authorization: Bearer <token>`（登录签发，2 小时过期）；无 token 时回退 `X-User-Id: <id>`（开发便利，生产须关）。运营组再叠加 `RequireAdmin`，越权 403。
+身份：只认 `Authorization: Bearer <token>`（登录签发，2 小时过期）；无 token 即 401，不再自动回退请求头。开发期要在脚本/测试里指定用户，必须显式设 `AUTH_ALLOW_DEV_HEADER=true` 才接受 `X-User-Id: <正整数>`（`APP_ENV=prod` 开启直接拒绝启动）。运营组再叠加 `RequireAdmin`，越权 403。
 
 ---
 
@@ -221,7 +221,7 @@ domain ◄──────────────────────┘�
 
 ## 6. 数据层
 
-### 表清单（7 组迁移，15 张表）
+### 表清单（8 组迁移，15 张表）
 
 | 迁移 | 表 | 作用 |
 | --- | --- | --- |
@@ -232,6 +232,7 @@ domain ◄──────────────────────┘�
 | `000005` | `merchant`、`product`、`product_sku`、`redeem_order`、`point_batch` | 商城与兑换（批次用于 FIFO 扣减与过期） |
 | `000006` | `point_batch_txn` | 批次流水（记录每次扣减/退回对应的批次，便于对账与追溯） |
 | `000007` | `audit_log` | 运营审计日志（只追加：调账 / 参数变更 / 出行方式变更，含操作人、前后值、理由） |
+| `000008` | 无新表 | 数据迁移：把 `carbon_record.rule_snapshot` 的旧拼串改写成 JSON（`carbonPerPoint/dailyCap/rawPoints/grantedPoints`） |
 
 ### 不变量（写 SQL 时不能破）
 
@@ -391,7 +392,7 @@ E2E **不在门禁里**：它需要真实后端 + 共享库，CI 没有这些环
 | --- | --- | --- |
 | 积分批次 | 行程发放已在同一事务创建 `point_batch`，扣减/退款写 `point_batch_txn`；扣减严格按 FIFO，批次不足直接失败回滚；`consumeBatches` 仍未过滤已过期批次。过期清算已有手动接口（`POST /admin/points/expire`），无常驻定时任务 | 扣减补 `expires_at > NOW()` 过滤；补常驻过期任务 |
 | Outbox Worker | Worker 已实现轮询、重试与死信；repo 集成用例覆盖失败后重投成功及达到上限进入死信；默认处理器只记录投递，业务消费者尚未接入。订单侧已用 `TopicOrderPaid` / `TopicOrderCancelled` 常量；`TopicRedeemOrderPaid` 仍无人使用 | 接入业务消费并保证幂等；补死信查询/人工重放接口；清理或标注 `TopicRedeemOrderPaid` |
-| 密码哈希 | 加盐 SHA-256（`sha256$salt$digest`），注释已标"临时方案" | 换 bcrypt / argon2，并给出存量数据迁移方案 |
+| 密码哈希 | PBKDF2-HMAC-SHA256（`pbkdf2$600000$salt$digest`，600000 次迭代、32 字节派生、16 字节随机盐；校验时拒绝旧 `sha256$` 与低于 100000 次迭代的记录） | 如需更强 KDF 换 argon2id；换算法时要同时改签发与校验并重设种子 |
 | Token | 自签 HMAC-SHA256 紧凑串，**不是标准 JWT**（无 header 段） | 需要标准 JWT 时统一改签发与校验两端 |
 | sqlc | `apps/api/sqlc.yaml` 已配置但未启用，repo 全是手写 SQL | 启用即要重写 repo 层，别半途混用 |
 | 集成 / E2E | repo 集成测试已建（`orders_test.go`、`audit_test.go`、`batches_test.go`、`outbox_integration_test.go`，`REPO_TEST_DSN` 门控，数据库用例默认 SKIP，共 13 例）；E2E 主链路与运营后台已建（真后端 + 共享库），二者均未进 CI | CI 需要 MySQL 服务容器（testcontainers 或 service）后再接入 |
@@ -407,7 +408,7 @@ E2E **不在门禁里**：它需要真实后端 + 共享库，CI 没有这些环
 | `spawn EPERM`（vitest / vite） | 受限沙箱拦截子进程 | 换普通终端执行；CI 不受影响 |
 | 仓库子目录读写 `EPERM` | 目录 ACL 不含当前用户（复制/解压继承） | `icacls "<仓库根>" /grant "$env:USERNAME:(OI)(CI)F" /T /C` |
 | `/readyz` 503 | 连不上 MySQL | 确认库在跑、账号 `greentravel/greentravel` 存在、`DB_DSN` 正确 |
-| 页面 401 | token 过期（2h）或未登录且 `X-User-Id` 被改 | 重新登录；或保持回退头 |
+| 页面 401 | token 过期（2h）或压根没登录（前端不再注入 `X-User-Id`） | 重新登录；脚本联调需显式开 `AUTH_ALLOW_DEV_HEADER=true` |
 | 商城 / 积分列表为空 | 没导种子；库里确实没数据 | 导入 `db/seed/dev_demo.sql` |
 | `docker compose` 连不上 daemon | Docker Desktop 未启动 | 启动后重试，或改本地 `go run` + `npm run dev` |
 | `tsc` 报 `TS5102 baseUrl` | TS7 移除该选项 | 路径别名写成相对形式 |

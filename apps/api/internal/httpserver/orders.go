@@ -1,7 +1,6 @@
 package httpserver
 
 import (
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -31,9 +30,8 @@ type cancelOrderRequest struct {
 // 请求头可选 Idempotency-Key，重复请求返回原订单（BR-15）。
 func (h orderHandler) create(w http.ResponseWriter, r *http.Request) {
 	var req createOrderRequest
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
-	if err := dec.Decode(&req); err != nil {
-		Fail(w, http.StatusBadRequest, CodeInvalidArgument, "请求体不是合法 JSON")
+	if err := decodeJSONBody(w, r, &req); err != nil {
+		failDecode(w, err)
 		return
 	}
 	if req.ProductID <= 0 {
@@ -86,8 +84,9 @@ func (h orderHandler) cancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req cancelOrderRequest
-	if r.Body != nil {
-		_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req)
+	if err := decodeJSONOptional(w, r, &req); err != nil {
+		failDecode(w, err)
+		return
 	}
 	order, err := h.store.CancelOrder(r.Context(), UserID(r.Context()), id, req.Reason)
 	if err != nil {

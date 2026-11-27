@@ -85,15 +85,15 @@ func (f fakeOrders) CancelOrder(_ context.Context, userID, orderID int64, reason
 
 type fakeTrips struct {
 	create func(app.CreateTripInput) (app.Trip, error)
-	list   func(int64) ([]app.Trip, error)
+	list   func(app.TripQuery) (app.Page[app.Trip], error)
 }
 
 func (f fakeTrips) CreateTrip(_ context.Context, in app.CreateTripInput) (app.Trip, error) {
 	return f.create(in)
 }
 
-func (f fakeTrips) ListTrips(_ context.Context, userID int64) ([]app.Trip, error) {
-	return f.list(userID)
+func (f fakeTrips) ListTrips(_ context.Context, q app.TripQuery) (app.Page[app.Trip], error) {
+	return f.list(q)
 }
 
 func discardLogger() *slog.Logger {
@@ -106,12 +106,14 @@ func newTestRouter(c app.CatalogStore, p app.PointsStore, o app.OrderStore) http
 
 func newTestRouterWithTrips(c app.CatalogStore, p app.PointsStore, o app.OrderStore, trips app.TripStore) http.Handler {
 	return NewRouter(Options{
-		Logger:  discardLogger(),
-		Env:     "test",
-		Catalog: c,
-		Points:  p,
-		Orders:  o,
-		Trips:   trips,
+		Logger: discardLogger(),
+		Env:    "test",
+		// 用例靠 X-User-Id 指定用户，显式开启；默认关闭由 authz_test.go 覆盖。
+		AllowDevHeader: true,
+		Catalog:        c,
+		Points:         p,
+		Orders:         o,
+		Trips:          trips,
 	})
 }
 
@@ -212,16 +214,17 @@ func TestCreateTripInvalidInput(t *testing.T) {
 }
 
 func TestListTrips(t *testing.T) {
-	trips := fakeTrips{list: func(userID int64) ([]app.Trip, error) {
-		if userID != 7 {
-			t.Fatalf("userID = %d，期望 7", userID)
+	trips := fakeTrips{list: func(q app.TripQuery) (app.Page[app.Trip], error) {
+		if q.UserID != 7 || q.Page != 2 || q.PageSize != 1 {
+			t.Fatalf("分页参数不符: %+v", q)
 		}
-		return []app.Trip{{ID: "trip_1", Mode: "walk", Status: "VERIFIED"}}, nil
+		return app.Page[app.Trip]{Items: []app.Trip{{ID: "trip_1", Mode: "walk", Status: "VALID"}},
+			Page: q.Page, PageSize: q.PageSize, Total: 3}, nil
 	}}
 	h := newTestRouterWithTrips(nil, nil, nil, trips)
-	rec, env := doJSON(t, h, http.MethodGet, "/api/v1/trips", "", map[string]string{"X-User-Id": "7"})
-	if rec.Code != http.StatusOK || env.Code != CodeOK || !strings.Contains(string(env.Data), "trip_1") {
-		t.Fatalf("期望行程列表，实际 %d/%s", rec.Code, env.Data)
+	rec, env := doJSON(t, h, http.MethodGet, "/api/v1/trips?page=2&pageSize=1", "", map[string]string{"X-User-Id": "7"})
+	if rec.Code != http.StatusOK || env.Code != CodeOK || !strings.Contains(string(env.Data), `"total":3`) {
+		t.Fatalf("期望分页行程列表，实际 %d/%s", rec.Code, env.Data)
 	}
 }
 

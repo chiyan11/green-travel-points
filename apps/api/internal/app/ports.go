@@ -5,7 +5,7 @@ import "context"
 // TripStore 是行程上报与列表查询的端口（M2/M3）。
 type TripStore interface {
 	CreateTrip(ctx context.Context, in CreateTripInput) (Trip, error)
-	ListTrips(ctx context.Context, userID int64) ([]Trip, error)
+	ListTrips(ctx context.Context, q TripQuery) (Page[Trip], error)
 }
 
 // PointsStore 是积分查询端口（M5）。

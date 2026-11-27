@@ -30,13 +30,11 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     headers.set('Content-Type', 'application/json')
   }
 
-  // 已登录走 JWT（后端 httpserver/auth.go Require 优先校验 Bearer）；
-  // 未登录时退回开发期约定的 X-User-Id，方便不登录也能浏览商城。
+  // 只走 Bearer：后端默认关闭开发身份头（AUTH_ALLOW_DEV_HEADER），
+  // 未登录时匿名请求由后端返回 401，再由下面的统一处理跳 /login。
   const token = getToken()
   if (token !== null && !headers.has('Authorization')) {
     headers.set('Authorization', `Bearer ${token}`)
-  } else if (token === null && !headers.has('X-User-Id')) {
-    headers.set('X-User-Id', '1')
   }
 
   const res = await fetch(path, { ...init, headers })
