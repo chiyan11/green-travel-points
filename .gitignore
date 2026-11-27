@@ -28,6 +28,8 @@ node_modules/
 
 # ---- 本机沙箱缓存重定向（见 scripts/dev-env.ps1，勿提交） ----
 .cache/
+# 共享库迁移本地备份（本地专属，勿提交；.cache/ 已整体忽略，此处显式兜底）
+.cache/db-backup-*.sql
 
 # ---- Playwright 运行产物（截图证据在 docs/screenshots/，是有意入库的交付物） ----
 apps/web/test-results/

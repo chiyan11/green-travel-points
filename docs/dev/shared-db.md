@@ -155,7 +155,7 @@ git pull --rebase          # 拿迁移文件（留档 / 本地库复现用）
 | 日期 | 迁移 | 执行人 | 目标库 | 结果证据 |
 | --- | --- | --- | --- | --- |
 | 2026-11-17 | `000003`–`000005` | 李响（本机） | 本机 127.0.0.1 | `SHOW TABLES` 13 张，`/readyz` 200 |
-| TODO | `000006`–`000011` | 待执行者确认 | 共享库 | 本表尚无登记；需执行者补 `SHOW TABLES` / `DESCRIBE` 证据 |
+| 2026-11-27 21:11–21:13 | `000007`–`000011` | 李响（本机） | 共享库 `green_travel_points`（127.0.0.1） | `SHOW COLUMNS` 确认 `raw_points bigint NO`；`carbon_record` 76 条回填 `nulls=0`、`mismatch=0`；`audit_log` 已建；`uk_order_idem` 为 `(user_id, idempotency_key)`；备份 `D:\coding\green-travel-points\.cache\db-backup-green_travel_points-20261127-2114-final.sql` |
 
 ### 6.5 三个常见坑
 
