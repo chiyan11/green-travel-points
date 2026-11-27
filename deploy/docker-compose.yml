@@ -1,10 +1,14 @@
-# 本地一键起 MySQL + API（可选）。前端开发仍建议用 npm run dev，热更新体验更好。
+# 全栈一键启动：MySQL + API + Web（nginx 静态托管 + /api 反代）。
 #
 #   docker compose -f deploy/docker-compose.yml up -d --build
-#   curl http://127.0.0.1:8080/healthz
+#   curl http://127.0.0.1:8080/healthz        # API 直连
+#   http://127.0.0.1:8088/                    # Web 入口（nginx → api）
+#
+# 端口默认避让本机常用端口：MySQL 3307、Web 8088、API 8080；
+# 需要改端口时用环境变量覆盖，例如 MYSQL_PORT=3306 WEB_PORT=80。
 #
 # 说明：本机若已安装 MySQL 服务（如 MySQL97），更省事的是跳过 mysql 服务，
-# 直接把 apps/api/.env 的 DB_DSN 指向本机实例，见 README「数据库准备」。
+# 直接把 apps/api 的 DB_DSN 指向本机实例，见 README「数据库准备」。
 
 services:
   mysql:
@@ -22,15 +26,21 @@ services:
       - --collation-server=utf8mb4_0900_ai_ci
       - --default-time-zone=+08:00
     ports:
-      - "3306:3306"
+      - "${MYSQL_PORT:-3307}:3306"
     volumes:
-      - ./mysql-data:/var/lib/mysql
-      # 迁移脚本按文件名顺序执行，仅在数据目录为空时生效
+      - ${MYSQL_DATA_DIR:-./mysql-data}:/var/lib/mysql
+      # 迁移按文件名顺序执行，仅在数据目录为空时生效。
+      # 新增 db/migrations/*.up.sql 必须在这里追加一行，否则空卷起的库会缺表。
       - ../db/migrations/000001_init.up.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
       - ../db/migrations/000002_event_outbox.up.sql:/docker-entrypoint-initdb.d/02_event_outbox.sql:ro
       - ../db/migrations/000003_points_ledger.up.sql:/docker-entrypoint-initdb.d/03_points_ledger.sql:ro
       - ../db/migrations/000004_user_trip_carbon.up.sql:/docker-entrypoint-initdb.d/04_user_trip_carbon.sql:ro
       - ../db/migrations/000005_mall_orders.up.sql:/docker-entrypoint-initdb.d/05_mall_orders.sql:ro
+      - ../db/migrations/000006_point_batch_txn.up.sql:/docker-entrypoint-initdb.d/06_point_batch_txn.sql:ro
+      - ../db/migrations/000007_audit_log.up.sql:/docker-entrypoint-initdb.d/07_audit_log.sql:ro
+      - ../db/migrations/000008_rule_snapshot_json.up.sql:/docker-entrypoint-initdb.d/08_rule_snapshot_json.sql:ro
+      - ../db/migrations/000009_outbox_lease.up.sql:/docker-entrypoint-initdb.d/09_outbox_lease.sql:ro
+      - ../db/migrations/000010_trip_raw_points.up.sql:/docker-entrypoint-initdb.d/10_trip_raw_points.sql:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot"]
       interval: 5s
@@ -51,4 +61,16 @@ services:
       - "8080:8080"
     depends_on:
       mysql:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.web
+    container_name: gtp-web
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8088}:80"
+    depends_on:
+      api:
         condition: service_healthy

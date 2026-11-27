@@ -60,7 +60,7 @@ docker compose -f deploy/docker-compose.yml up -d --build
 3. **缓存重定向。** 若全局缓存目录不可写（受限沙箱、只读用户目录），先执行 `. .\scripts\dev-env.ps1`，它把 `GOCACHE` / `GOMODCACHE` / `npm` 缓存指到仓库内 `.cache/`。
 4. **种子账号可直接登录。** `db/seed/dev_demo.sql` 自带合法的 `pbkdf2$600000$<salt>$<digest>` 口令哈希：市民 `13800000001` / `demo123456`（user 1001，1200 分），运营管理员 `13800000002` / `admin123456`（user 1002，运营后台 `/admin` 用它登录）。也可注册新账号；开发身份头仅在 `APP_ENV=dev` 且显式设置 `AUTH_ALLOW_DEV_HEADER=true` 时生效，其他环境开启会拒绝启动。**仅限按 seed 初始化的本地库**：共享库（`docs/dev/shared-db.md`）仍是旧占位哈希且演示用户 id=1，seed 明令禁止在共享库执行，只可按头部说明做定向 UPDATE。
 
-> **团队共享库（ZeroTier 内网）**：连接方式见 [`docs/dev/shared-db.md`](dev/shared-db.md)。
+> **团队共享库（ZeroTier 内网）**：连接方式见 [`docs/dev/shared-db.md`](docs/dev/shared-db.md)。
 > 该链路延迟较高，后端启动需带 `HTTP_REQUEST_TIMEOUT=60s`，`DB_DSN` 要加 `timeout/readTimeout/writeTimeout`；
 > 日常开发建议本地库，联调/演示切共享库。
 > **若本机就是共享库主机**（`docs/dev/shared-db.md` 顶部写明主机名的那台），`127.0.0.1` 与共享库是**同一实例**：
@@ -193,7 +193,7 @@ domain ◄──────────────────────┘�
 | 商品 | `GET /api/v1/products`、`GET /api/v1/products/{id}` | 公开 |
 | 积分 | `GET /api/v1/points/summary`、`GET /api/v1/points/transactions`、`GET /api/v1/points/daily-carbon` | 需身份 |
 | 兑换 | `POST /api/v1/orders`、`GET /api/v1/orders`、`POST /api/v1/orders/{id}/cancel` | 需身份 |
-| 运营 | `GET|POST /api/v1/admin/products`、`PATCH /api/v1/admin/products/{id}`、`PUT /api/v1/admin/skus/{id}/stock`、`GET /api/v1/admin/orders`、`POST /api/v1/admin/orders/{id}/(confirm|ship|complete)`、`POST /api/v1/admin/points/adjust`、`GET /api/v1/admin/points/reconcile`、`GET /api/v1/admin/audit-logs`、`POST /api/v1/admin/points/expire`、`GET|PUT /api/v1/admin/config`、`PUT /api/v1/admin/travel-modes/{code}` | 需 ADMIN |
+| 运营 | `GET\|POST /api/v1/admin/products`、`PATCH /api/v1/admin/products/{id}`、`PUT /api/v1/admin/skus/{id}/stock`、`GET /api/v1/admin/orders`、`POST /api/v1/admin/orders/{id}/(confirm\|ship\|complete)`、`POST /api/v1/admin/points/adjust`、`GET /api/v1/admin/points/reconcile`、`GET /api/v1/admin/audit-logs`、`POST /api/v1/admin/points/expire`、`GET\|PUT /api/v1/admin/config`、`PUT /api/v1/admin/travel-modes/{code}` | 需 ADMIN |
 
 身份：使用 `Authorization: Bearer <token>`（登录签发，2 小时过期）；仅 `APP_ENV=dev` 且显式设置 `AUTH_ALLOW_DEV_HEADER=true` 时接受 `X-User-Id: <正整数>`，其他环境开启直接拒绝启动。运营组再叠加 `RequireAdmin`，越权 403。
 
@@ -209,7 +209,7 @@ domain ◄──────────────────────┘�
 | 积分换算 | `floor(碳减排克数 / 100 + 1e-9)`，即 100 g = 1 分 | `apps/api/internal/domain/points.go:30` 的 `DefaultPointsRule` |
 | 每日积分上限 | 500 分 | 同上 `DailyCap` |
 | 有效距离 | 0.1 km ≤ d ≤ 100 km | 同上 `MinDistanceKm` / `MaxDistanceKm` |
-| 订单状态机 | `PENDING → PAID | CANCELLED`；`PAID → SHIPPED | CANCELLED`；`SHIPPED → COMPLETED | CANCELLED` | `apps/api/internal/domain/order.go` 的 `orderTransitions` |
+| 订单状态机 | `PENDING → PAID \| CANCELLED`；`PAID → SHIPPED \| CANCELLED`；`SHIPPED → COMPLETED \| CANCELLED` | `apps/api/internal/domain/order.go` 的 `orderTransitions` |
 
 改规则的固定动作：
 
@@ -298,9 +298,9 @@ pages/*.tsx  ──►  services/*.ts  ──►  lib/http.ts  ──►  fetch
 | 层级 | 位置 | 规模 | 特点 |
 | --- | --- | --- | --- |
 | 领域单测 | `apps/api/internal/domain/*_test.go` | 12 个函数 / 45 例 | 表驱动，覆盖边界与非法输入 |
-| HTTP 单测 | `apps/api/internal/httpserver/*_test.go` | 49 例 | 注入假存储，**不连 MySQL**；断言响应壳与错误码 |
+| HTTP 单测 | `apps/api/internal/httpserver/*_test.go` | 69 例 | 注入假存储，**不连 MySQL**；断言响应壳与错误码 |
 | 参数校验单测 | `apps/api/internal/app/admin_test.go` | 2 个函数 / 34 例 | `sys_config` 数值规则与 `travel_mode` 更新校验，纯函数表驱动 |
-| repo 集成测试 | `apps/api/internal/repo/orders_test.go`、`audit_test.go`、`batches_test.go`、`trips_test.go`、`outbox_integration_test.go` | 17 例（订单 8 + 调账与审计 3 + 批次发放 1 + 行程 2 + Outbox 3） | 真连 MySQL；`REPO_TEST_DSN` 未设置时数据库用例 SKIP；DSN 数据库名必须以 `_test` 结尾 |
+| repo 集成测试 | `apps/api/internal/repo/orders_test.go`、`audit_test.go`、`batches_test.go`、`trips_test.go`、`outbox_test.go`、`outbox_integration_test.go` | 6 文件、23 个测试函数（DB 集成 18 + 纯函数 5） | 真连 MySQL；`REPO_TEST_DSN` 未设置时数据库用例 SKIP（CI 必设）；DSN 数据库名必须以 `_test` 结尾 |
 | 启动日志单测 | `apps/api/cmd/server/dbendpoint_test.go` | 2 个函数 / 15 例 | 表驱动：默认 DSN、局域网 / ZeroTier、localhost、IPv6 回环、unix socket、省略地址、非法 DSN；另测 `WriteTimeout` 跟随请求超时 |
 | 前端单测 | `apps/web/src/lib/*.test.ts` | 2 文件 19 例 | `http.test.ts` 用 `vi.stubGlobal('fetch')` 测解包与错误映射；`validators.test.ts` 测校验规则 |
 | 前端页面测试 | `apps/web/src/pages/*.test.tsx` | 5 文件 16 例 | jsdom + Testing Library + MSW 3 拦截 `fetch`；`src/test/render.tsx` 提供 QueryClient/路由壳，`src/test/http.ts` 造 `{code,message,data}` 壳（测试里也重放后端协议，不是随手 mock） |
@@ -354,7 +354,7 @@ $env:E2E_CITIZEN_PHONE = '13800000001'; $env:E2E_CITIZEN_PASSWORD = '<共享库�
 pwsh -File .\scripts\verify.ps1
 ```
 
-八步，任一失败即非 0 退出并打印 `VERIFY FAILED: <步骤>`：
+九步，任一失败即非 0 退出并打印 `VERIFY FAILED: <步骤>`：
 
 | # | 步骤 | 失败常见原因 |
 | --- | --- | --- |
@@ -366,8 +366,11 @@ pwsh -File .\scripts\verify.ps1
 | 6 | `tsc --noEmit` | 类型漂移；TS7 不认 `baseUrl`，路径别名用相对形式 |
 | 7 | `vitest run` | 断言过时、mock 返回值形状变了 |
 | 8 | `vite build` | 仅构建期才暴露的引用错误 |
+| 9 | `deploy: compose migrations`（`scripts/check-compose-migrations.ps1`） | 新加 `db/migrations/*.up.sql` 却没挂进 `deploy/docker-compose.yml`，容器起库会缺表 |
 
-CI（`.github/workflows/ci.yml`）两个 job 与本地一致，差异：CI 用 `go test -race -coverprofile`、`npm ci`。
+CI（`.github/workflows/ci.yml`）两个 job 与本地一致，差异：CI 的 api job 起 `mysql:8.4` service，先按文件名顺序跑完 10 组迁移再 `go test -race -coverprofile`（`REPO_TEST_DSN` 指向 `green_travel_points_test`），随后校验 repo 集成用例清单——出现 `--- SKIP` 或 `--- PASS` 少于 10 个即红；web job 用 `npm ci`。
+
+本地 `verify.ps1` 的 `api: go test` 没有 DSN，repo 集成用例会 SKIP，这是正常的：集成由 CI 负责。改了 repo 层想本地验证时，自己起库并设 `REPO_TEST_DSN` 单跑该包。
 
 E2E **不在门禁里**：它需要真实后端 + 共享库，CI 没有这些环境。提交涉及主链路的改动时手动跑 `npm run test:e2e`，并把截图一起提交。
 
@@ -397,8 +400,8 @@ E2E **不在门禁里**：它需要真实后端 + 共享库，CI 没有这些环
 | 密码哈希 | PBKDF2-HMAC-SHA256（`pbkdf2$600000$salt$digest`，600000 次迭代、32 字节派生、16 字节随机盐；校验时拒绝旧 `sha256$` 与低于 100000 次迭代的记录） | 如需更强 KDF 换 argon2id；换算法时要同时改签发与校验并重设种子 |
 | Token | 自签 HMAC-SHA256 紧凑串，**不是标准 JWT**（无 header 段） | 需要标准 JWT 时统一改签发与校验两端 |
 | sqlc | `apps/api/sqlc.yaml` 已配置但未启用，repo 全是手写 SQL | 启用即要重写 repo 层，别半途混用 |
-| 集成 / E2E | repo 集成测试已建（`orders_test.go`、`audit_test.go`、`batches_test.go`、`outbox_integration_test.go`，`REPO_TEST_DSN` 门控，数据库用例默认 SKIP，共 13 例）；E2E 主链路与运营后台已建（真后端 + 共享库），二者均未进 CI | CI 需要 MySQL 服务容器（testcontainers 或 service）后再接入 |
-| 部署 | compose 只有 `mysql` + `api`；`web` 与 nginx 配置就绪但未编入；本机未实跑 docker | 补 web 服务与反向代理，留下实跑证据 |
+| 集成 / E2E | repo 集成测试 6 文件、23 个测试函数（DB 集成 18 + 纯函数 5），**已进 CI**（`mysql:8.4` service + 迁移 + DSN，0 SKIP 由清单校验强制）；E2E 主链路与运营后台已建（真后端 + 共享库），仍**未**进 CI | E2E 若要进 CI，需先给 CI 一个可用的 MySQL 服务容器与种子导入步骤 |
+| 部署 | compose 已编入 `mysql` + `api` + `web`（nginx 在 web 镜像内），10 组迁移全挂载，`check-compose-migrations.ps1` 已进门禁；本机 Docker 引擎不可用（缺 WSL2），容器未实跑，替代证据见 `docs/deploy/部署冒烟记录.md` | 在有 Docker 的机器补一次 `up -d --build` 实跑截图；E2E 仍未进 CI |
 | 前端包体 | `vite build` 单包约 540 kB（gzip 163 kB）+ CSS 354 kB（gzip 54 kB）；移除 ECharts 后已从 1.95 MB 降下来，仍略超 500 kB 警告。 | 用路由级 `import()` 分包；预算从 gzip 163 kB 起算 |
 
 ---

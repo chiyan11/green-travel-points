@@ -31,6 +31,7 @@ Step 'web: api contract' { Push-Location $web; try { npm run gen:api; if ($LASTE
 Step 'web: tsc'       { Push-Location $web; try { npx --no-install tsc --noEmit } finally { Pop-Location } }
 Step 'web: vitest'    { Push-Location $web; try { npx --no-install vitest run } finally { Pop-Location } }
 Step 'web: build'     { Push-Location $web; try { npx --no-install vite build } finally { Pop-Location } }
+Step 'deploy: compose migrations' { & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'check-compose-migrations.ps1') }
 
 Write-Host ""
 if ($failed.Count -gt 0) {
