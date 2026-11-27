@@ -419,7 +419,7 @@ go build ./...
 
 `internal/repo/orders_test.go` 覆盖兑换成功 / 积分不足 / 批次不足拒绝 / 库存不足 / 限购 / 取消退款回填 /
 20 并发防超卖 / 对账；`audit_test.go` 覆盖人工调账与审计；`batches_test.go` 覆盖行程发批次后的账本平衡；
-`outbox_integration_test.go` 覆盖失败重投与死信。共 13 例，**未设置 `REPO_TEST_DSN` 时数据库用例全部跳过**，
+`trips_test.go` 覆盖行程幂等重放、批次发放、账户/批次对账与 Outbox 去重；`outbox_integration_test.go` 覆盖失败重投与死信。共 14 例，**未设置 `REPO_TEST_DSN` 时数据库用例全部跳过**，
 所以 CI 与没装库的机器不受影响。
 
 用例会**整表清空**，因此 DSN 指向的库名必须以 `_test` 结尾，防止误洗演示库。
