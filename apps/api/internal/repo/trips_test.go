@@ -2,6 +2,9 @@ package repo
 
 import (
 	"context"
+	"database/sql"
+	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -68,6 +71,53 @@ func TestTripSnapshotAndHash(t *testing.T) {
 	if hashTrip(1, "bus", 10.000001, now) == hashTrip(1, "bus", 10.000002, now) {
 		t.Fatal("六位小数不同的距离不应产生相同行程哈希")
 	}
+}
+
+func TestScanTripPropagatesDatabaseError(t *testing.T) {
+	store := newTestStore(t)
+	tx, err := store.db.BeginTx(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	_, err = scanTrip(context.Background(), tx, testUserID, "missing")
+	if !errors.Is(err, sql.ErrTxDone) {
+		t.Fatalf("scanTrip error = %v, want sql.ErrTxDone", err)
+	}
+}
+
+func TestCreateTripInvalidSnapshotDoesNotGrantAgain(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	mustExec(t, store.db,
+		"UPDATE point_txn SET occurred_at = DATE_SUB(NOW(3), INTERVAL 1 DAY) WHERE account_id = ?", testAccountID)
+	input := app.CreateTripInput{
+		UserID: testUserID, Mode: "bus", DistanceKm: 10,
+		TraveledAt: time.Now().Add(-time.Minute).UTC().Truncate(time.Millisecond),
+	}
+	if _, err := store.CreateTrip(ctx, input); err != nil {
+		t.Fatal(err)
+	}
+	tripID := mustQueryInt(t, store.db, "SELECT id FROM trip_record WHERE user_id = ? AND trip_hash = ?",
+		input.UserID, hashTrip(input.UserID, input.Mode, input.DistanceKm, input.TraveledAt))
+	mustExec(t, store.db, "UPDATE carbon_record SET rule_snapshot = 'invalid-json' WHERE trip_id = ?", tripID)
+	balance := mustQueryInt(t, store.db, "SELECT balance FROM point_account WHERE id = ?", testAccountID)
+
+	if _, err := store.CreateTrip(ctx, input); err == nil || !strings.Contains(err.Error(), "rule_snapshot") {
+		t.Fatalf("invalid snapshot error = %v", err)
+	}
+	if got := mustQueryInt(t, store.db, "SELECT COUNT(*) FROM trip_record WHERE user_id = ?", testUserID); got != 1 {
+		t.Fatalf("trip count = %d, want 1", got)
+	}
+	if got := mustQueryInt(t, store.db, "SELECT balance FROM point_account WHERE id = ?", testAccountID); got != balance {
+		t.Fatalf("balance = %d, want %d", got, balance)
+	}
+	if got := mustQueryInt(t, store.db, "SELECT COUNT(*) FROM event_outbox WHERE aggregate_type = 'trip'"); got != 1 {
+		t.Fatalf("event count = %d, want 1", got)
+	}
+	assertBatchLedgerBalanced(t, store.db)
 }
 
 func TestCreateTripIdempotentKeepsLedgerBalanced(t *testing.T) {

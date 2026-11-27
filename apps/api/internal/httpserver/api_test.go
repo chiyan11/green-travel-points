@@ -213,6 +213,36 @@ func TestCreateTripInvalidInput(t *testing.T) {
 	}
 }
 
+func TestCreateTripStoreErrorIsInternal(t *testing.T) {
+	trips := fakeTrips{create: func(app.CreateTripInput) (app.Trip, error) {
+		return app.Trip{}, errors.New("database unavailable")
+	}}
+	h := newTestRouterWithTrips(nil, nil, nil, trips)
+	rec, env := doJSON(t, h, http.MethodPost, "/api/v1/trips",
+		`{"mode":"bus","distanceKm":10,"traveledAt":"`+time.Now().Add(-time.Hour).Format(time.RFC3339)+`"}`,
+		map[string]string{"X-User-Id": "7"})
+	if rec.Code != http.StatusInternalServerError || env.Code != CodeInternal {
+		t.Fatalf("期望 500/INTERNAL，实际 %d/%s", rec.Code, env.Code)
+	}
+	if strings.Contains(rec.Body.String(), "database unavailable") {
+		t.Fatal("内部数据库错误不应返回给客户端")
+	}
+}
+
+func TestCreateTripFutureTimeDoesNotCallStore(t *testing.T) {
+	trips := fakeTrips{create: func(app.CreateTripInput) (app.Trip, error) {
+		t.Fatal("未来时间不应调用存储")
+		return app.Trip{}, nil
+	}}
+	h := newTestRouterWithTrips(nil, nil, nil, trips)
+	rec, env := doJSON(t, h, http.MethodPost, "/api/v1/trips",
+		`{"mode":"bus","distanceKm":10,"traveledAt":"`+time.Now().Add(time.Hour).Format(time.RFC3339)+`"}`,
+		map[string]string{"X-User-Id": "7"})
+	if rec.Code != http.StatusBadRequest || env.Code != CodeInvalidArgument {
+		t.Fatalf("期望 400/INVALID_ARGUMENT，实际 %d/%s", rec.Code, env.Code)
+	}
+}
+
 func TestListTrips(t *testing.T) {
 	trips := fakeTrips{list: func(q app.TripQuery) (app.Page[app.Trip], error) {
 		if q.UserID != 7 || q.Page != 2 || q.PageSize != 1 {

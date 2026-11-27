@@ -349,7 +349,7 @@ pwsh -File .\scripts\verify.ps1
 | 契约一致性 | `docs/api/openapi.yaml` ↔ `apps/web/src/types/api.ts` | `npm run gen:api` 后 `git diff --exit-code` | 已接入 `verify.ps1` 与 CI |
 | E2E（消费者主链路） | 注册 → 上报 → 积分到账 → 兑换 → 取消返还 | `E2E_API_TARGET=… npm run test:e2e` | 1 条用例绿，11 张截图在 `docs/screenshots/` |
 | E2E（运营后台） | 建商品 → 上架 → 改库存 → 下单 → 后台确认接单 | `npx playwright test`（apps/web） | 1 条用例绿；截图证据在 `docs/p5-evidence/` |
-| 集成测试 | repo + 真实 MySQL：订单 / 对账 / 调账 / 积分批次 / 行程幂等与并发上限 / Outbox 重试、死信与租约 | `REPO_TEST_DSN=… go test ./internal/repo -v` | `apps/api/internal/repo/` 下共 17 例；未设 DSN 时数据库用例 SKIP；尚未进 CI |
+| 集成测试 | repo + 真实 MySQL：订单 / 对账 / 调账 / 积分批次 / 行程幂等、并发上限和错误回滚 / Outbox 重试、死信与租约 | `REPO_TEST_DSN=… go test ./internal/repo -v` | `apps/api/internal/repo/` 下共 19 例；未设 DSN 时数据库用例 SKIP；尚未进 CI |
 | 性能 | 行程上报、兑换并发 | 待建（k6） | 未建：计划 S6 起 |
 
 指导书要求的**基本路径法**（组件测试）与**等价类划分法**（功能测试）用例表，在 S6 补齐并写入测试报告。
