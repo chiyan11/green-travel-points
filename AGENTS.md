@@ -121,7 +121,7 @@ green-travel-points/
 │       ├── scripts/fix-generated.mjs  生成后处理：去掉 @ts-nocheck、加来源说明
 │       └── vite.config.ts        端口 5173 + /api 代理（VITE_API_TARGET 可改目标）
 ├── db/
-│   ├── migrations/               8 组 up/down 迁移（见 §6）
+│   ├── migrations/               9 组 up/down 迁移（见 §6）
 │   └── seed/dev_demo.sql         演示数据：用户 1001、管理员 1002、3 个商品
 ├── deploy/                       docker-compose.yml、Dockerfile.api、Dockerfile.web、nginx.conf
 ├── docs/                         需求规格、设计规格、故事地图/Backlog、实验报告、分工计划、Sprint 0 记录、数据库记录、接口说明、前端接口清单、UML
@@ -221,7 +221,7 @@ domain ◄──────────────────────┘�
 
 ## 6. 数据层
 
-### 表清单（8 组迁移，15 张表）
+### 表清单（9 组迁移，15 张表）
 
 | 迁移 | 表 | 作用 |
 | --- | --- | --- |
@@ -233,6 +233,7 @@ domain ◄──────────────────────┘�
 | `000006` | `point_batch_txn` | 批次流水（记录每次扣减/退回对应的批次，便于对账与追溯） |
 | `000007` | `audit_log` | 运营审计日志（只追加：调账 / 参数变更 / 出行方式变更，含操作人、前后值、理由） |
 | `000008` | 无新表 | 数据迁移：把 `carbon_record.rule_snapshot` 的旧拼串改写成 JSON（`carbonPerPoint/dailyCap/rawPoints/grantedPoints`） |
+| `000009` | 无新表 | `event_outbox` 增加租约令牌与到期时间 |
 
 ### 不变量（写 SQL 时不能破）
 
@@ -298,7 +299,7 @@ pages/*.tsx  ──►  services/*.ts  ──►  lib/http.ts  ──►  fetch
 | 领域单测 | `apps/api/internal/domain/*_test.go` | 12 个函数 / 45 例 | 表驱动，覆盖边界与非法输入 |
 | HTTP 单测 | `apps/api/internal/httpserver/*_test.go` | 49 例 | 注入假存储，**不连 MySQL**；断言响应壳与错误码 |
 | 参数校验单测 | `apps/api/internal/app/admin_test.go` | 2 个函数 / 34 例 | `sys_config` 数值规则与 `travel_mode` 更新校验，纯函数表驱动 |
-| repo 集成测试 | `apps/api/internal/repo/orders_test.go`、`audit_test.go`、`batches_test.go`、`trips_test.go`、`outbox_integration_test.go` | 14 例（订单 8 + 调账与审计 3 + 批次发放 1 + 行程幂等与对账 1 + Outbox 重试/死信 1） | 真连 MySQL；`REPO_TEST_DSN` 未设置时数据库用例 SKIP；DSN 数据库名必须以 `_test` 结尾 |
+| repo 集成测试 | `apps/api/internal/repo/orders_test.go`、`audit_test.go`、`batches_test.go`、`trips_test.go`、`outbox_integration_test.go` | 17 例（订单 8 + 调账与审计 3 + 批次发放 1 + 行程 2 + Outbox 3） | 真连 MySQL；`REPO_TEST_DSN` 未设置时数据库用例 SKIP；DSN 数据库名必须以 `_test` 结尾 |
 | 启动日志单测 | `apps/api/cmd/server/dbendpoint_test.go` | 2 个函数 / 15 例 | 表驱动：默认 DSN、局域网 / ZeroTier、localhost、IPv6 回环、unix socket、省略地址、非法 DSN；另测 `WriteTimeout` 跟随请求超时 |
 | 前端单测 | `apps/web/src/lib/*.test.ts` | 2 文件 19 例 | `http.test.ts` 用 `vi.stubGlobal('fetch')` 测解包与错误映射；`validators.test.ts` 测校验规则 |
 | 前端页面测试 | `apps/web/src/pages/*.test.tsx` | 5 文件 16 例 | jsdom + Testing Library + MSW 3 拦截 `fetch`；`src/test/render.tsx` 提供 QueryClient/路由壳，`src/test/http.ts` 造 `{code,message,data}` 壳（测试里也重放后端协议，不是随手 mock） |
@@ -391,7 +392,7 @@ E2E **不在门禁里**：它需要真实后端 + 共享库，CI 没有这些环
 | 项 | 现状 | 若要接手 |
 | --- | --- | --- |
 | 积分批次 | 行程发放已在同一事务创建 `point_batch`，扣减/退款写 `point_batch_txn`；扣减严格按 FIFO，批次不足直接失败回滚；`consumeBatches` 仍未过滤已过期批次。过期清算已有手动接口（`POST /admin/points/expire`），无常驻定时任务 | 扣减补 `expires_at > NOW()` 过滤；补常驻过期任务 |
-| Outbox Worker | Worker 已实现轮询、重试与死信；业务消费者尚未接入，Worker 当前不启动，事件保持待投递。现有 Dispatch 在处理器运行时持有行锁 | 接入业务消费前先改为短事务认领并保证幂等；补死信查询/人工重放接口 |
+| Outbox Worker | Worker 支持短事务认领、重试与死信；业务消费者尚未接入，Worker 当前不启动，事件保持待投递。租约到期可能重复投递 | 接入幂等消费者；补死信查询/人工重放接口；共享库执行 `000009` 前先协调 |
 | 密码哈希 | PBKDF2-HMAC-SHA256（`pbkdf2$600000$salt$digest`，600000 次迭代、32 字节派生、16 字节随机盐；校验时拒绝旧 `sha256$` 与低于 100000 次迭代的记录） | 如需更强 KDF 换 argon2id；换算法时要同时改签发与校验并重设种子 |
 | Token | 自签 HMAC-SHA256 紧凑串，**不是标准 JWT**（无 header 段） | 需要标准 JWT 时统一改签发与校验两端 |
 | sqlc | `apps/api/sqlc.yaml` 已配置但未启用，repo 全是手写 SQL | 启用即要重写 repo 层，别半途混用 |

@@ -4,7 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"testing"
+	"time"
 
 	"greentravelpoints/internal/eventbus"
 )
@@ -74,5 +76,59 @@ func TestOutboxDispatchRetryAndDeadLetter(t *testing.T) {
 	}
 	if attempts != 3 || dispatchedAt.Valid || !deadLetterAt.Valid {
 		t.Fatalf("after max attempts: attempts=%d dispatchedAt=%v deadLetterAt=%v", attempts, dispatchedAt, deadLetterAt)
+	}
+}
+
+func TestOutboxHandlerRunsWithoutRowLock(t *testing.T) {
+	store := newTestStore(t)
+	mustExec(t, store.db, `INSERT INTO event_outbox (topic, aggregate_type, aggregate_id, payload)
+		VALUES ('TestEvent', 'test', 'unlocked', '{}')`)
+	outbox := NewOutbox(store.db)
+	count, err := outbox.Dispatch(context.Background(), 1, 3, func(e eventbus.Event) error {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if _, err := store.db.ExecContext(ctx, "UPDATE event_outbox SET last_error = 'checked' WHERE id = ?", e.ID); err != nil {
+			return err
+		}
+		n, err := outbox.Dispatch(ctx, 1, 3, func(eventbus.Event) error {
+			t.Error("active lease was dispatched twice")
+			return nil
+		})
+		if err != nil || n != 0 {
+			t.Errorf("concurrent dispatch = %d, %v", n, err)
+		}
+		return nil
+	})
+	if err != nil || count != 1 {
+		t.Fatalf("dispatch = %d, %v", count, err)
+	}
+	if got := mustQueryInt(t, store.db, "SELECT COUNT(*) FROM event_outbox WHERE aggregate_id = 'unlocked' AND dispatched_at IS NOT NULL"); got != 1 {
+		t.Fatalf("dispatched count = %d", got)
+	}
+}
+
+func TestOutboxExpiredLeaseCannotOverwriteNewOwner(t *testing.T) {
+	store := newTestStore(t)
+	mustExec(t, store.db, `INSERT INTO event_outbox (topic, aggregate_type, aggregate_id, payload)
+		VALUES ('TestEvent', 'test', 'lease', '{}')`)
+	outbox := NewOutbox(store.db)
+	ctx := context.Background()
+	first, oldToken, err := outbox.claim(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustExec(t, store.db, "UPDATE event_outbox SET lease_until = DATE_SUB(NOW(3), INTERVAL 1 SECOND) WHERE id = ?", first.ID)
+	second, newToken, err := outbox.claim(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ID != second.ID || oldToken == newToken {
+		t.Fatal("expired lease was not reclaimed with a new token")
+	}
+	if err := outbox.finish(ctx, first, oldToken, 3, nil); err == nil || !strings.Contains(err.Error(), "lease lost") {
+		t.Fatalf("stale completion error = %v", err)
+	}
+	if err := outbox.finish(ctx, second, newToken, 3, nil); err != nil {
+		t.Fatal(err)
 	}
 }
