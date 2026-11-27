@@ -24,10 +24,13 @@ func TestCreateTripConcurrentDailyCap(t *testing.T) {
 	mustExec(t, store.db, "UPDATE point_txn SET occurred_at = DATE_SUB(NOW(3), INTERVAL 1 DAY) WHERE account_id = ?", testAccountID)
 	mustExec(t, store.db, "UPDATE point_txn SET occurred_at = NOW(3) WHERE id = 9002")
 	var wg sync.WaitGroup
-	errs := make(chan error, 2)
+	// 每条步行 100 km 得 192 分（19200 g / 100 g），三条并发合计 576 > 日上限 500：
+	// 只有账户行锁把当日统计串起来，才会精确截断到 500；两条合计 384 触不到上限。
+	const trips = 3
+	errs := make(chan error, trips)
 	start := make(chan struct{})
 	now := time.Now().Add(-time.Minute).UTC().Truncate(time.Millisecond)
-	for i := 0; i < 2; i++ {
+	for i := 0; i < trips; i++ {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()

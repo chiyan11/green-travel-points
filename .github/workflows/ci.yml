@@ -16,6 +16,24 @@ jobs:
     defaults:
       run:
         working-directory: apps/api
+    # repo 集成测试（internal/repo）需要真库；未设 DSN 会整包 SKIP，
+    # 所以这里同时起 MySQL 服务并显式给出 DSN，库名必须以 _test 结尾。
+    env:
+      REPO_TEST_DSN: root:root@tcp(127.0.0.1:3306)/green_travel_points_test?parseTime=true&loc=Local&charset=utf8mb4
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: green_travel_points_test
+          TZ: Asia/Shanghai
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
     steps:
       - uses: actions/checkout@v4
 
@@ -23,6 +41,24 @@ jobs:
         with:
           go-version-file: apps/api/go.mod
           cache-dependency-path: apps/api/go.sum
+
+      - name: 执行迁移（空库 → 最新）
+        working-directory: .
+        env:
+          MYSQL_PWD: root
+        run: |
+          if ! command -v mysql >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y mysql-client
+          fi
+          for f in db/migrations/*.up.sql; do
+            echo "== apply $f"
+            mysql -h 127.0.0.1 -P 3306 -uroot --default-character-set=utf8mb4 < "$f"
+          done
+          tables=$(mysql -h 127.0.0.1 -P 3306 -uroot -N -B \
+            -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='green_travel_points_test'")
+          echo "green_travel_points_test 表数：$tables（期望 15）"
+          test "$tables" -eq 15
 
       - name: gofmt 检查
         run: |
@@ -36,8 +72,19 @@ jobs:
       - name: go vet
         run: go vet ./...
 
-      - name: 单元测试
+      - name: 单元测试与 repo 集成（-race）
         run: go test ./... -count=1 -race -coverprofile=coverage.out
+
+      - name: repo 集成用例清单（禁止整包 SKIP）
+        run: |
+          go test ./internal/repo -count=1 -race -v | tee repo-tests.log
+          if grep -q -- '--- SKIP' repo-tests.log; then
+            echo "repo 集成测试被 SKIP，检查 REPO_TEST_DSN 与 MySQL 服务"
+            exit 1
+          fi
+          passed=$(grep -c -- '--- PASS' repo-tests.log)
+          echo "repo 实际通过用例：$passed（期望 ≥ 10）"
+          test "$passed" -ge 10
 
       - name: 构建
         run: go build -o /tmp/server ./cmd/server

@@ -16,7 +16,7 @@ import (
 
 // 集成测试：真连 MySQL，覆盖兑换 / 取消 / 并发防超卖 / 对账 / 过期清算。
 //
-// 运行方式（CI 没有 MySQL，未设置 REPO_TEST_DSN 时全部跳过）：
+// 运行方式（CI 已起 mysql:8.4 service 并注入 REPO_TEST_DSN；本地未设置时全部跳过）：
 //
 //	REPO_TEST_DSN='greentravel:greentravel@tcp(127.0.0.1:3306)/green_travel_points_test?parseTime=true&loc=Local&charset=utf8mb4' \
 //	  go test ./internal/repo -count=1 -race
