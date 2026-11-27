@@ -15,7 +15,7 @@
 **当前进度：Sprint 0–S2 文档已补齐（需求规格 + 设计规格 + 用户故事地图/Backlog）；后端主链路与商城主体已实现；Outbox Worker 已支持轮询、重试和死信；repo 集成测试已接入 CI 的 MySQL 服务实际执行；Compose 已编入 mysql/api/web 三服务，本机缺 Docker 引擎故未做容器实跑（改用空库重放迁移 + API 冒烟取证，见 [部署冒烟记录](docs/deploy/部署冒烟记录.md)）。**
 
 已实现：认证 / 行程上报与碳核算 / 积分账本与查询 / 商品目录 / 兑换订单与状态机 / 运营后台（含积分对账）；
-待补齐：Outbox 业务处理器与幂等消费者（业务消费者接入前 Worker 不启动；短事务租约已由 PR #46 落地）、E2E 接入 CI、容器实跑截图。前端 service 均已联调真实接口；repo 集成测试由 `REPO_TEST_DSN` 门控（CI 已注入，覆盖 17 个数据库用例与 5 个纯函数用例），消费者主链路 E2E（含 11 张验收截图）与运营后台 E2E 都已落地。
+待补齐：Outbox 业务处理器与幂等消费者（业务消费者接入前 Worker 不启动；短事务租约已由 PR #46 落地）、E2E 接入 CI、容器实跑截图。前端 service 均已联调真实接口；repo 集成测试由 `REPO_TEST_DSN` 门控（CI 已注入，覆盖 18 个数据库用例与 5 个纯函数用例），消费者主链路 E2E（含 11 张验收截图）与运营后台 E2E 都已落地。
 
 进度与偏差详见 [Sprint 0 骨架说明](docs/Sprint0-骨架说明.md)，分工详见 [项目分工与迭代计划](docs/项目分工与迭代计划.md)，接口细节见 [P3 接口说明](docs/api/README.md)。
 
@@ -167,13 +167,13 @@ green-travel-points/
 │   │       ├── domain/               # 纯业务规则：碳核算、积分换算、订单状态机（45 个用例）
 │   │       ├── eventbus/             # 领域事件主题、处理器契约与 Worker
 │   │       ├── httpserver/           # 路由、中间件、统一响应壳、各业务 handler（69 个测试函数）
-│   │       └── repo/                 # 手写 SQL：连接池、行程、商品、积分、订单、运营后台；6 个测试文件、22 个测试函数（DB 集成 17 + 纯函数 5），DB 用例由 REPO_TEST_DSN 门控
+│   │       └── repo/                 # 手写 SQL：连接池、行程、商品、积分、订单、运营后台；6 个测试文件、23 个测试函数（DB 集成 18 + 纯函数 5），DB 用例由 REPO_TEST_DSN 门控
 │   └── web/                          # React 前端：用户端 9 页 + 运营后台 3 页（/admin）
 │       ├── AGENTS.md                 # 前端专项代理指南（Astryx 工作流与规则，由 astryx init 维护）
 │       ├── src/{pages,components,services,lib,themes,types}/  # themes/ = Astryx 品牌主题；pages/admin = M8 后台三屏；types/api.ts = 生成契约
 │       └── e2e/ + playwright.config.ts                        # 消费者主链路（*.spec.ts）与运营后台（*.e2e.ts）用例
 ├── db/
-│   ├── migrations/                   # 9 组 up/down：参数 / 发件箱 / 账本 / 行程 / 商城 / 批次流水 / 审计 / 快照 JSON / 发件箱租约
+│   ├── migrations/                   # 10 组 up/down：参数 / 发件箱 / 账本 / 行程 / 商城 / 批次流水 / 审计 / 快照 JSON / 发件箱租约 / 原始积分
 │   └── seed/dev_demo.sql             # 演示数据：用户 1001（1200 分）+ 3 个上架商品
 ├── deploy/                           # Dockerfile.api / Dockerfile.web / nginx.conf / docker-compose.yml
 ├── docs/
@@ -349,7 +349,7 @@ pwsh -File .\scripts\verify.ps1
 | 契约一致性 | `docs/api/openapi.yaml` ↔ `apps/web/src/types/api.ts` | `npm run gen:api` 后 `git diff --exit-code` | 已接入 `verify.ps1` 与 CI |
 | E2E（消费者主链路） | 注册 → 上报 → 积分到账 → 兑换 → 取消返还 | `E2E_API_TARGET=… npm run test:e2e` | 1 条用例绿，11 张截图在 `docs/screenshots/` |
 | E2E（运营后台） | 建商品 → 上架 → 改库存 → 下单 → 后台确认接单 | `npx playwright test`（apps/web） | 1 条用例绿；截图证据在 `docs/p5-evidence/` |
-| 集成测试 | repo + 真实 MySQL：兑换成功 / 积分不足 / 批次不足回滚 / 库存不足 / 限购 / 取消回填批次 / 20 并发防超卖 / 对账 / 人工调账与审计写入 / 积分批次发放 / 行程幂等与账本对账 / 并发日上限 / Outbox 重试、死信与租约 | `REPO_TEST_DSN=… go test ./internal/repo -v` | 6 个测试文件、22 个测试函数（DB 集成 17 + 纯函数 5）；**已进 CI**：`mysql:8.4` service + 9 组迁移后整包执行，0 SKIP 由 job 内清单校验强制 |
+| 集成测试 | repo + 真实 MySQL：兑换成功 / 积分不足 / 批次不足回滚 / 库存不足 / 限购 / 取消回填批次 / 20 并发防超卖 / 对账 / 人工调账与审计写入 / 积分批次发放 / 行程幂等与账本对账 / 并发日上限 / Outbox 重试、死信与租约 | `REPO_TEST_DSN=… go test ./internal/repo -v` | 6 个测试文件、23 个测试函数（DB 集成 18 + 纯函数 5）；**已进 CI**：`mysql:8.4` service + 10 组迁移后整包执行，0 SKIP 由 job 内清单校验强制 |
 | 性能 | 行程上报、兑换并发 | 待建（k6） | 未建：计划 S6 起 |
 | 部署冒烟 | 迁移 15 表 + 建商品/改库存/下单/取消/调账/改参数/审计 | `pwsh -File scripts/smoke-deploy.ps1 -ApiBase …` | 一条命令全 PASS，记录见 [部署冒烟记录](docs/deploy/部署冒烟记录.md) |
 
@@ -365,11 +365,11 @@ docker compose -f deploy/docker-compose.yml up -d --build
 # 访问 http://localhost:8088（nginx 托管前端并反代 /api）
 ```
 
-compose 编排三个服务：`mysql` 首次启动按文件名顺序导入 9 组迁移（`000001`–`000009` 全部挂载）；`api` 等 `mysql` 健康检查通过后启动；`web` 用 `deploy/Dockerfile.web` 多阶段构建（`npm ci && npm run build` → nginx 托管 `dist/`），等 `api` 健康后启动，`deploy/nginx.conf` 含 SPA 回退与 `/api` 反代。物理部署拓扑见 [部署图](docs/uml/06-部署图.puml)。
+compose 编排三个服务：`mysql` 首次启动按文件名顺序导入 10 组迁移（`000001`–`000010` 全部挂载）；`api` 等 `mysql` 健康检查通过后启动；`web` 用 `deploy/Dockerfile.web` 多阶段构建（`npm ci && npm run build` → nginx 托管 `dist/`），等 `api` 健康后启动，`deploy/nginx.conf` 含 SPA 回退与 `/api` 反代。物理部署拓扑见 [部署图](docs/uml/06-部署图.puml)。
 
 迁移挂载是否齐全由 `pwsh -File scripts/check-compose-migrations.ps1` 校验（已接入 `verify.ps1`）；启动后可用 `pwsh -File scripts/smoke-deploy.ps1 -ApiBase http://127.0.0.1:8080` 跑一遍主链路冒烟。
 
-> 本机 Docker 引擎不可用（`docker version` 连 `dockerDesktopLinuxEngine` 报 500，且未安装 WSL2），因此**未做容器实跑**。替代证据：`docker compose config` 解析通过；按 compose 相同的挂载顺序在空库重放 9 组迁移得到 15 张表并跑通 API 冒烟，全过程见 [部署冒烟记录](docs/deploy/部署冒烟记录.md)。
+> 本机 Docker 引擎不可用（`docker version` 连 `dockerDesktopLinuxEngine` 报 500，且未安装 WSL2），因此**未做容器实跑**。替代证据：`docker compose config` 解析通过；按 compose 相同的挂载顺序在空库重放 9 组迁移得到 15 张表并跑通 API 冒烟（PR #50 新增 000010 后为 10 组，容器冒烟待重跑），全过程见 [部署冒烟记录](docs/deploy/部署冒烟记录.md)。
 
 ---
 
@@ -419,7 +419,7 @@ compose 编排三个服务：`mysql` 首次启动按文件名顺序导入 9 组�
 - [x] 前后端可独立启动，`/healthz` `/readyz` `/api/v1/ping` 行为符合预期
 - [x] 领域规则单元测试全绿（12 个测试函数 / 45 个用例：碳核算、积分换算、日上限、订单状态机）
 - [x] 前端 TS7 类型检查通过、单测 19 例通过、生产构建成功
-- [x] 五组迁移可执行（`000001`–`000005`；Sprint 0 当时口径，现为 9 组 / 15 张表，见 `db/migrations/` 与 AGENTS §6），种子数据 `db/seed/dev_demo.sql` 可导入
+- [x] 五组迁移可执行（`000001`–`000005`；Sprint 0 当时口径，现为 10 组 / 15 张表，见 `db/migrations/` 与 AGENTS §6），种子数据 `db/seed/dev_demo.sql` 可导入
 - [x] CI 配置就绪（Go + Node 双 job）
 - [x] 数据库连通性与 `migrate up` 实跑：2026-10-20 本机 MySQL 9.7.2，`/readyz` 返回 `{"database":"up"}`
 

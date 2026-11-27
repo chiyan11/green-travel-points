@@ -53,13 +53,14 @@ func (h pointsHandler) transactions(w http.ResponseWriter, r *http.Request) {
 // dailyCarbon 返回最近 N 天逐日碳减排量：
 // GET /api/v1/points/daily-carbon?days=7
 func (h pointsHandler) dailyCarbon(w http.ResponseWriter, r *http.Request) {
-	days, _ := strconv.Atoi(r.URL.Query().Get("days"))
-	if days <= 0 {
-		days = 7
-	}
-	if days > maxCarbonDays {
-		Fail(w, http.StatusBadRequest, CodeInvalidArgument, "days 取值范围 1–365")
-		return
+	days := 7
+	if values, present := r.URL.Query()["days"]; present {
+		var err error
+		days, err = strconv.Atoi(values[0])
+		if err != nil || days < 1 || days > maxCarbonDays {
+			Fail(w, http.StatusBadRequest, CodeInvalidArgument, "days 取值范围 1–365")
+			return
+		}
 	}
 	list, err := h.store.DailyCarbon(r.Context(), UserID(r.Context()), days)
 	if err != nil {

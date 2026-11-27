@@ -139,8 +139,8 @@ func (s *Store) DailyCarbon(ctx context.Context, userID int64, days int) ([]app.
 	if days <= 0 {
 		days = 7
 	}
-	if days > 90 {
-		days = 90
+	if days > 365 {
+		days = 365
 	}
 	now := time.Now()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())

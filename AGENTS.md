@@ -121,7 +121,7 @@ green-travel-points/
 │       ├── scripts/fix-generated.mjs  生成后处理：去掉 @ts-nocheck、加来源说明
 │       └── vite.config.ts        端口 5173 + /api 代理（VITE_API_TARGET 可改目标）
 ├── db/
-│   ├── migrations/               9 组 up/down 迁移（见 §6）
+│   ├── migrations/               10 组 up/down 迁移（见 §6）
 │   └── seed/dev_demo.sql         演示数据：用户 1001、管理员 1002、3 个商品
 ├── deploy/                       docker-compose.yml、Dockerfile.api、Dockerfile.web、nginx.conf
 ├── docs/                         需求规格、设计规格、故事地图/Backlog、实验报告、分工计划、Sprint 0 记录、数据库记录、接口说明、前端接口清单、UML
@@ -221,7 +221,7 @@ domain ◄──────────────────────┘�
 
 ## 6. 数据层
 
-### 表清单（9 组迁移，15 张表）
+### 表清单（10 组迁移，15 张表）
 
 | 迁移 | 表 | 作用 |
 | --- | --- | --- |
@@ -234,6 +234,7 @@ domain ◄──────────────────────┘�
 | `000007` | `audit_log` | 运营审计日志（只追加：调账 / 参数变更 / 出行方式变更，含操作人、前后值、理由） |
 | `000008` | 无新表 | 数据迁移：把 `carbon_record.rule_snapshot` 的旧拼串改写成 JSON（`carbonPerPoint/dailyCap/rawPoints/grantedPoints`） |
 | `000009` | 无新表 | `event_outbox` 增加租约令牌与到期时间 |
+| `000010` | 无新表 | `carbon_record.raw_points` 独立保存原始积分，并从 JSON 快照回填 |
 
 ### 不变量（写 SQL 时不能破）
 
@@ -299,7 +300,7 @@ pages/*.tsx  ──►  services/*.ts  ──►  lib/http.ts  ──►  fetch
 | 领域单测 | `apps/api/internal/domain/*_test.go` | 12 个函数 / 45 例 | 表驱动，覆盖边界与非法输入 |
 | HTTP 单测 | `apps/api/internal/httpserver/*_test.go` | 69 例 | 注入假存储，**不连 MySQL**；断言响应壳与错误码 |
 | 参数校验单测 | `apps/api/internal/app/admin_test.go` | 2 个函数 / 34 例 | `sys_config` 数值规则与 `travel_mode` 更新校验，纯函数表驱动 |
-| repo 集成测试 | `apps/api/internal/repo/orders_test.go`、`audit_test.go`、`batches_test.go`、`trips_test.go`、`outbox_test.go`、`outbox_integration_test.go` | 6 文件、22 个测试函数（DB 集成 17 + 纯函数 5） | 真连 MySQL；`REPO_TEST_DSN` 未设置时数据库用例 SKIP（CI 必设）；DSN 数据库名必须以 `_test` 结尾 |
+| repo 集成测试 | `apps/api/internal/repo/orders_test.go`、`audit_test.go`、`batches_test.go`、`trips_test.go`、`outbox_test.go`、`outbox_integration_test.go` | 6 文件、23 个测试函数（DB 集成 18 + 纯函数 5） | 真连 MySQL；`REPO_TEST_DSN` 未设置时数据库用例 SKIP（CI 必设）；DSN 数据库名必须以 `_test` 结尾 |
 | 启动日志单测 | `apps/api/cmd/server/dbendpoint_test.go` | 2 个函数 / 15 例 | 表驱动：默认 DSN、局域网 / ZeroTier、localhost、IPv6 回环、unix socket、省略地址、非法 DSN；另测 `WriteTimeout` 跟随请求超时 |
 | 前端单测 | `apps/web/src/lib/*.test.ts` | 2 文件 19 例 | `http.test.ts` 用 `vi.stubGlobal('fetch')` 测解包与错误映射；`validators.test.ts` 测校验规则 |
 | 前端页面测试 | `apps/web/src/pages/*.test.tsx` | 5 文件 16 例 | jsdom + Testing Library + MSW 3 拦截 `fetch`；`src/test/render.tsx` 提供 QueryClient/路由壳，`src/test/http.ts` 造 `{code,message,data}` 壳（测试里也重放后端协议，不是随手 mock） |
@@ -367,7 +368,7 @@ pwsh -File .\scripts\verify.ps1
 | 8 | `vite build` | 仅构建期才暴露的引用错误 |
 | 9 | `deploy: compose migrations`（`scripts/check-compose-migrations.ps1`） | 新加 `db/migrations/*.up.sql` 却没挂进 `deploy/docker-compose.yml`，容器起库会缺表 |
 
-CI（`.github/workflows/ci.yml`）两个 job 与本地一致，差异：CI 的 api job 起 `mysql:8.4` service，先按文件名顺序跑完 9 组迁移再 `go test -race -coverprofile`（`REPO_TEST_DSN` 指向 `green_travel_points_test`），随后校验 repo 集成用例清单——出现 `--- SKIP` 或 `--- PASS` 少于 10 个即红；web job 用 `npm ci`。
+CI（`.github/workflows/ci.yml`）两个 job 与本地一致，差异：CI 的 api job 起 `mysql:8.4` service，先按文件名顺序跑完 10 组迁移再 `go test -race -coverprofile`（`REPO_TEST_DSN` 指向 `green_travel_points_test`），随后校验 repo 集成用例清单——出现 `--- SKIP` 或 `--- PASS` 少于 10 个即红；web job 用 `npm ci`。
 
 本地 `verify.ps1` 的 `api: go test` 没有 DSN，repo 集成用例会 SKIP，这是正常的：集成由 CI 负责。改了 repo 层想本地验证时，自己起库并设 `REPO_TEST_DSN` 单跑该包。
 
@@ -399,8 +400,8 @@ E2E **不在门禁里**：它需要真实后端 + 共享库，CI 没有这些环
 | 密码哈希 | PBKDF2-HMAC-SHA256（`pbkdf2$600000$salt$digest`，600000 次迭代、32 字节派生、16 字节随机盐；校验时拒绝旧 `sha256$` 与低于 100000 次迭代的记录） | 如需更强 KDF 换 argon2id；换算法时要同时改签发与校验并重设种子 |
 | Token | 自签 HMAC-SHA256 紧凑串，**不是标准 JWT**（无 header 段） | 需要标准 JWT 时统一改签发与校验两端 |
 | sqlc | `apps/api/sqlc.yaml` 已配置但未启用，repo 全是手写 SQL | 启用即要重写 repo 层，别半途混用 |
-| 集成 / E2E | repo 集成测试 6 文件、22 个测试函数（DB 集成 17 + 纯函数 5），**已进 CI**（`mysql:8.4` service + 迁移 + DSN，0 SKIP 由清单校验强制）；E2E 主链路与运营后台已建（真后端 + 共享库），仍**未**进 CI | E2E 若要进 CI，需先给 CI 一个可用的 MySQL 服务容器与种子导入步骤 |
-| 部署 | compose 已编入 `mysql` + `api` + `web`（nginx 在 web 镜像内），9 组迁移全挂载，`check-compose-migrations.ps1` 已进门禁；本机 Docker 引擎不可用（缺 WSL2），容器未实跑，替代证据见 `docs/deploy/部署冒烟记录.md` | 在有 Docker 的机器补一次 `up -d --build` 实跑截图；E2E 仍未进 CI |
+| 集成 / E2E | repo 集成测试 6 文件、23 个测试函数（DB 集成 18 + 纯函数 5），**已进 CI**（`mysql:8.4` service + 迁移 + DSN，0 SKIP 由清单校验强制）；E2E 主链路与运营后台已建（真后端 + 共享库），仍**未**进 CI | E2E 若要进 CI，需先给 CI 一个可用的 MySQL 服务容器与种子导入步骤 |
+| 部署 | compose 已编入 `mysql` + `api` + `web`（nginx 在 web 镜像内），10 组迁移全挂载，`check-compose-migrations.ps1` 已进门禁；本机 Docker 引擎不可用（缺 WSL2），容器未实跑，替代证据见 `docs/deploy/部署冒烟记录.md` | 在有 Docker 的机器补一次 `up -d --build` 实跑截图；E2E 仍未进 CI |
 | 前端包体 | `vite build` 单包约 540 kB（gzip 163 kB）+ CSS 354 kB（gzip 54 kB）；移除 ECharts 后已从 1.95 MB 降下来，仍略超 500 kB 警告。 | 用路由级 `import()` 分包；预算从 gzip 163 kB 起算 |
 
 ---

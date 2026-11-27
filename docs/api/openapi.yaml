@@ -232,7 +232,7 @@ paths:
     get:
       tags: [points]
       summary: 最近 N 天逐日碳减排量
-      description: 返回按日期升序的数组（不是分页对象）；`days` 缺省 7。
+      description: 返回按日期升序的数组（不是分页对象）；`days` 缺省 7，显式传入须为 1–365 的整数。
       parameters:
         - name: days
           in: query
@@ -240,7 +240,7 @@ paths:
             type: integer
             default: 7
             minimum: 1
-            maximum: 90
+            maximum: 365
       responses:
         '200':
           description: 逐日碳减排列表
@@ -248,6 +248,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DailyCarbonListResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
   /api/v1/trips:

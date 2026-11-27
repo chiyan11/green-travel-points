@@ -98,8 +98,8 @@ func (s *Store) CreateTrip(ctx context.Context, in app.CreateTripInput) (app.Tri
 		return app.Trip{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO carbon_record (trip_id, ef_base, ef_actual, carbon_saved_g, rule_snapshot)
-		VALUES (?, ?, ?, ?, ?)`, tripID, emission.Base, emission.Actual, grant.CarbonSavedGrams, ruleSnapshot); err != nil {
+		INSERT INTO carbon_record (trip_id, ef_base, ef_actual, carbon_saved_g, rule_snapshot, raw_points)
+		VALUES (?, ?, ?, ?, ?, ?)`, tripID, emission.Base, emission.Actual, grant.CarbonSavedGrams, ruleSnapshot, grant.RawPoints); err != nil {
 		return app.Trip{}, err
 	}
 	if grant.GrantedPoints > 0 {
@@ -154,7 +154,7 @@ func (s *Store) ListTrips(ctx context.Context, q app.TripQuery) (app.Page[app.Tr
 		q.PageSize = 20
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT tr.id, tr.mode_code, tr.distance_km, tr.started_at, cr.carbon_saved_g, cr.rule_snapshot,
+		SELECT tr.id, tr.mode_code, tr.distance_km, tr.started_at, cr.carbon_saved_g, cr.raw_points,
 		       COALESCE(pt.amount, 0), tr.status
 		FROM trip_record tr JOIN carbon_record cr ON cr.trip_id = tr.id
 		LEFT JOIN point_txn pt ON pt.biz_ref_type = 'trip_record' AND pt.biz_ref_id = tr.id AND pt.txn_type = 'TRAVEL'
@@ -168,17 +168,11 @@ func (s *Store) ListTrips(ctx context.Context, q app.TripQuery) (app.Page[app.Tr
 	for rows.Next() {
 		var trip app.Trip
 		var id int64
-		var snapshot string
 		if err := rows.Scan(&id, &trip.Mode, &trip.DistanceKm, &trip.TraveledAt, &trip.CarbonSavedGrams,
-			&snapshot, &trip.GrantedPoints, &trip.Status); err != nil {
-			return app.Page[app.Trip]{}, err
-		}
-		snap, err := parseTripSnapshot(snapshot)
-		if err != nil {
+			&trip.RawPoints, &trip.GrantedPoints, &trip.Status); err != nil {
 			return app.Page[app.Trip]{}, err
 		}
 		trip.ID = tripIDString(id)
-		trip.RawPoints = snap.RawPoints
 		trip.CappedByDaily = trip.GrantedPoints < trip.RawPoints
 		items = append(items, trip)
 	}
@@ -234,24 +228,18 @@ func (s *Store) tripRule(ctx context.Context) (domain.PointsRule, int64, error) 
 func scanTrip(ctx context.Context, tx *sql.Tx, userID int64, hash string) (app.Trip, error) {
 	var trip app.Trip
 	var id int64
-	var snapshot string
 	err := tx.QueryRowContext(ctx, `
-		SELECT tr.id, tr.mode_code, tr.distance_km, tr.started_at, cr.carbon_saved_g, cr.rule_snapshot,
+		SELECT tr.id, tr.mode_code, tr.distance_km, tr.started_at, cr.carbon_saved_g, cr.raw_points,
 		       COALESCE(pt.amount, 0), tr.status
 		FROM trip_record tr JOIN carbon_record cr ON cr.trip_id = tr.id
 		LEFT JOIN point_txn pt ON pt.biz_ref_type = 'trip_record' AND pt.biz_ref_id = tr.id AND pt.txn_type = 'TRAVEL'
 		WHERE tr.user_id = ? AND tr.trip_hash = ?`, userID, hash).
 		Scan(&id, &trip.Mode, &trip.DistanceKm, &trip.TraveledAt, &trip.CarbonSavedGrams,
-			&snapshot, &trip.GrantedPoints, &trip.Status)
-	if err != nil {
-		return app.Trip{}, err
-	}
-	snap, err := parseTripSnapshot(snapshot)
+			&trip.RawPoints, &trip.GrantedPoints, &trip.Status)
 	if err != nil {
 		return app.Trip{}, err
 	}
 	trip.ID = tripIDString(id)
-	trip.RawPoints = snap.RawPoints
 	trip.CappedByDaily = trip.GrantedPoints < trip.RawPoints
 	return trip, nil
 }
@@ -262,15 +250,6 @@ type tripSnapshot struct {
 	DailyCap       int64 `json:"dailyCap"`
 	RawPoints      int64 `json:"rawPoints"`
 	GrantedPoints  int64 `json:"grantedPoints"`
-}
-
-// parseTripSnapshot 解析 rule_snapshot；开发期不保留旧拼串兼容，失败即报错暴露脏数据。
-func parseTripSnapshot(raw string) (tripSnapshot, error) {
-	var snap tripSnapshot
-	if err := json.Unmarshal([]byte(raw), &snap); err != nil {
-		return tripSnapshot{}, fmt.Errorf("解析 rule_snapshot 失败（%q）：%w", raw, err)
-	}
-	return snap, nil
 }
 
 func hashTrip(userID int64, mode string, distance float64, at time.Time) string {

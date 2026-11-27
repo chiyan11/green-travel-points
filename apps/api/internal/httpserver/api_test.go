@@ -375,11 +375,27 @@ func TestPointsDailyCarbon(t *testing.T) {
 	}
 }
 
-func TestPointsDailyCarbonRejectsExcessiveDays(t *testing.T) {
+func TestPointsDailyCarbonDaysBounds(t *testing.T) {
 	h := newTestRouter(nil, fakePoints{}, nil)
-	rec, env := doJSON(t, h, http.MethodGet, "/api/v1/points/daily-carbon?days=366", "",
-		map[string]string{"X-User-Id": "7"})
-	if rec.Code != http.StatusBadRequest || env.Code != CodeInvalidArgument {
-		t.Fatalf("期望 400/INVALID_ARGUMENT，实际 %d/%s", rec.Code, env.Code)
+	for _, tc := range []struct {
+		query string
+		want  int
+	}{
+		{"", http.StatusOK},
+		{"?days=1", http.StatusOK},
+		{"?days=365", http.StatusOK},
+		{"?days=366", http.StatusBadRequest},
+		{"?days=0", http.StatusBadRequest},
+		{"?days=-1", http.StatusBadRequest},
+		{"?days=abc", http.StatusBadRequest},
+		{"?days=", http.StatusBadRequest},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			rec, env := doJSON(t, h, http.MethodGet, "/api/v1/points/daily-carbon"+tc.query, "",
+				map[string]string{"X-User-Id": "7"})
+			if rec.Code != tc.want || (tc.want == http.StatusBadRequest && env.Code != CodeInvalidArgument) {
+				t.Fatalf("状态 = %d/%s，期望 %d", rec.Code, env.Code, tc.want)
+			}
+		})
 	}
 }
