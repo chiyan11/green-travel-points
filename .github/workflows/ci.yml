@@ -53,7 +53,8 @@ jobs:
           fi
           for f in db/migrations/*.up.sql; do
             echo "== apply $f"
-            mysql -h 127.0.0.1 -P 3306 -uroot --default-character-set=utf8mb4 < "$f"
+            mysql -h 127.0.0.1 -P 3306 -uroot -D green_travel_points_test \
+              --default-character-set=utf8mb4 < "$f"
           done
           tables=$(mysql -h 127.0.0.1 -P 3306 -uroot -N -B \
             -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='green_travel_points_test'")
