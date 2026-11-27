@@ -12,6 +12,7 @@ func TestRetryDelay(t *testing.T) {
 		attempts int
 		want     int
 	}{
+		{attempts: 0, want: 1},
 		{attempts: 1, want: 1},
 		{attempts: 2, want: 2},
 		{attempts: 5, want: 16},

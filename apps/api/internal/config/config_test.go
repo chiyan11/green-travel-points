@@ -59,3 +59,15 @@ func TestLoadRejectsDevHeaderInProd(t *testing.T) {
 		t.Fatal("APP_ENV=prod 且开启开发身份头时应拒绝启动")
 	}
 }
+
+func TestLoadRejectsDevHeaderOutsideDev(t *testing.T) {
+	for _, env := range []string{"test", "staging"} {
+		t.Run(env, func(t *testing.T) {
+			t.Setenv("APP_ENV", env)
+			t.Setenv("AUTH_ALLOW_DEV_HEADER", "true")
+			if _, err := Load(); err == nil {
+				t.Fatal("非开发环境不允许启用开发身份头")
+			}
+		})
+	}
+}

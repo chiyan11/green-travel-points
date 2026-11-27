@@ -283,8 +283,8 @@ func (h *AuthHandler) verify(token string) (int64, error) {
 		return 0, errors.New("invalid token")
 	}
 	id, err := strconv.ParseInt(parts[0], 10, 64)
-	if err != nil {
-		return 0, err
+	if err != nil || id <= 0 {
+		return 0, errors.New("invalid user id")
 	}
 	exp, err := strconv.ParseInt(parts[1], 10, 64)
 	if err != nil || time.Now().Unix() >= exp {

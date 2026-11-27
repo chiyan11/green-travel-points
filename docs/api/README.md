@@ -2,7 +2,7 @@
 
 > 实现：`apps/api/internal/httpserver`（HTTP 层）+ `apps/api/internal/repo`（SQL 层）+ `apps/api/internal/app`（DTO 与端口）。
 > 对应报告：实验三"系统原型构建与实现"、实验二"设计类清单 / 序列图"。
-> 状态：✅ 已实现并通过单元测试 + 本地 MySQL 联调。身份**只认** `Authorization: Bearer <token>`（`POST /api/v1/auth/login` 自签签发，有效期 2 小时）；开发期脚本要指定用户时，必须显式设 `AUTH_ALLOW_DEV_HEADER=true` 才接受 `X-User-Id`，`APP_ENV=prod` 开启会拒绝启动。
+> 状态：✅ 已实现并通过单元测试 + 本地 MySQL 联调。身份使用 `Authorization: Bearer <token>`（`POST /api/v1/auth/login` 自签签发，有效期 2 小时）；仅 `APP_ENV=dev` 且显式设置 `AUTH_ALLOW_DEV_HEADER=true` 才接受 `X-User-Id`，其他环境开启会拒绝启动。
 
 ## 机器可读契约：[openapi.yaml](openapi.yaml)
 
@@ -36,7 +36,7 @@ npm run gen:api     # 读 ../../docs/api/openapi.yaml，生成 src/types/api.ts�
 - 分页参数：`page`（从 1 起，默认 1）、`pageSize`（默认 20，上限 100）；响应 `{items, page, pageSize, total}`。
 - 时间：RFC3339（带时区）。行程上报的 `traveledAt` 只能是服务器当前时间前 7 天内的时间；每日积分上限按服务器当前自然日统计，不能通过传入其他日期重置。
 - 金额/积分：整数 `int64`。
-- 身份：只认 `Authorization: Bearer <token>`（登录 / 注册响应里的 `token`）；无 token 一律 401。仅当显式设置 `AUTH_ALLOW_DEV_HEADER=true` 时才接受 `X-User-Id: <正整数>`（`APP_ENV=prod` 开启该开关会直接拒绝启动；生产还必须显式设置 `AUTH_SECRET`）。
+- 身份：使用 `Authorization: Bearer <token>`（登录 / 注册响应里的 `token`）。仅 `APP_ENV=dev` 且显式设置 `AUTH_ALLOW_DEV_HEADER=true` 时接受 `X-User-Id: <正整数>`；其他环境开启该开关会拒绝启动，生产还必须显式设置 `AUTH_SECRET`。
   运营接口额外要求角色为 `ADMIN`（`RequireAdmin`），越权返回 403 `FORBIDDEN`。
   注意：当前 token 是自签 HMAC-SHA256 的紧凑格式，并非标准 JWT（无 header 段），仅课程范围内可用。
 
@@ -259,7 +259,7 @@ UPDATE user SET password_hash =
 ```
 
 订单流转非法时返回 `409 ILLEGAL_TRANSITION`；每次流转都会写 `event_outbox`
-（`OrderConfirmed` / `OrderShipped` / `OrderCompleted`），交给 Worker 消费。
+（`OrderConfirmed` / `OrderShipped` / `OrderCompleted`）；业务消费者未接入，Worker 暂不启动，事件保持待投递。
 
 > `GET /api/v1/admin/products` 会随每个商品返回 `skus` 明细（`id / name / pointsPrice / stock / soldCount`），
 > 后台「改库存」直接用 `skus[].id` 调 `PUT /api/v1/admin/skus/{id}/stock`；

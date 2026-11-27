@@ -40,6 +40,11 @@ func (s *Store) CreateTrip(ctx context.Context, in app.CreateTripInput) (app.Tri
 		return app.Trip{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	var accountID, balance int64
+	if err := tx.QueryRowContext(ctx, "SELECT id, balance FROM point_account WHERE user_id = ? FOR UPDATE", in.UserID).
+		Scan(&accountID, &balance); err != nil {
+		return app.Trip{}, err
+	}
 	if existing, err := scanTrip(ctx, tx, in.UserID, tripHash); err == nil {
 		if err := tx.Commit(); err != nil {
 			return app.Trip{}, err
@@ -64,24 +69,26 @@ func (s *Store) CreateTrip(ctx context.Context, in app.CreateTripInput) (app.Tri
 		return app.Trip{}, fmt.Errorf("%w: %v", app.ErrInvalidInput, err)
 	}
 	res, err := tx.ExecContext(ctx, `
-		INSERT IGNORE INTO trip_record (user_id, mode_code, distance_km, started_at, ended_at, trip_hash)
+		INSERT INTO trip_record (user_id, mode_code, distance_km, started_at, ended_at, trip_hash)
 		VALUES (?, ?, ?, ?, ?, ?)`, in.UserID, in.Mode, in.DistanceKm, in.TraveledAt, in.TraveledAt, tripHash)
 	if err != nil {
+		if isDuplicate(err) {
+			existing, lookupErr := scanTrip(ctx, tx, in.UserID, tripHash)
+			if lookupErr == nil {
+				if err := tx.Commit(); err != nil {
+					return app.Trip{}, err
+				}
+				return existing, nil
+			}
+			if !errors.Is(lookupErr, sql.ErrNoRows) {
+				return app.Trip{}, lookupErr
+			}
+		}
 		return app.Trip{}, err
 	}
 	tripID, err := res.LastInsertId()
 	if err != nil {
 		return app.Trip{}, err
-	}
-	if tripID == 0 {
-		existing, err := scanTrip(ctx, tx, in.UserID, tripHash)
-		if err != nil {
-			return app.Trip{}, err
-		}
-		if err := tx.Commit(); err != nil {
-			return app.Trip{}, err
-		}
-		return existing, nil
 	}
 	ruleSnapshot, err := json.Marshal(tripSnapshot{
 		CarbonPerPoint: rule.GramsPerPoint, DailyCap: rule.DailyCap,
@@ -93,11 +100,6 @@ func (s *Store) CreateTrip(ctx context.Context, in app.CreateTripInput) (app.Tri
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO carbon_record (trip_id, ef_base, ef_actual, carbon_saved_g, rule_snapshot)
 		VALUES (?, ?, ?, ?, ?)`, tripID, emission.Base, emission.Actual, grant.CarbonSavedGrams, ruleSnapshot); err != nil {
-		return app.Trip{}, err
-	}
-	var accountID, balance int64
-	if err := tx.QueryRowContext(ctx, "SELECT id, balance FROM point_account WHERE user_id = ? FOR UPDATE", in.UserID).
-		Scan(&accountID, &balance); err != nil {
 		return app.Trip{}, err
 	}
 	if grant.GrantedPoints > 0 {

@@ -125,6 +125,19 @@ func TestTokenWithZeroUserIDRejected(t *testing.T) {
 	}
 }
 
+func TestVerifyRejectsNonPositiveUserID(t *testing.T) {
+	h := NewAuthHandler(nil, "test-secret", false, discardLogger())
+	for _, id := range []int64{0, -1} {
+		token, err := h.issue(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := h.verify(token); err == nil {
+			t.Fatalf("verify accepted user ID %d", id)
+		}
+	}
+}
+
 func TestRequirePutsUserInContext(t *testing.T) {
 	h := NewAuthHandler(nil, "test-secret", false, discardLogger())
 	token, err := h.issue(42)

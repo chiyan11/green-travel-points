@@ -58,7 +58,7 @@ docker compose -f deploy/docker-compose.yml up -d --build
 1. **配置只来自环境变量。** `internal/config/config.go` 只调用 `os.LookupEnv`，**不解析 `.env` 文件**；复制 `.env.example` 成 `.env` 不会生效。默认值可直接连本机库：`greentravel:greentravel@tcp(127.0.0.1:3306)/green_travel_points`。
 2. **端口写死。** 后端 `:8080`，前端 `5173`（`apps/web/vite.config.ts`），代理规则 `/api → 127.0.0.1:8080`。改端口要同时改这两处。
 3. **缓存重定向。** 若全局缓存目录不可写（受限沙箱、只读用户目录），先执行 `. .\scripts\dev-env.ps1`，它把 `GOCACHE` / `GOMODCACHE` / `npm` 缓存指到仓库内 `.cache/`。
-4. **种子账号可直接登录。** `db/seed/dev_demo.sql` 自带合法的 `pbkdf2$600000$<salt>$<digest>` 口令哈希：市民 `13800000001` / `demo123456`（user 1001，1200 分），运营管理员 `13800000002` / `admin123456`（user 1002，运营后台 `/admin` 用它登录）。也可注册新账号；开发期身份头 `X-User-Id: 1001` 仅在显式设置 `AUTH_ALLOW_DEV_HEADER=true` 时生效（`APP_ENV=prod` 开启会拒绝启动）。**仅限按 seed 初始化的本地库**：共享库（`docs/dev/shared-db.md`）仍是旧占位哈希且演示用户 id=1，seed 明令禁止在共享库执行，只可按头部说明做定向 UPDATE。
+4. **种子账号可直接登录。** `db/seed/dev_demo.sql` 自带合法的 `pbkdf2$600000$<salt>$<digest>` 口令哈希：市民 `13800000001` / `demo123456`（user 1001，1200 分），运营管理员 `13800000002` / `admin123456`（user 1002，运营后台 `/admin` 用它登录）。也可注册新账号；开发身份头仅在 `APP_ENV=dev` 且显式设置 `AUTH_ALLOW_DEV_HEADER=true` 时生效，其他环境开启会拒绝启动。**仅限按 seed 初始化的本地库**：共享库（`docs/dev/shared-db.md`）仍是旧占位哈希且演示用户 id=1，seed 明令禁止在共享库执行，只可按头部说明做定向 UPDATE。
 
 > **团队共享库（ZeroTier 内网）**：连接方式见 [`docs/dev/shared-db.md`](dev/shared-db.md)。
 > 该链路延迟较高，后端启动需带 `HTTP_REQUEST_TIMEOUT=60s`，`DB_DSN` 要加 `timeout/readTimeout/writeTimeout`；
@@ -195,7 +195,7 @@ domain ◄──────────────────────┘�
 | 兑换 | `POST /api/v1/orders`、`GET /api/v1/orders`、`POST /api/v1/orders/{id}/cancel` | 需身份 |
 | 运营 | `GET|POST /api/v1/admin/products`、`PATCH /api/v1/admin/products/{id}`、`PUT /api/v1/admin/skus/{id}/stock`、`GET /api/v1/admin/orders`、`POST /api/v1/admin/orders/{id}/(confirm|ship|complete)`、`POST /api/v1/admin/points/adjust`、`GET /api/v1/admin/points/reconcile`、`GET /api/v1/admin/audit-logs`、`POST /api/v1/admin/points/expire`、`GET|PUT /api/v1/admin/config`、`PUT /api/v1/admin/travel-modes/{code}` | 需 ADMIN |
 
-身份：只认 `Authorization: Bearer <token>`（登录签发，2 小时过期）；无 token 即 401，不再自动回退请求头。开发期要在脚本/测试里指定用户，必须显式设 `AUTH_ALLOW_DEV_HEADER=true` 才接受 `X-User-Id: <正整数>`（`APP_ENV=prod` 开启直接拒绝启动）。运营组再叠加 `RequireAdmin`，越权 403。
+身份：使用 `Authorization: Bearer <token>`（登录签发，2 小时过期）；仅 `APP_ENV=dev` 且显式设置 `AUTH_ALLOW_DEV_HEADER=true` 时接受 `X-User-Id: <正整数>`，其他环境开启直接拒绝启动。运营组再叠加 `RequireAdmin`，越权 403。
 
 ---
 
@@ -391,7 +391,7 @@ E2E **不在门禁里**：它需要真实后端 + 共享库，CI 没有这些环
 | 项 | 现状 | 若要接手 |
 | --- | --- | --- |
 | 积分批次 | 行程发放已在同一事务创建 `point_batch`，扣减/退款写 `point_batch_txn`；扣减严格按 FIFO，批次不足直接失败回滚；`consumeBatches` 仍未过滤已过期批次。过期清算已有手动接口（`POST /admin/points/expire`），无常驻定时任务 | 扣减补 `expires_at > NOW()` 过滤；补常驻过期任务 |
-| Outbox Worker | Worker 已实现轮询、重试与死信；repo 集成用例覆盖失败后重投成功及达到上限进入死信；默认处理器只记录投递，业务消费者尚未接入。订单侧已用 `TopicOrderPaid` / `TopicOrderCancelled` 常量；`TopicRedeemOrderPaid` 仍无人使用 | 接入业务消费并保证幂等；补死信查询/人工重放接口；清理或标注 `TopicRedeemOrderPaid` |
+| Outbox Worker | Worker 已实现轮询、重试与死信；业务消费者尚未接入，Worker 当前不启动，事件保持待投递。现有 Dispatch 在处理器运行时持有行锁 | 接入业务消费前先改为短事务认领并保证幂等；补死信查询/人工重放接口 |
 | 密码哈希 | PBKDF2-HMAC-SHA256（`pbkdf2$600000$salt$digest`，600000 次迭代、32 字节派生、16 字节随机盐；校验时拒绝旧 `sha256$` 与低于 100000 次迭代的记录） | 如需更强 KDF 换 argon2id；换算法时要同时改签发与校验并重设种子 |
 | Token | 自签 HMAC-SHA256 紧凑串，**不是标准 JWT**（无 header 段） | 需要标准 JWT 时统一改签发与校验两端 |
 | sqlc | `apps/api/sqlc.yaml` 已配置但未启用，repo 全是手写 SQL | 启用即要重写 repo 层，别半途混用 |
