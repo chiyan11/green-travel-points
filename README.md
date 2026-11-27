@@ -15,7 +15,7 @@
 **当前进度：Sprint 0–S2 文档已补齐（需求规格 + 设计规格 + 用户故事地图/Backlog）；后端主链路与商城主体已实现；Outbox Worker 已支持轮询、重试和死信；repo 集成测试与双链路 E2E 已落地；Docker 全栈实跑仍待补。**
 
 已实现：认证 / 行程上报与碳核算 / 积分账本与查询 / 商品目录 / 兑换订单与状态机 / 运营后台（含积分对账）；
-待补齐：Outbox 业务处理器（当前默认处理器仅记录投递）、Docker 编排实跑。前端 service 均已联调真实接口；repo 集成测试 14 例（`REPO_TEST_DSN` 门控）、消费者主链路 E2E（含 11 张验收截图）与运营后台 E2E 都已落地。
+待补齐：Outbox 业务处理器及无长事务的投递机制（业务消费者接入前 Worker 不启动）、Docker 编排实跑。前端 service 均已联调真实接口；repo 集成测试由 `REPO_TEST_DSN` 门控，消费者主链路 E2E（含 11 张验收截图）与运营后台 E2E 都已落地。
 
 进度与偏差详见 [Sprint 0 骨架说明](docs/Sprint0-骨架说明.md)，分工详见 [项目分工与迭代计划](docs/项目分工与迭代计划.md)，接口细节见 [P3 接口说明](docs/api/README.md)。
 
@@ -141,12 +141,12 @@ flowchart LR
 上报行程（单事务）
   INSERT trip_record + INSERT carbon_record + INSERT point_txn
   + 更新 point_account + INSERT event_outbox(type=TripVerified, payload=...)
-后台 Worker（轮询 outbox）——按批锁定待投递事件，成功后写 `dispatched_at`，失败按指数退避重试，达到上限写 `dead_letter_at`
+Worker 实现支持轮询和重试，但业务消费者未接入前不启动，事件保持待投递；现有投递实现会在处理期间持锁，启用前须改造。
   TripVerified → 更新碳减排统计 / 触发成就徽章 / 写排行榜
   OrderPaid    → 扣减库存 / 通知商户 / 生成核销码
 ```
 
-> **实现现状**：生产端已落地——行程上报、下单 / 取消、运营流转都在各自事务里 `INSERT event_outbox`；消费端已具备轮询、行锁、指数退避和死信处理，默认处理器只记录投递。统计、徽章、通知等业务副作用尚未定义处理器，须由对应模块接入。事件主题已统一使用 `eventbus` 常量。
+> **实现现状**：行程上报、下单 / 取消、运营流转都在各自事务里 `INSERT event_outbox`；Worker 代码具备轮询、行锁、指数退避和死信处理，但业务消费者尚未接入，当前不启动 Worker。接入前还须消除处理器执行期间持有行锁的问题。事件主题已统一使用 `eventbus` 常量。
 
 选择 EDA 而非“经典分层同步调用”的理由、与其他架构方案的对比，写在 [设计规格说明书](docs/设计规格说明书.md) 的「2.1.1 架构决策与选型」（含候选方案对比、约束支持度与决策记录）；逻辑架构（包图）、物理架构（部署图）见 [docs/uml](docs/uml)。
 
@@ -260,7 +260,7 @@ $env:DB_DSN = "root:root@tcp(127.0.0.1:3306)/green_travel_points?parseTime=true&
 
 无数据库时服务仍可启动（启动日志只 Warn）：`/healthz` 返回 200，`/readyz` 返回 503，便于前端先联调。
 
-> 演示账号可直接登录：`db/seed/dev_demo.sql` 自带 `pbkdf2$600000$salt$digest` 口令哈希——市民 `13800000001` / `demo123456`（user 1001，1200 分），运营管理员 `13800000002` / `admin123456`（user 1002，`/admin` 用它登录）。也可注册新账号（`POST /api/v1/auth/register` 或登录页「注册」）；开发期身份头 `X-User-Id: 1001` 只在显式设置 `AUTH_ALLOW_DEV_HEADER=true` 时可用，`APP_ENV=prod` 开启会拒绝启动。共享库（`10.213.180.114`）仍是旧占位哈希且「演示用户」id=1，**禁止重跑 seed**，按 `db/seed/dev_demo.sql` 头部说明做定向 UPDATE。
+> 演示账号可直接登录：`db/seed/dev_demo.sql` 自带 `pbkdf2$600000$salt$digest` 口令哈希——市民 `13800000001` / `demo123456`（user 1001，1200 分），运营管理员 `13800000002` / `admin123456`（user 1002，`/admin` 用它登录）。也可注册新账号（`POST /api/v1/auth/register` 或登录页「注册」）；开发期身份头 `X-User-Id: 1001` 只在 `APP_ENV=dev` 且显式设置 `AUTH_ALLOW_DEV_HEADER=true` 时可用，其他环境开启会拒绝启动。共享库（`10.213.180.114`）仍是旧占位哈希且「演示用户」id=1，**禁止重跑 seed**，按 `db/seed/dev_demo.sql` 头部说明做定向 UPDATE。
 
 ### 4. 启动前端
 
@@ -297,7 +297,7 @@ pwsh -File .\scripts\verify.ps1
 | 兑换 | `POST /api/v1/orders`、`GET /api/v1/orders`、`POST /api/v1/orders/{id}/cancel` | 支持 `Idempotency-Key`；按 FIFO 消耗积分批次 |
 | 运营 | `/api/v1/admin/products`、`/api/v1/admin/skus/{id}/stock`、`/api/v1/admin/orders`（含 confirm / ship / complete）、`POST /api/v1/admin/points/adjust`、`/api/v1/admin/points/reconcile`、`/api/v1/admin/audit-logs`、`/api/v1/admin/points/expire`、`/api/v1/admin/config`、`/api/v1/admin/travel-modes/{code}` | 需 `ADMIN` 角色，非法流转返回 409 |
 
-**身份鉴权**：只认 `Authorization: Bearer <token>`（登录颁发，2 小时过期），未带 token 即 401；开发期要在脚本里指定用户，必须显式设 `AUTH_ALLOW_DEV_HEADER=true` 才接受 `X-User-Id: <正整数>`，`APP_ENV=prod` 开启会拒绝启动。运营后台再叠加 `RequireAdmin` 角色校验。
+**身份鉴权**：使用 `Authorization: Bearer <token>`（登录颁发，2 小时过期）；仅 `APP_ENV=dev` 且显式设 `AUTH_ALLOW_DEV_HEADER=true` 才接受 `X-User-Id: <正整数>`，其他环境开启会拒绝启动。运营后台再叠加 `RequireAdmin` 角色校验。
 
 **路由可裁剪**：`NewRouter` 的 `Catalog` / `Points` / `Orders` / `Admin` / `Roles` 端口为 nil 时不挂载对应分组，单测可以只测目标模块。
 

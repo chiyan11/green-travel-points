@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,6 +16,56 @@ func TestStartOfDay(t *testing.T) {
 	want := time.Date(2026, time.November, 25, 0, 0, 0, 0, loc)
 	if got := startOfDay(now); !got.Equal(want) || got.Location() != loc {
 		t.Fatalf("startOfDay() = %v (%v), want %v (%v)", got, got.Location(), want, loc)
+	}
+}
+
+func TestCreateTripConcurrentDailyCap(t *testing.T) {
+	store := newTestStore(t)
+	mustExec(t, store.db, "UPDATE point_txn SET occurred_at = DATE_SUB(NOW(3), INTERVAL 1 DAY) WHERE account_id = ?", testAccountID)
+	var wg sync.WaitGroup
+	errs := make(chan error, 2)
+	start := make(chan struct{})
+	now := time.Now().Add(-time.Minute).UTC().Truncate(time.Millisecond)
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			_, err := store.CreateTrip(context.Background(), app.CreateTripInput{
+				UserID: testUserID, Mode: "walk", DistanceKm: 100,
+				TraveledAt: now.Add(time.Duration(i) * time.Millisecond),
+			})
+			errs <- err
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("并发上报失败: %v", err)
+		}
+	}
+	total := mustQueryInt(t, store.db, `SELECT COALESCE(SUM(amount), 0) FROM point_txn
+		WHERE account_id = ? AND txn_type = 'TRAVEL' AND occurred_at >= ? AND occurred_at < ?`,
+		testAccountID, startOfDay(time.Now()), startOfDay(time.Now()).AddDate(0, 0, 1))
+	if total != 500 {
+		t.Fatalf("当日发放积分 = %d，期望 500", total)
+	}
+	assertBatchLedgerBalanced(t, store.db)
+}
+
+func TestTripSnapshotAndHash(t *testing.T) {
+	snapshot, err := parseTripSnapshot(`{"carbonPerPoint":100,"dailyCap":500,"rawPoints":12,"grantedPoints":10}`)
+	if err != nil || snapshot.RawPoints != 12 || snapshot.GrantedPoints != 10 {
+		t.Fatalf("snapshot = %+v, err = %v", snapshot, err)
+	}
+	if _, err := parseTripSnapshot("not-json"); err == nil {
+		t.Fatal("无效快照不应被接受")
+	}
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	if hashTrip(1, "bus", 10.000001, now) == hashTrip(1, "bus", 10.000002, now) {
+		t.Fatal("六位小数不同的距离不应产生相同行程哈希")
 	}
 }
 

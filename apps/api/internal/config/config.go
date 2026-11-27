@@ -20,7 +20,7 @@ type Config struct {
 
 	DatabaseDSN string
 	AuthSecret  string
-	// AuthAllowDevHeader 控制是否接受 X-User-Id 开发身份头；默认关闭，APP_ENV=prod 开即拒启。
+	// AuthAllowDevHeader 控制是否接受 X-User-Id 开发身份头；仅开发环境允许开启。
 	AuthAllowDevHeader bool
 	DBMaxOpenConns     int
 	DBMaxIdleConns     int
@@ -59,8 +59,8 @@ func Load() (Config, error) {
 	if cfg.Env == "prod" && cfg.AuthSecret == "" {
 		return Config{}, fmt.Errorf("config: AUTH_SECRET 不能为空（APP_ENV=prod）")
 	}
-	if cfg.Env == "prod" && cfg.AuthAllowDevHeader {
-		return Config{}, fmt.Errorf("config: APP_ENV=prod 时不允许开启 AUTH_ALLOW_DEV_HEADER")
+	if cfg.Env != "dev" && cfg.AuthAllowDevHeader {
+		return Config{}, fmt.Errorf("config: 仅 APP_ENV=dev 时允许开启 AUTH_ALLOW_DEV_HEADER")
 	}
 	return cfg, nil
 }

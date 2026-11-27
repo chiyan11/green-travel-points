@@ -374,3 +374,12 @@ func TestPointsDailyCarbon(t *testing.T) {
 		t.Fatalf("daily-carbon 返回不符: %+v", list)
 	}
 }
+
+func TestPointsDailyCarbonRejectsExcessiveDays(t *testing.T) {
+	h := newTestRouter(nil, fakePoints{}, nil)
+	rec, env := doJSON(t, h, http.MethodGet, "/api/v1/points/daily-carbon?days=366", "",
+		map[string]string{"X-User-Id": "7"})
+	if rec.Code != http.StatusBadRequest || env.Code != CodeInvalidArgument {
+		t.Fatalf("期望 400/INVALID_ARGUMENT，实际 %d/%s", rec.Code, env.Code)
+	}
+}
