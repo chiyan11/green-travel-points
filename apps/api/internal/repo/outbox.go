@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"greentravelpoints/internal/eventbus"
 )
@@ -107,6 +108,9 @@ func (s *Outbox) finish(ctx context.Context, e eventbus.Event, token string, max
 		return err
 	} else if n != 1 {
 		return fmt.Errorf("outbox event %d lease lost", e.ID)
+	}
+	if cause != nil && e.Attempts+1 >= maxAttempts {
+		slog.Error("outbox event entered dead letter", "event_id", e.ID, "topic", e.Topic, "attempts", e.Attempts+1)
 	}
 	return nil
 }
