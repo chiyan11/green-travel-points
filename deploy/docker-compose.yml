@@ -39,6 +39,7 @@ services:
       - ../db/migrations/000006_point_batch_txn.up.sql:/docker-entrypoint-initdb.d/06_point_batch_txn.sql:ro
       - ../db/migrations/000007_audit_log.up.sql:/docker-entrypoint-initdb.d/07_audit_log.sql:ro
       - ../db/migrations/000008_rule_snapshot_json.up.sql:/docker-entrypoint-initdb.d/08_rule_snapshot_json.sql:ro
+      - ../db/migrations/000009_outbox_lease.up.sql:/docker-entrypoint-initdb.d/09_outbox_lease.sql:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot"]
       interval: 5s
