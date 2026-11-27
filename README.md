@@ -15,7 +15,7 @@
 **当前进度：Sprint 0–S2 文档已补齐（需求规格 + 设计规格 + 用户故事地图/Backlog）；后端主链路与商城主体已实现；Outbox Worker 已支持轮询、重试和死信；repo 集成测试已接入 CI 的 MySQL 服务实际执行；Compose 已编入 mysql/api/web 三服务，本机缺 Docker 引擎故未做容器实跑（改用空库重放迁移 + API 冒烟取证，见 [部署冒烟记录](docs/deploy/部署冒烟记录.md)）。**
 
 已实现：认证 / 行程上报与碳核算 / 积分账本与查询 / 商品目录 / 兑换订单与状态机 / 运营后台（含积分对账）；
-待补齐：Outbox 业务消费者接入、E2E 接入 CI、容器实跑截图。前端 service 均已联调真实接口；repo 集成测试由 `REPO_TEST_DSN` 门控（CI 已注入），消费者主链路 E2E（含 11 张验收截图）与运营后台 E2E 都已落地。
+待补齐：Outbox 业务处理器与幂等消费者（业务消费者接入前 Worker 不启动；短事务租约已由 PR #46 落地）、E2E 接入 CI、容器实跑截图。前端 service 均已联调真实接口；repo 集成测试由 `REPO_TEST_DSN` 门控（CI 已注入，覆盖 17 个数据库用例与 5 个纯函数用例），消费者主链路 E2E（含 11 张验收截图）与运营后台 E2E 都已落地。
 
 进度与偏差详见 [Sprint 0 骨架说明](docs/Sprint0-骨架说明.md)，分工详见 [项目分工与迭代计划](docs/项目分工与迭代计划.md)，接口细节见 [P3 接口说明](docs/api/README.md)。
 
@@ -166,8 +166,8 @@ green-travel-points/
 │   │       ├── config/config.go      # 环境变量 → Config，含默认值与取值范围校验
 │   │       ├── domain/               # 纯业务规则：碳核算、积分换算、订单状态机（45 个用例）
 │   │       ├── eventbus/             # 领域事件主题、处理器契约与 Worker
-│   │       ├── httpserver/           # 路由、中间件、统一响应壳、各业务 handler（49 个测试函数）
-│   │       └── repo/                 # 手写 SQL：连接池、行程、商品、积分、订单、运营后台；orders_test.go / audit_test.go / batches_test.go / outbox_integration_test.go 为 REPO_TEST_DSN 门控的集成测试（13 例）
+│   │       ├── httpserver/           # 路由、中间件、统一响应壳、各业务 handler（69 个测试函数）
+│   │       └── repo/                 # 手写 SQL：连接池、行程、商品、积分、订单、运营后台；6 个测试文件、22 个测试函数（DB 集成 17 + 纯函数 5），DB 用例由 REPO_TEST_DSN 门控
 │   └── web/                          # React 前端：用户端 9 页 + 运营后台 3 页（/admin）
 │       ├── AGENTS.md                 # 前端专项代理指南（Astryx 工作流与规则，由 astryx init 维护）
 │       ├── src/{pages,components,services,lib,themes,types}/  # themes/ = Astryx 品牌主题；pages/admin = M8 后台三屏；types/api.ts = 生成契约
@@ -339,7 +339,7 @@ pwsh -File .\scripts\verify.ps1
 | 层级 | 范围 | 命令 | 现状 |
 | --- | --- | --- | --- |
 | 单元测试（Go · domain） | 碳核算、积分换算、日上限、订单状态机 | `go test ./internal/domain -v` | 12 个测试函数 / 45 个用例（含表驱动子用例），全绿 |
-| 单元测试（Go · http） | 路由、中间件、认证、各 handler（假存储，不连库） | `go test ./internal/httpserver -v` | 49 个测试函数 / 49 例，全绿 |
+| 单元测试（Go · http） | 路由、中间件、认证、各 handler（假存储，不连库） | `go test ./internal/httpserver -v` | 69 个测试函数 / 69 例，全绿 |
 | 单元测试（Go · app） | `sys_config` / `travel_mode` 参数校验（UC-14） | `go test ./internal/app -v` | 2 个函数 / 34 例（表驱动），全绿 |
 | 单元测试（Go · cmd/server） | 启动日志的 DSN 目标判定：本机 / 局域网 / ZeroTier / socket / 非法 DSN；写超时与请求超时的关系 | `go test ./cmd/server -v` | 2 个函数 / 15 个用例 |
 | 单元测试（前端） | Envelope 解包、错误映射、表单校验 | `npx vitest run` | 2 个文件 19 例（http 5 + validators 14） |
@@ -349,7 +349,7 @@ pwsh -File .\scripts\verify.ps1
 | 契约一致性 | `docs/api/openapi.yaml` ↔ `apps/web/src/types/api.ts` | `npm run gen:api` 后 `git diff --exit-code` | 已接入 `verify.ps1` 与 CI |
 | E2E（消费者主链路） | 注册 → 上报 → 积分到账 → 兑换 → 取消返还 | `E2E_API_TARGET=… npm run test:e2e` | 1 条用例绿，11 张截图在 `docs/screenshots/` |
 | E2E（运营后台） | 建商品 → 上架 → 改库存 → 下单 → 后台确认接单 | `npx playwright test`（apps/web） | 1 条用例绿；截图证据在 `docs/p5-evidence/` |
-| 集成测试 | repo + 真实 MySQL：兑换成功 / 积分不足 / 批次不足回滚 / 库存不足 / 限购 / 取消回填批次 / 20 并发防超卖 / 对账 / 人工调账与审计写入 / 积分批次发放 / 行程幂等与并发日上限 / Outbox 重试、死信与租约 | `REPO_TEST_DSN=… go test ./internal/repo -v` | 6 个测试文件、22 个测试函数（DB 集成 17 + 纯函数 5）；**已进 CI**：`mysql:8.4` service + 9 组迁移后整包执行，0 SKIP 由 job 内清单校验强制 |
+| 集成测试 | repo + 真实 MySQL：兑换成功 / 积分不足 / 批次不足回滚 / 库存不足 / 限购 / 取消回填批次 / 20 并发防超卖 / 对账 / 人工调账与审计写入 / 积分批次发放 / 行程幂等与账本对账 / 并发日上限 / Outbox 重试、死信与租约 | `REPO_TEST_DSN=… go test ./internal/repo -v` | 6 个测试文件、22 个测试函数（DB 集成 17 + 纯函数 5）；**已进 CI**：`mysql:8.4` service + 9 组迁移后整包执行，0 SKIP 由 job 内清单校验强制 |
 | 性能 | 行程上报、兑换并发 | 待建（k6） | 未建：计划 S6 起 |
 | 部署冒烟 | 迁移 15 表 + 建商品/改库存/下单/取消/调账/改参数/审计 | `pwsh -File scripts/smoke-deploy.ps1 -ApiBase …` | 一条命令全 PASS，记录见 [部署冒烟记录](docs/deploy/部署冒烟记录.md) |
 
