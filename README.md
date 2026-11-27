@@ -15,7 +15,7 @@
 **当前进度：Sprint 0–S2 文档已补齐（需求规格 + 设计规格 + 用户故事地图/Backlog）；后端主链路与商城主体已实现；Outbox Worker 已支持轮询、重试和死信；repo 集成测试与双链路 E2E 已落地；Docker 全栈实跑仍待补。**
 
 已实现：认证 / 行程上报与碳核算 / 积分账本与查询 / 商品目录 / 兑换订单与状态机 / 运营后台（含积分对账）；
-待补齐：Outbox 业务处理器及无长事务的投递机制（业务消费者接入前 Worker 不启动）、Docker 编排实跑。前端 service 均已联调真实接口；repo 集成测试由 `REPO_TEST_DSN` 门控，消费者主链路 E2E（含 11 张验收截图）与运营后台 E2E 都已落地。
+待补齐：Outbox 业务处理器（业务消费者接入前 Worker 不启动）、Docker 编排实跑。前端 service 均已联调真实接口；repo 集成测试由 `REPO_TEST_DSN` 门控，消费者主链路 E2E（含 11 张验收截图）与运营后台 E2E 都已落地。
 
 进度与偏差详见 [Sprint 0 骨架说明](docs/Sprint0-骨架说明.md)，分工详见 [项目分工与迭代计划](docs/项目分工与迭代计划.md)，接口细节见 [P3 接口说明](docs/api/README.md)。
 
@@ -141,12 +141,12 @@ flowchart LR
 上报行程（单事务）
   INSERT trip_record + INSERT carbon_record + INSERT point_txn
   + 更新 point_account + INSERT event_outbox(type=TripVerified, payload=...)
-Worker 实现支持轮询和重试，但业务消费者未接入前不启动，事件保持待投递；现有投递实现会在处理期间持锁，启用前须改造。
+Worker 实现支持轮询和重试，但业务消费者未接入前不启动，事件保持待投递。投递时逐条以短事务认领五分钟租约，提交后执行处理器；租约到期可能重复投递，消费者必须幂等。
   TripVerified → 更新碳减排统计 / 触发成就徽章 / 写排行榜
   OrderPaid    → 扣减库存 / 通知商户 / 生成核销码
 ```
 
-> **实现现状**：行程上报、下单 / 取消、运营流转都在各自事务里 `INSERT event_outbox`；Worker 代码具备轮询、行锁、指数退避和死信处理，但业务消费者尚未接入，当前不启动 Worker。接入前还须消除处理器执行期间持有行锁的问题。事件主题已统一使用 `eventbus` 常量。
+> **实现现状**：行程上报、下单 / 取消、运营流转都在各自事务里 `INSERT event_outbox`；Worker 具备短事务认领、指数退避和死信处理，但业务消费者尚未接入，当前不启动 Worker。事件主题已统一使用 `eventbus` 常量。
 
 选择 EDA 而非“经典分层同步调用”的理由、与其他架构方案的对比，写在 [设计规格说明书](docs/设计规格说明书.md) 的「2.1.1 架构决策与选型」（含候选方案对比、约束支持度与决策记录）；逻辑架构（包图）、物理架构（部署图）见 [docs/uml](docs/uml)。
 
@@ -173,7 +173,7 @@ green-travel-points/
 │       ├── src/{pages,components,services,lib,themes,types}/  # themes/ = Astryx 品牌主题；pages/admin = M8 后台三屏；types/api.ts = 生成契约
 │       └── e2e/ + playwright.config.ts                        # 消费者主链路（*.spec.ts）与运营后台（*.e2e.ts）用例
 ├── db/
-│   ├── migrations/                   # 8 组 up/down：参数与出行方式 / 发件箱 / 账本 / 用户行程碳记录 / 商城订单 / 批次流水 / 审计日志 / 规则快照改 JSON（数据迁移）
+│   ├── migrations/                   # 9 组 up/down：参数 / 发件箱 / 账本 / 行程 / 商城 / 批次流水 / 审计 / 快照 JSON / 发件箱租约
 │   └── seed/dev_demo.sql             # 演示数据：用户 1001（1200 分）+ 3 个上架商品
 ├── deploy/                           # Dockerfile.api / Dockerfile.web / nginx.conf / docker-compose.yml
 ├── docs/
@@ -349,7 +349,7 @@ pwsh -File .\scripts\verify.ps1
 | 契约一致性 | `docs/api/openapi.yaml` ↔ `apps/web/src/types/api.ts` | `npm run gen:api` 后 `git diff --exit-code` | 已接入 `verify.ps1` 与 CI |
 | E2E（消费者主链路） | 注册 → 上报 → 积分到账 → 兑换 → 取消返还 | `E2E_API_TARGET=… npm run test:e2e` | 1 条用例绿，11 张截图在 `docs/screenshots/` |
 | E2E（运营后台） | 建商品 → 上架 → 改库存 → 下单 → 后台确认接单 | `npx playwright test`（apps/web） | 1 条用例绿；截图证据在 `docs/p5-evidence/` |
-| 集成测试 | repo + 真实 MySQL：兑换成功 / 积分不足 / 批次不足回滚 / 库存不足 / 限购 / 取消回填批次 / 20 并发防超卖 / 对账 / 人工调账与审计写入 / 积分批次发放 / 行程幂等与账本对账 / Outbox 重试与死信 | `REPO_TEST_DSN=… go test ./internal/repo -v` | `apps/api/internal/repo/` 下 `orders_test.go`、`audit_test.go`、`batches_test.go`、`trips_test.go`、`outbox_integration_test.go` 共 14 例；未设 DSN 时数据库用例 SKIP；尚未进 CI |
+| 集成测试 | repo + 真实 MySQL：订单 / 对账 / 调账 / 积分批次 / 行程幂等与并发上限 / Outbox 重试、死信与租约 | `REPO_TEST_DSN=… go test ./internal/repo -v` | `apps/api/internal/repo/` 下共 17 例；未设 DSN 时数据库用例 SKIP；尚未进 CI |
 | 性能 | 行程上报、兑换并发 | 待建（k6） | 未建：计划 S6 起 |
 
 指导书要求的**基本路径法**（组件测试）与**等价类划分法**（功能测试）用例表，在 S6 补齐并写入测试报告。
@@ -362,7 +362,7 @@ pwsh -File .\scripts\verify.ps1
 docker compose -f deploy/docker-compose.yml up -d --build
 ```
 
-当前 compose 只编排 `mysql` + `api` 两个服务：MySQL 首次启动按文件名顺序导入 8 组迁移，API 等 `mysql` 健康检查通过后启动。
+当前 compose 只编排 `mysql` + `api` 两个服务：MySQL 首次启动按文件名顺序导入 9 组迁移，API 等 `mysql` 健康检查通过后启动。
 
 `web` 与反向代理 nginx 的镜像配置已就绪（`deploy/Dockerfile.web` 多阶段构建 → nginx 托管 `dist/`，`deploy/nginx.conf` 含 SPA 回退与 `/api` 反代），但尚未编入 compose。物理部署拓扑见 [部署图](docs/uml/06-部署图.puml)。
 
@@ -416,7 +416,7 @@ docker compose -f deploy/docker-compose.yml up -d --build
 - [x] 前后端可独立启动，`/healthz` `/readyz` `/api/v1/ping` 行为符合预期
 - [x] 领域规则单元测试全绿（12 个测试函数 / 45 个用例：碳核算、积分换算、日上限、订单状态机）
 - [x] 前端 TS7 类型检查通过、单测 19 例通过、生产构建成功
-- [x] 五组迁移可执行（`000001`–`000005`；Sprint 0 当时口径，现为 8 组 / 15 张表，见 `db/migrations/` 与 AGENTS §6），种子数据 `db/seed/dev_demo.sql` 可导入
+- [x] 五组迁移可执行（`000001`–`000005`；Sprint 0 当时口径，现为 9 组 / 15 张表，见 `db/migrations/` 与 AGENTS §6），种子数据 `db/seed/dev_demo.sql` 可导入
 - [x] CI 配置就绪（Go + Node 双 job）
 - [x] 数据库连通性与 `migrate up` 实跑：2026-10-20 本机 MySQL 9.7.2，`/readyz` 返回 `{"database":"up"}`
 

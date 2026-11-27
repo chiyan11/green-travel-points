@@ -22,6 +22,7 @@ func TestStartOfDay(t *testing.T) {
 func TestCreateTripConcurrentDailyCap(t *testing.T) {
 	store := newTestStore(t)
 	mustExec(t, store.db, "UPDATE point_txn SET occurred_at = DATE_SUB(NOW(3), INTERVAL 1 DAY) WHERE account_id = ?", testAccountID)
+	mustExec(t, store.db, "UPDATE point_txn SET occurred_at = NOW(3) WHERE id = 9002")
 	var wg sync.WaitGroup
 	errs := make(chan error, 2)
 	start := make(chan struct{})
