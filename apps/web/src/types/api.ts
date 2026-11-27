@@ -49,12 +49,20 @@ export interface AdjustResult {
 }
 
 export interface AdminProductInput {
+  /** @maxLength 32 */
   category?: string;
+  /** @maxLength 500 */
   description?: string;
+  /** @maxLength 255 */
   imageUrl?: string;
+  /** @min 0 */
   limitPerUser?: number;
-  /** @format int64 */
+  /**
+   * @format int64
+   * @min 1
+   */
   merchantId?: number;
+  /** @maxLength 128 */
   name: string;
   skus: AdminSKUInput[];
   sortOrder?: number;
@@ -62,9 +70,14 @@ export interface AdminProductInput {
 }
 
 export interface AdminSKUInput {
+  /** @maxLength 64 */
   name: string;
-  /** @format int64 */
+  /**
+   * @format int64
+   * @min 1
+   */
   pointsPrice: number;
+  /** @min 0 */
   stock: number;
 }
 
@@ -227,7 +240,8 @@ export type ErrorCode =
   | "INSUFFICIENT_POINTS"
   | "OUT_OF_STOCK"
   | "LIMIT_EXCEEDED"
-  | "ILLEGAL_TRANSITION";
+  | "ILLEGAL_TRANSITION"
+  | "RATE_LIMITED";
 
 export interface ErrorEnvelope {
   /** 业务错误码（HTTP 状态码另行表达协议层语义） */
@@ -500,10 +514,15 @@ export type ProductStatus = "DRAFT" | "ONLINE" | "OFFLINE";
 
 /** 全部字段可选，未传的字段保持原值 */
 export interface ProductUpdate {
+  /** @maxLength 32 */
   category?: string;
+  /** @maxLength 500 */
   description?: string;
+  /** @maxLength 255 */
   imageUrl?: string;
+  /** @min 0 */
   limitPerUser?: number;
+  /** @maxLength 128 */
   name?: string;
   sortOrder?: number;
   status?: ProductStatus;
@@ -525,10 +544,28 @@ export interface ReadinessResult {
 export interface ReconcileItem {
   /** @format int64 */
   accountId: number;
-  /** @format int64 */
+  /**
+   * point_account 当前余额
+   * @format int64
+   */
   balance: number;
-  /** @format int64 */
+  /**
+   * 批次发放合计 + 批次流水合计（point_batch.granted_amount + point_batch_txn.amount）
+   * @format int64
+   */
+  batchLedgerSum: number;
+  /**
+   * 未过期批次剩余合计（point_batch.remaining，status=ACTIVE）
+   * @format int64
+   */
+  batchRemaining: number;
+  /**
+   * point_txn 流水合计
+   * @format int64
+   */
   ledgerSum: number;
+  /** 不一致原因码，多个用逗号分隔：BALANCE_LEDGER_MISMATCH（余额≠流水）、BATCH_BALANCE_MISMATCH（余额≠批次剩余）、BATCH_LEDGER_MISMATCH（批次剩余≠批次发放+批次流水） */
+  reason: string;
   /** @format int64 */
   userId: number;
 }
@@ -551,11 +588,25 @@ export interface ReconcileResult {
 
 /** `phone` 与 `account` 二者其一必填（`account` 是手机号的历史别名，同时传时以 `phone` 为准） */
 export interface RegisterInput {
+  /**
+   * 手机号的历史别名，规则同 `phone`
+   * @maxLength 20
+   */
   account?: string;
-  /** 缺省用手机号 */
+  /**
+   * 缺省用手机号；最长 64 字
+   * @maxLength 64
+   */
   nickname?: string;
-  /** @minLength 6 */
+  /**
+   * @minLength 6
+   * @maxLength 128
+   */
   password: string;
+  /**
+   * 11 位中国大陆手机号（^`1[3-9]` 开头）
+   * @maxLength 20
+   */
   phone?: string;
 }
 

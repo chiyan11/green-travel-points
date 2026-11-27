@@ -32,11 +32,19 @@ export async function listOrders(): Promise<RedeemOrder[]> {
   return (page.items ?? []).map(toOrder)
 }
 
-export async function createOrder(productId: string, receiver: string): Promise<RedeemOrder> {
+/**
+ * 兑换下单。idempotencyKey 由调用方为「一次兑换意图」生成并复用：
+ * 网络失败后重试必须带同一个 key，否则会重复扣分；兑换成功或用户放弃后应丢弃。
+ */
+export async function createOrder(
+  productId: string,
+  receiver: string,
+  idempotencyKey: string,
+): Promise<RedeemOrder> {
   const raw = await api.post<WireOrder>(
     '/api/v1/orders',
     { productId: Number(productId), receiver: receiver.trim() || '本人' },
-    { 'Idempotency-Key': crypto.randomUUID() },
+    { 'Idempotency-Key': idempotencyKey },
   )
   return toOrder(raw)
 }

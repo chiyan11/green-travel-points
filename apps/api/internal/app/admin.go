@@ -58,11 +58,16 @@ type AdminOrderQuery struct {
 }
 
 // ReconcileItem 是一条对账不一致的账户记录（BR-07 证据）。
+// Reason 由多个逗号分隔的原因码组成：BALANCE_LEDGER_MISMATCH（余额≠流水合计）、
+// BATCH_BALANCE_MISMATCH（余额≠批次剩余）、BATCH_LEDGER_MISMATCH（批次剩余≠发放+批次流水）。
 type ReconcileItem struct {
-	UserID    int64 `json:"userId"`
-	AccountID int64 `json:"accountId"`
-	Balance   int64 `json:"balance"`
-	LedgerSum int64 `json:"ledgerSum"`
+	UserID         int64  `json:"userId"`
+	AccountID      int64  `json:"accountId"`
+	Balance        int64  `json:"balance"`
+	LedgerSum      int64  `json:"ledgerSum"`
+	BatchRemaining int64  `json:"batchRemaining"`
+	BatchLedgerSum int64  `json:"batchLedgerSum"`
+	Reason         string `json:"reason"`
 }
 
 // ReconcileResult 是积分对账结果。

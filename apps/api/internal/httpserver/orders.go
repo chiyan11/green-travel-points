@@ -5,11 +5,16 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 
 	"greentravelpoints/internal/app"
 )
+
+// maxIdempotencyKeyRunes 与 redeem_order.idempotency_key VARCHAR(64) 一致；
+// 超长 key 直接 400，避免落入 1406 变成 500。
+const maxIdempotencyKeyRunes = 64
 
 type orderHandler struct {
 	store  app.OrderStore
@@ -42,12 +47,17 @@ func (h orderHandler) create(w http.ResponseWriter, r *http.Request) {
 	if receiver == "" {
 		receiver = "本人"
 	}
+	idemKey := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	if utf8.RuneCountInString(idemKey) > maxIdempotencyKeyRunes {
+		Fail(w, http.StatusBadRequest, CodeInvalidArgument, "Idempotency-Key 最长为 64 个字符")
+		return
+	}
 	order, replayed, err := h.store.CreateOrder(r.Context(), app.CreateOrderInput{
 		UserID:         UserID(r.Context()),
 		ProductID:      req.ProductID,
 		SKUId:          req.SKUId,
 		Receiver:       receiver,
-		IdempotencyKey: strings.TrimSpace(r.Header.Get("Idempotency-Key")),
+		IdempotencyKey: idemKey,
 	})
 	if err != nil {
 		failFromStore(w, h.logger, err)

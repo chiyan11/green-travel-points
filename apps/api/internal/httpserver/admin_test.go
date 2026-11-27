@@ -555,3 +555,54 @@ func TestAdminAuditLogsForbidden(t *testing.T) {
 		t.Fatalf("期望 403/FORBIDDEN，实际 %d/%s", rec.Code, env.Code)
 	}
 }
+
+func TestAdminCreateProductLengthValidation(t *testing.T) {
+	longName := strings.Repeat("名", 129)
+	longDesc := strings.Repeat("d", 501)
+	longCategory := strings.Repeat("类", 33)
+	longImage := strings.Repeat("u", 256)
+	longSKU := strings.Repeat("S", 65)
+	validSKU := `{"name":"默认","pointsPrice":100,"stock":1}`
+	cases := []struct {
+		name string
+		body string
+	}{
+		{"name too long", `{"merchantId":1,"name":"` + longName + `","category":"交通","skus":[` + validSKU + `]}`},
+		{"description too long", `{"merchantId":1,"name":"ok","description":"` + longDesc + `","category":"交通","skus":[` + validSKU + `]}`},
+		{"category too long", `{"merchantId":1,"name":"ok","category":"` + longCategory + `","skus":[` + validSKU + `]}`},
+		{"image too long", `{"merchantId":1,"name":"ok","category":"交通","imageUrl":"` + longImage + `","skus":[` + validSKU + `]}`},
+		{"sku too long", `{"merchantId":1,"name":"ok","category":"交通","skus":[{"name":"` + longSKU + `","pointsPrice":100,"stock":1}]}`},
+		{"duplicate sku", `{"merchantId":1,"name":"ok","category":"交通","skus":[{"name":"默认","pointsPrice":100,"stock":1},{"name":"默认","pointsPrice":200,"stock":2}]}`},
+		{"negative limit", `{"merchantId":1,"name":"ok","category":"交通","limitPerUser":-1,"skus":[` + validSKU + `]}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newAdminRouter(fakeAdmin{}, fakeRoles{role: "ADMIN"})
+			rec, env := doJSON(t, h, http.MethodPost, "/api/v1/admin/products", tc.body,
+				map[string]string{"X-User-Id": "1"})
+			if rec.Code != http.StatusBadRequest || env.Code != CodeInvalidArgument {
+				t.Fatalf("期望 400/INVALID_ARGUMENT，实际 %d/%s", rec.Code, env.Code)
+			}
+		})
+	}
+}
+
+func TestAdminCreateProductConflict(t *testing.T) {
+	h := newAdminRouter(fakeAdmin{err: app.ErrConflict}, fakeRoles{role: "ADMIN"})
+	rec, env := doJSON(t, h, http.MethodPost, "/api/v1/admin/products",
+		`{"merchantId":1,"name":"ok","category":"交通","skus":[{"name":"默认","pointsPrice":100,"stock":1}]}`,
+		map[string]string{"X-User-Id": "1"})
+	if rec.Code != http.StatusConflict || env.Code != CodeConflict {
+		t.Fatalf("期望 409/CONFLICT，实际 %d/%s", rec.Code, env.Code)
+	}
+}
+
+func TestAdminUpdateProductValidation(t *testing.T) {
+	h := newAdminRouter(fakeAdmin{}, fakeRoles{role: "ADMIN"})
+	rec, env := doJSON(t, h, http.MethodPatch, "/api/v1/admin/products/1",
+		`{"name":"`+strings.Repeat("名", 129)+`"}`,
+		map[string]string{"X-User-Id": "1"})
+	if rec.Code != http.StatusBadRequest || env.Code != CodeInvalidArgument {
+		t.Fatalf("期望 400/INVALID_ARGUMENT，实际 %d/%s", rec.Code, env.Code)
+	}
+}

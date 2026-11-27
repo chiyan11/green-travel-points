@@ -40,19 +40,13 @@ func (h adminHandler) createProduct(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Name = strings.TrimSpace(req.Name)
 	req.Category = strings.TrimSpace(req.Category)
-	if req.MerchantID <= 0 || req.Name == "" || req.Category == "" {
-		Fail(w, http.StatusBadRequest, CodeInvalidArgument, "merchantId / name / category 必填")
-		return
+	for i := range req.SKUs {
+		req.SKUs[i].Name = strings.TrimSpace(req.SKUs[i].Name)
 	}
-	if len(req.SKUs) == 0 {
-		Fail(w, http.StatusBadRequest, CodeInvalidArgument, "至少需要一个 SKU")
+	if err := app.ValidateProductInput(req); err != nil {
+		Fail(w, http.StatusBadRequest, CodeInvalidArgument,
+			"商品字段不合法：检查必填项、长度上限（名称 128 / 描述 500 / 分类 32 / 图片链接 255 / SKU 名称 64）与 SKU 唯一性")
 		return
-	}
-	for _, sku := range req.SKUs {
-		if strings.TrimSpace(sku.Name) == "" || sku.PointsPrice <= 0 || sku.Stock < 0 {
-			Fail(w, http.StatusBadRequest, CodeInvalidArgument, "SKU 名称必填、pointsPrice > 0、stock ≥ 0")
-			return
-		}
 	}
 	p, err := h.store.CreateProduct(r.Context(), req)
 	if err != nil {
@@ -71,6 +65,11 @@ func (h adminHandler) updateProduct(w http.ResponseWriter, r *http.Request) {
 	}
 	var req app.ProductUpdate
 	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := app.ValidateProductUpdate(req); err != nil {
+		Fail(w, http.StatusBadRequest, CodeInvalidArgument,
+			"商品字段不合法：名称最长 128、描述最长 500、分类最长 32、图片链接最长 255，状态只能是 DRAFT/ONLINE/OFFLINE")
 		return
 	}
 	p, err := h.store.UpdateProduct(r.Context(), id, req)

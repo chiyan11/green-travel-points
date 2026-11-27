@@ -145,8 +145,11 @@ func (s *Store) CreateProduct(ctx context.Context, in app.AdminProductInput) (ap
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		in.MerchantID, in.Name, in.Description, in.Category, in.ImageURL, status, in.SortOrder, in.LimitPerUser)
 	if err != nil {
-		if isDuplicate(err) {
+		switch {
+		case isDuplicate(err):
 			return app.Product{}, app.ErrConflict
+		case isDataTooLong(err):
+			return app.Product{}, app.ErrInvalidInput
 		}
 		return app.Product{}, err
 	}
@@ -158,8 +161,11 @@ func (s *Store) CreateProduct(ctx context.Context, in app.AdminProductInput) (ap
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO product_sku (product_id, sku_name, points_price, stock)
 			 VALUES (?, ?, ?, ?)`, productID, sku.Name, sku.PointsPrice, sku.Stock); err != nil {
-			if isDuplicate(err) {
+			switch {
+			case isDuplicate(err):
 				return app.Product{}, app.ErrConflict
+			case isDataTooLong(err):
+				return app.Product{}, app.ErrInvalidInput
 			}
 			return app.Product{}, err
 		}
@@ -215,18 +221,19 @@ func (s *Store) UpdateProduct(ctx context.Context, id int64, in app.ProductUpdat
 	if len(sets) == 0 {
 		return s.getProductAny(ctx, id)
 	}
-	res, err := s.db.ExecContext(ctx,
+	_, err := s.db.ExecContext(ctx,
 		`UPDATE product SET `+strings.Join(sets, ", ")+` WHERE id = ?`, append(args, id)...)
 	if err != nil {
+		switch {
+		case isDuplicate(err):
+			return app.Product{}, app.ErrConflict
+		case isDataTooLong(err):
+			return app.Product{}, app.ErrInvalidInput
+		}
 		return app.Product{}, err
 	}
-	affected, err := res.RowsAffected()
-	if err != nil {
-		return app.Product{}, err
-	}
-	if affected == 0 {
-		return app.Product{}, app.ErrNotFound
-	}
+	// 同值更新时 MySQL 的 RowsAffected 为 0，不能据此判定“商品不存在”；
+	// 统一回读，缺行由 getProductAny 返回 ErrNotFound（同值更新仍返回 200）。
 	return s.getProductAny(ctx, id)
 }
 
@@ -235,22 +242,18 @@ func (s *Store) SetSKUStock(ctx context.Context, skuID int64, stock int) (app.SK
 	if stock < 0 {
 		return app.SKU{}, app.ErrInvalidInput
 	}
-	res, err := s.db.ExecContext(ctx,
-		`UPDATE product_sku SET stock = ? WHERE id = ?`, stock, skuID)
-	if err != nil {
+	if _, err := s.db.ExecContext(ctx,
+		`UPDATE product_sku SET stock = ? WHERE id = ?`, stock, skuID); err != nil {
 		return app.SKU{}, err
 	}
-	affected, err := res.RowsAffected()
-	if err != nil {
-		return app.SKU{}, err
-	}
-	if affected == 0 {
-		return app.SKU{}, app.ErrNotFound
-	}
+	// 同值更新 RowsAffected=0 不代表不存在，回读判定。
 	var sku app.SKU
-	err = s.db.QueryRowContext(ctx,
+	err := s.db.QueryRowContext(ctx,
 		`SELECT id, sku_name, points_price, stock, sold_count FROM product_sku WHERE id = ?`, skuID,
 	).Scan(&sku.ID, &sku.Name, &sku.PointsPrice, &sku.Stock, &sku.SoldCount)
+	if errors.Is(err, sql.ErrNoRows) {
+		return app.SKU{}, app.ErrNotFound
+	}
 	if err != nil {
 		return app.SKU{}, err
 	}
@@ -362,20 +365,42 @@ func (s *Store) ReconcilePoints(ctx context.Context) (app.ReconcileResult, error
 	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM point_account`).Scan(&out.Accounts); err != nil {
 		return app.ReconcileResult{}, err
 	}
+	// 三类不一致一次查全：账户流水、批次剩余、批次发放与批次流水的守恒。
+	// 批次流水 point_batch_txn 只记扣减/退回，配合 granted_amount 得到批次账本余额。
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT a.id, a.user_id, a.balance, COALESCE(SUM(t.amount), 0) AS ledger_sum
+		`SELECT a.id, a.user_id, a.balance,
+		        COALESCE(SUM(t.amount), 0) AS ledger_sum,
+		        COALESCE((SELECT SUM(b.remaining) FROM point_batch b
+		                   WHERE b.account_id = a.id AND b.status = 'ACTIVE'), 0) AS batch_remaining,
+		        COALESCE((SELECT SUM(b.granted_amount) FROM point_batch b WHERE b.account_id = a.id), 0)
+		          + COALESCE((SELECT SUM(bt.amount) FROM point_batch_txn bt
+		                       JOIN point_batch b2 ON b2.id = bt.batch_id
+		                      WHERE b2.account_id = a.id), 0) AS batch_ledger_sum
 		 FROM point_account a LEFT JOIN point_txn t ON t.account_id = a.id
-		 GROUP BY a.id, a.user_id, a.balance
-		 HAVING a.balance <> COALESCE(SUM(t.amount), 0)`)
+		 GROUP BY a.id, a.user_id, a.balance`)
 	if err != nil {
 		return app.ReconcileResult{}, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var it app.ReconcileItem
-		if err := rows.Scan(&it.AccountID, &it.UserID, &it.Balance, &it.LedgerSum); err != nil {
+		if err := rows.Scan(&it.AccountID, &it.UserID, &it.Balance, &it.LedgerSum, &it.BatchRemaining, &it.BatchLedgerSum); err != nil {
 			return app.ReconcileResult{}, err
 		}
+		reasons := make([]string, 0, 3)
+		if it.Balance != it.LedgerSum {
+			reasons = append(reasons, "BALANCE_LEDGER_MISMATCH")
+		}
+		if it.Balance != it.BatchRemaining {
+			reasons = append(reasons, "BATCH_BALANCE_MISMATCH")
+		}
+		if it.BatchLedgerSum != it.BatchRemaining {
+			reasons = append(reasons, "BATCH_LEDGER_MISMATCH")
+		}
+		if len(reasons) == 0 {
+			continue
+		}
+		it.Reason = strings.Join(reasons, ",")
 		out.Mismatches = append(out.Mismatches, it)
 	}
 	if err := rows.Err(); err != nil {

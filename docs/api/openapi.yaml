@@ -109,6 +109,8 @@ paths:
           $ref: '#/components/responses/InvalidArgument'
         '409':
           $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
   /api/v1/auth/login:
     post:
       tags: [auth]
@@ -131,6 +133,8 @@ paths:
           $ref: '#/components/responses/InvalidArgument'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
   /api/v1/me:
     get:
       tags: [auth]
@@ -797,6 +801,18 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorEnvelope'
+    RateLimited:
+      description: 请求过于频繁（`RATE_LIMITED`）。登录与注册按客户端 IP 限制为每分钟 5 次；响应带 Retry-After 秒数
+      headers:
+        Retry-After:
+          description: 建议等待的秒数
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
   schemas:
     ErrorCode:
       type: string
@@ -813,6 +829,7 @@ components:
         - OUT_OF_STOCK
         - LIMIT_EXCEEDED
         - ILLEGAL_TRANSITION
+        - RATE_LIMITED
     ErrorEnvelope:
       type: object
       required: [code, message]
@@ -1174,7 +1191,7 @@ components:
           format: int64
     ReconcileItem:
       type: object
-      required: [userId, accountId, balance, ledgerSum]
+      required: [userId, accountId, balance, ledgerSum, batchRemaining, batchLedgerSum, reason]
       properties:
         userId:
           type: integer
@@ -1185,9 +1202,22 @@ components:
         balance:
           type: integer
           format: int64
+          description: point_account 当前余额
         ledgerSum:
           type: integer
           format: int64
+          description: point_txn 流水合计
+        batchRemaining:
+          type: integer
+          format: int64
+          description: 未过期批次剩余合计（point_batch.remaining，status=ACTIVE）
+        batchLedgerSum:
+          type: integer
+          format: int64
+          description: 批次发放合计 + 批次流水合计（point_batch.granted_amount + point_batch_txn.amount）
+        reason:
+          type: string
+          description: 不一致原因码，多个用逗号分隔：BALANCE_LEDGER_MISMATCH（余额≠流水）、BATCH_BALANCE_MISMATCH（余额≠批次剩余）、BATCH_LEDGER_MISMATCH（批次剩余≠批次发放+批次流水）
     ReconcileResult:
       type: object
       required: [accounts, mismatches, ok]
@@ -1236,14 +1266,20 @@ components:
       properties:
         phone:
           type: string
+          description: 11 位中国大陆手机号（^`1[3-9]` 开头）
+          maxLength: 20
         account:
           type: string
+          description: 手机号的历史别名，规则同 `phone`
+          maxLength: 20
         nickname:
           type: string
-          description: 缺省用手机号
+          description: 缺省用手机号；最长 64 字
+          maxLength: 64
         password:
           type: string
           minLength: 6
+          maxLength: 128
     LoginInput:
       type: object
       required: [password]
@@ -1293,11 +1329,14 @@ components:
       properties:
         name:
           type: string
+          maxLength: 64
         pointsPrice:
           type: integer
           format: int64
+          minimum: 1
         stock:
           type: integer
+          minimum: 0
     AdminProductInput:
       type: object
       required: [name, skus]
@@ -1305,20 +1344,26 @@ components:
         merchantId:
           type: integer
           format: int64
+          minimum: 1
         name:
           type: string
+          maxLength: 128
         description:
           type: string
+          maxLength: 500
         category:
           type: string
+          maxLength: 32
         imageUrl:
           type: string
+          maxLength: 255
         status:
           $ref: '#/components/schemas/ProductStatus'
         sortOrder:
           type: integer
         limitPerUser:
           type: integer
+          minimum: 0
         skus:
           type: array
           items:
@@ -1329,18 +1374,23 @@ components:
       properties:
         name:
           type: string
+          maxLength: 128
         description:
           type: string
+          maxLength: 500
         category:
           type: string
+          maxLength: 32
         imageUrl:
           type: string
+          maxLength: 255
         status:
           $ref: '#/components/schemas/ProductStatus'
         sortOrder:
           type: integer
         limitPerUser:
           type: integer
+          minimum: 0
     SKUStockInput:
       type: object
       required: [stock]
