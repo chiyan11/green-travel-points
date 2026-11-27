@@ -107,7 +107,7 @@ green-travel-points/
 │       ├── src/
 │       │   ├── main.tsx          应用引导（QueryClientProvider + RouterProvider）
 │       │   ├── routes.tsx        路由表：/login 公开，其余 RequireAuth + AppLayout
-│       │   ├── pages/            9 个用户页面（Home / Login / Trips / Points / Mall / ProductDetail / Orders / Profile / Placeholder）+ pages/admin/ 运营后台三屏（商品列表 / 新建商品 / 订单）
+│       │   ├── pages/            8 个用户页面（Home / Login / Trips / Points / Mall / ProductDetail / Orders / Profile；PlaceholderPage 未挂载）+ pages/admin/ 运营后台三屏（商品列表 / 新建商品 / 订单）
 │       │   ├── components/       AppLayout（外壳+导航）、AdminLayout（后台外壳）、RequireAuth（守卫）、CarbonTrendChart（折线图）、AstryxLink
 │       │   ├── services/         按域拆的 API 调用：auth / trips / products / points / orders / admin（按生成契约标注传输类型）
 │       │   ├── lib/              http（Envelope 解包、错误、401 处理）、session、validators、format、orderStatus、productCover、travelMode、queryClient
@@ -127,7 +127,7 @@ green-travel-points/
 ├── docs/                         需求规格、设计规格、故事地图/Backlog、实验报告、分工计划、Sprint 0 记录、数据库记录、接口说明、前端接口清单、UML
 │   ├── api/openapi.yaml          机器可读契约（生成 types/api.ts 的唯一来源）
 │   └── screenshots/              E2E 跑出来的验收截图（改主链路后必须更新）
-├── scripts/                      dev-env.ps1（缓存重定向）、verify.ps1（一键门禁）、uml-export.ps1、toc_pages.py、build_team_docx.py
+├── scripts/                      dev-env.ps1（缓存重定向）、verify.ps1（一键门禁）、uml-export.ps1、check-compose-migrations.ps1、smoke-deploy.ps1、auto-review.ps1、toc_pages.py、build_team_docx.py
 ├── .github/workflows/ci.yml      Go job + Web job
 └── README.md                     面向人的总览（本文是面向干活的细节补充）
 ```
@@ -187,7 +187,7 @@ domain ◄──────────────────────┘�
 
 | 分组 | 端点 | 鉴权 |
 | --- | --- | --- |
-| 探针 | `GET /healthz`、`GET /readyz` | 无 |
+| 探针 | `GET /healthz`、`GET /readyz`、`GET /api/v1/ping` | 无 |
 | 认证 | `POST /api/v1/auth/register`、`POST /api/v1/auth/login`、`GET /api/v1/me` | 公开 / 需身份 |
 | 行程 | `POST /api/v1/trips`、`GET /api/v1/trips` | 需身份 |
 | 商品 | `GET /api/v1/products`、`GET /api/v1/products/{id}` | 公开 |
@@ -298,10 +298,10 @@ pages/*.tsx  ──►  services/*.ts  ──►  lib/http.ts  ──►  fetch
 | 层级 | 位置 | 规模 | 特点 |
 | --- | --- | --- | --- |
 | 领域单测 | `apps/api/internal/domain/*_test.go` | 12 个函数 / 45 例 | 表驱动，覆盖边界与非法输入 |
-| HTTP 单测 | `apps/api/internal/httpserver/*_test.go` | 69 例 | 注入假存储，**不连 MySQL**；断言响应壳与错误码 |
+| HTTP 单测 | `apps/api/internal/httpserver/*_test.go` | 69 个测试函数 | 注入假存储，**不连 MySQL**；断言响应壳与错误码 |
 | 参数校验单测 | `apps/api/internal/app/admin_test.go` | 2 个函数 / 34 例 | `sys_config` 数值规则与 `travel_mode` 更新校验，纯函数表驱动 |
-| repo 集成测试 | `apps/api/internal/repo/orders_test.go`、`audit_test.go`、`batches_test.go`、`trips_test.go`、`outbox_test.go`、`outbox_integration_test.go` | 6 文件、23 个测试函数（DB 集成 18 + 纯函数 5） | 真连 MySQL；`REPO_TEST_DSN` 未设置时数据库用例 SKIP（CI 必设）；DSN 数据库名必须以 `_test` 结尾 |
-| 启动日志单测 | `apps/api/cmd/server/dbendpoint_test.go` | 2 个函数 / 15 例 | 表驱动：默认 DSN、局域网 / ZeroTier、localhost、IPv6 回环、unix socket、省略地址、非法 DSN；另测 `WriteTimeout` 跟随请求超时 |
+| repo 集成测试 | `apps/api/internal/repo/orders_test.go`、`audit_test.go`、`batches_test.go`、`points_test.go`、`trips_test.go`、`outbox_test.go`、`outbox_integration_test.go` | 7 文件、23 个测试函数（DB 集成 18 + 纯函数 5） | 真连 MySQL；`REPO_TEST_DSN` 未设置时数据库用例 SKIP（CI 必设）；DSN 数据库名必须以 `_test` 结尾 |
+| 启动日志单测 | `apps/api/cmd/server/dbendpoint_test.go`、`main_test.go` | 2 个函数 / 15 例 | 表驱动：默认 DSN、局域网 / ZeroTier、localhost、IPv6 回环、unix socket、省略地址、非法 DSN；另测 `WriteTimeout` 跟随请求超时 |
 | 前端单测 | `apps/web/src/lib/*.test.ts` | 2 文件 19 例 | `http.test.ts` 用 `vi.stubGlobal('fetch')` 测解包与错误映射；`validators.test.ts` 测校验规则 |
 | 前端页面测试 | `apps/web/src/pages/*.test.tsx` | 5 文件 16 例 | jsdom + Testing Library + MSW 3 拦截 `fetch`；`src/test/render.tsx` 提供 QueryClient/路由壳，`src/test/http.ts` 造 `{code,message,data}` 壳（测试里也重放后端协议，不是随手 mock） |
 | E2E 主链路 | `apps/web/e2e/*.spec.ts`、`apps/web/e2e/*.e2e.ts` | 2 文件 3 例 | Playwright + Chromium，跑**真实前后端与共享库**，不 mock；消费者主链路每步落截图到 `docs/screenshots/`；运营后台用例依赖本机开发库种子账号 |
@@ -400,7 +400,7 @@ E2E **不在门禁里**：它需要真实后端 + 共享库，CI 没有这些环
 | 密码哈希 | PBKDF2-HMAC-SHA256（`pbkdf2$600000$salt$digest`，600000 次迭代、32 字节派生、16 字节随机盐；校验时拒绝旧 `sha256$` 与低于 100000 次迭代的记录） | 如需更强 KDF 换 argon2id；换算法时要同时改签发与校验并重设种子 |
 | Token | 自签 HMAC-SHA256 紧凑串，**不是标准 JWT**（无 header 段） | 需要标准 JWT 时统一改签发与校验两端 |
 | sqlc | `apps/api/sqlc.yaml` 已配置但未启用，repo 全是手写 SQL | 启用即要重写 repo 层，别半途混用 |
-| 集成 / E2E | repo 集成测试 6 文件、23 个测试函数（DB 集成 18 + 纯函数 5），**已进 CI**（`mysql:8.4` service + 迁移 + DSN，0 SKIP 由清单校验强制）；E2E 主链路与运营后台已建（真后端 + 共享库），仍**未**进 CI | E2E 若要进 CI，需先给 CI 一个可用的 MySQL 服务容器与种子导入步骤 |
+| 集成 / E2E | repo 集成测试 7 文件、23 个测试函数（DB 集成 18 + 纯函数 5），**已进 CI**（`mysql:8.4` service + 迁移 + DSN，0 SKIP 由清单校验强制）；E2E 主链路与运营后台已建（真后端 + 共享库），仍**未**进 CI | E2E 若要进 CI，需先给 CI 一个可用的 MySQL 服务容器与种子导入步骤 |
 | 部署 | compose 已编入 `mysql` + `api` + `web`（nginx 在 web 镜像内），10 组迁移全挂载，`check-compose-migrations.ps1` 已进门禁；本机 Docker 引擎不可用（缺 WSL2），容器未实跑，替代证据见 `docs/deploy/部署冒烟记录.md` | 在有 Docker 的机器补一次 `up -d --build` 实跑截图；E2E 仍未进 CI |
 | 前端包体 | `vite build` 单包约 540 kB（gzip 163 kB）+ CSS 354 kB（gzip 54 kB）；移除 ECharts 后已从 1.95 MB 降下来，仍略超 500 kB 警告。 | 用路由级 `import()` 分包；预算从 gzip 163 kB 起算 |
 
