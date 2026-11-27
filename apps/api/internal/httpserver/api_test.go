@@ -399,3 +399,23 @@ func TestPointsDailyCarbonDaysBounds(t *testing.T) {
 		})
 	}
 }
+
+func TestCreateOrderIdempotencyKeyTooLong(t *testing.T) {
+	called := false
+	o := fakeOrders{create: func(app.CreateOrderInput) (app.Order, bool, error) {
+		called = true
+		return app.Order{}, false, nil
+	}}
+	h := newTestRouter(nil, nil, o)
+	rec, env := doJSON(t, h, http.MethodPost, "/api/v1/orders",
+		`{"productId":1}`, map[string]string{
+			"X-User-Id":       "7",
+			"Idempotency-Key": strings.Repeat("k", 65),
+		})
+	if rec.Code != http.StatusBadRequest || env.Code != CodeInvalidArgument {
+		t.Fatalf("期望 400/INVALID_ARGUMENT，实际 %d/%s", rec.Code, env.Code)
+	}
+	if called {
+		t.Fatal("超长 Idempotency-Key 不应进入 store")
+	}
+}

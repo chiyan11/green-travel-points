@@ -15,7 +15,7 @@
 **当前进度：Sprint 0–S2 文档已补齐（需求规格 + 设计规格 + 用户故事地图/Backlog）；后端主链路与商城主体已实现；Outbox Worker 已支持轮询、重试和死信；repo 集成测试已接入 CI 的 MySQL 服务实际执行；Compose 已编入 mysql/api/web 三服务，本机缺 Docker 引擎故未做容器实跑（改用空库重放迁移 + API 冒烟取证，见 [部署冒烟记录](docs/deploy/部署冒烟记录.md)）。**
 
 已实现：认证 / 行程上报与碳核算 / 积分账本与查询 / 商品目录 / 兑换订单与状态机 / 运营后台（含积分对账）；
-待补齐：Outbox 业务处理器与幂等消费者（业务消费者接入前 Worker 不启动；短事务租约已由 PR #46 落地）、E2E 接入 CI、容器实跑截图。前端 service 均已联调真实接口；repo 集成测试由 `REPO_TEST_DSN` 门控（CI 已注入，覆盖 18 个数据库用例与 5 个纯函数用例），消费者主链路 E2E（含 11 张验收截图）与运营后台 E2E 都已落地。
+待补齐：Outbox 业务处理器与幂等消费者（业务消费者接入前 Worker 不启动；短事务租约已由 PR #46 落地）、E2E 接入 CI、容器实跑截图。前端 service 均已联调真实接口；repo 集成测试由 `REPO_TEST_DSN` 门控（CI 已注入，覆盖 25 个数据库用例与 5 个纯函数用例），消费者主链路 E2E（含 11 张验收截图）与运营后台 E2E 都已落地。
 
 进度与偏差详见 [Sprint 0 骨架说明](docs/Sprint0-骨架说明.md)，分工详见 [项目分工与迭代计划](docs/项目分工与迭代计划.md)，接口细节见 [P3 接口说明](docs/api/README.md)。
 
@@ -57,7 +57,7 @@
 1. **出行数据采集（模拟）**：接收并校验市民上报的行程（方式、距离、时间）；
 2. **碳减排量计算**：相对"燃油私家车基准"计算少排放的 CO₂ 当量；
 3. **积分累积与兑换**：按公开规则换算积分、记账、在积分商城兑换商品；
-4. **商城运营管理**：商品 / 库存 / 订单 / 商户 / 对账的运营闭环。
+4. **商城运营管理**：商品 / 库存 / 订单 / 对账的运营闭环（商户结算尚未实现）。
 
 ### 核心业务闭环
 
@@ -90,7 +90,7 @@ flowchart LR
 
 | 模块 | 内容 |
 | --- | --- |
-| M1 用户与认证 | 注册、登录、JWT、角色（市民 / 管理员 / 商户） |
+| M1 用户与认证 | 注册、登录、自签 HMAC Token（非 JWT）、角色（市民 / 管理员，商户角色预留） |
 | M2 行程与碳核算 | 行程上报、5 种出行方式、距离校验、碳减排计算 |
 | M3 积分账本 | 积分核发、账户余额、流水、日上限、过期 |
 | M4 事件总线 | Outbox 表 + Worker + 重试 + 死信 |
@@ -123,7 +123,7 @@ flowchart LR
 | 事件 | 事务性 Outbox 表 + 轮询 Worker | — | 不引入 Kafka / Redis，仍在关系库里保证"业务成功 ⇒ 事件必达"；Worker 按批轮询、退避重试并写死信，业务处理器待各模块接入 |
 | 前端 | React + TypeScript 7 + Vite + TanStack Query | 19.3 / 7.0.2 / 8.3 / 5.104 | TS7 原生编译器（Go 实现），构建快；Query 统一服务端状态 |
 | 设计系统 | [Astryx](https://astryx.atmeta.com/)（`@astryxdesign/core` + `theme-neutral`，品牌子主题在 `apps/web/src/themes/green-travel/`） | 0.7.17 | `main.tsx` 按层导入 4 份样式表并挂 `Theme` + `LinkProvider`；控件用 Astryx，业务样式仍是一个 `styles.css`（自带设计 token：品牌绿 / 积分琥珀 / 字号阶梯 / 12px 卡片圆角 / 单档阴影），无 StyleX/Tailwind 编译器 |
-| 图形 | 手写线性图标 + CSS 柱状图 | — | `src/components/icons.tsx` 是 24×24 单色 SVG 集合，不引图标库；近 7 日碳减排用 CSS 柱状（`CarbonTrendChart`），不引图表库 |
+| 图形 | 手写线性图标 + CSS 柱状图 | — | `src/components/icons.tsx` 是 24×24 单色 SVG 集合，不引图标库；碳减排趋势用 CSS 柱状（`CarbonTrendChart`，UI 默认近 7 日，接口支持 1–365 天），不引图表库 |
 | 接口契约 | OpenAPI 3.1 + swagger-typescript-api（devDependency） | 13.15 | `docs/api/openapi.yaml` 是唯一契约，`npm run gen:api` 生成 `apps/web/src/types/api.ts`，门禁校验生成物与 yaml 一致 |
 | 测试 | Go `testing` / Vitest + Testing Library + MSW / Playwright / k6 | 1.65 | 单测、页面测试、repo 集成（`REPO_TEST_DSN` 门控）、双链路 E2E 已落地；性能压测待建 |
 | 数据库 | MySQL | 8.4+（本机 9.7） | `utf8mb4_0900_ai_ci`、`DATETIME(3)`、JSON 存事件负载 |
@@ -166,25 +166,25 @@ green-travel-points/
 │   │       ├── config/config.go      # 环境变量 → Config，含默认值与取值范围校验
 │   │       ├── domain/               # 纯业务规则：碳核算、积分换算、订单状态机（45 个用例）
 │   │       ├── eventbus/             # 领域事件主题、处理器契约与 Worker
-│   │       ├── httpserver/           # 路由、中间件、统一响应壳、各业务 handler（69 个测试函数）
-│   │       └── repo/                 # 手写 SQL：连接池、行程、商品、积分、订单、运营后台；6 个测试文件、23 个测试函数（DB 集成 18 + 纯函数 5），DB 用例由 REPO_TEST_DSN 门控
-│   └── web/                          # React 前端：用户端 9 页 + 运营后台 3 页（/admin）
+│   │       ├── httpserver/           # 路由、中间件、统一响应壳、各业务 handler（75 个测试函数）
+│   │       └── repo/                 # 手写 SQL：连接池、行程、商品、积分、订单、运营后台；8 个测试文件、30 个测试函数（DB 集成 25 + 纯函数 5），DB 用例由 REPO_TEST_DSN 门控
+│   └── web/                          # React 前端：用户端 8 页 + 运营后台 3 页（/admin）
 │       ├── AGENTS.md                 # 前端专项代理指南（Astryx 工作流与规则，由 astryx init 维护）
 │       ├── src/{pages,components,services,lib,themes,types}/  # themes/ = Astryx 品牌主题；pages/admin = M8 后台三屏；types/api.ts = 生成契约
 │       └── e2e/ + playwright.config.ts                        # 消费者主链路（*.spec.ts）与运营后台（*.e2e.ts）用例
 ├── db/
-│   ├── migrations/                   # 10 组 up/down：参数 / 发件箱 / 账本 / 行程 / 商城 / 批次流水 / 审计 / 快照 JSON / 发件箱租约 / 原始积分
+│   ├── migrations/                   # 11 组 up/down：参数 / 发件箱 / 账本 / 行程 / 商城 / 批次流水 / 审计 / 快照 JSON / 发件箱租约 / 原始积分 / 幂等键
 │   └── seed/dev_demo.sql             # 演示数据：用户 1001（1200 分）+ 3 个上架商品
 ├── deploy/                           # Dockerfile.api / Dockerfile.web / nginx.conf / docker-compose.yml
 ├── docs/
 │   ├── api/README.md                 # M5–M8 接口契约：字段、事务步骤、错误码、联调步骤
-│   ├── uml/                          # 24 个 .puml 源图 + out/ 24 张 PNG + .tools/(plantuml.jar, graphviz)
+│   ├── uml/                          # 51 个 .puml 源图 + out/ 51 张 PNG + .tools/(plantuml.jar, graphviz)
 │   ├── 需求规格说明书.md              # 实验一：角色、用例、域模型、规则、非功能需求
 │   ├── 设计规格说明书.md              # 实验二：架构对比/决策、包图/部署图、表2-1/2-2/2-3、偏差
 │   ├── 用户故事地图与Backlog.md       # 故事地图、40 条 Backlog、7 个 Sprint 切片
 │   ├── 实验报告-绿行积分.md / .docx    # 五章完整报告（可单独提交）
 │   └── 其他 .md                       # 分工计划、Sprint 0 记录、联通记录、建模指南、接口需求清单
-├── scripts/                          # dev-env.ps1（缓存重定向）/ verify.ps1（一键门禁）/ uml-export.ps1 / smoke-deploy.ps1（部署冒烟）/ check-compose-migrations.ps1（迁移挂载校验）
+├── scripts/                          # dev-env.ps1（缓存重定向）/ verify.ps1（一键门禁）/ uml-export.ps1 / smoke-deploy.ps1（部署冒烟）/ check-compose-migrations.ps1（迁移挂载校验）/ auto-review.ps1（自动代码审查）
 ├── .github/workflows/ci.yml          # 双 job：Go（mysql:8.4 service → 迁移 → gofmt/vet/test -race/build → repo 用例禁 SKIP）+ Node（tsc→vitest→build）
 ├── AGENTS.md                         # 代理 / 新人作业手册：分层规范、领域规则、迁移与测试要求、门禁
 └── README.md                         # 项目总览（本文件）
@@ -276,7 +276,7 @@ npm run dev        # http://localhost:5173，/api 已代理到 127.0.0.1:8080
 pwsh -File .\scripts\verify.ps1
 ```
 
-依次执行 `gofmt -l` → `go vet` → `go test` → `go build` → `tsc --noEmit` → `vitest run` → `vite build`，任一失败即非 0 退出；CI 跑的是同一套门禁。
+依次执行 `gofmt -l` → `go vet` → `go test` → `go build` → `web api contract`（`gen:api` + `git status`）→ `tsc --noEmit` → `vitest run` → `vite build` → `deploy compose migrations`，任一失败即非 0 退出；CI 跑的是同一套门禁。
 
 ---
 
@@ -290,14 +290,14 @@ pwsh -File .\scripts\verify.ps1
 | 分组 | 端点 | 说明 |
 | --- | --- | --- |
 | 探针 | `GET /healthz`、`GET /readyz` | 存活恒 200；就绪含 DB ping，失败返回 503 |
-| 认证 | `POST /api/v1/auth/register`、`POST /api/v1/auth/login`、`GET /api/v1/me` | 自签 HMAC-SHA256 token，有效期 2 小时 |
+| 认证 | `POST /api/v1/auth/register`、`POST /api/v1/auth/login`、`GET /api/v1/me` | 自签 HMAC-SHA256 token，有效期 2 小时；注册校验手机号 / 昵称 / 密码长度；登录与注册按 IP 限流 5 次/分钟（429 `RATE_LIMITED`） |
 | 行程 | `POST /api/v1/trips`、`GET /api/v1/trips` | 单事务：行程 + 碳记录 + 积分流水 + 余额 + Outbox |
 | 商品 | `GET /api/v1/products`、`GET /api/v1/products/{id}` | 公开接口，支持分类 / 关键词 / 仅看有货 |
-| 积分 | `GET /api/v1/points/summary`、`GET /api/v1/points/transactions`、`GET /api/v1/points/daily-carbon` | 需身份；流水支持类型多选与分页；近 7 日碳减排按天聚合 |
-| 兑换 | `POST /api/v1/orders`、`GET /api/v1/orders`、`POST /api/v1/orders/{id}/cancel` | 支持 `Idempotency-Key`；按 FIFO 消耗积分批次 |
+| 积分 | `GET /api/v1/points/summary`、`GET /api/v1/points/transactions`、`GET /api/v1/points/daily-carbon` | 需身份；流水支持类型多选与分页；碳减排按天聚合（默认近 7 日，`days` 支持 1–365） |
+| 兑换 | `POST /api/v1/orders`、`GET /api/v1/orders`、`POST /api/v1/orders/{id}/cancel` | 支持 `Idempotency-Key`（≤64 字符，按用户唯一）；按 FIFO 消耗积分批次 |
 | 运营 | `/api/v1/admin/products`、`/api/v1/admin/skus/{id}/stock`、`/api/v1/admin/orders`（含 confirm / ship / complete）、`POST /api/v1/admin/points/adjust`、`/api/v1/admin/points/reconcile`、`/api/v1/admin/audit-logs`、`/api/v1/admin/points/expire`、`/api/v1/admin/config`、`/api/v1/admin/travel-modes/{code}` | 需 `ADMIN` 角色，非法流转返回 409 |
 
-**身份鉴权**：使用 `Authorization: Bearer <token>`（登录颁发，2 小时过期）；仅 `APP_ENV=dev` 且显式设 `AUTH_ALLOW_DEV_HEADER=true` 才接受 `X-User-Id: <正整数>`，其他环境开启会拒绝启动。运营后台再叠加 `RequireAdmin` 角色校验。
+**身份鉴权**：使用 `Authorization: Bearer <token>`（登录颁发，2 小时过期）；仅 `APP_ENV=dev` 且显式设 `AUTH_ALLOW_DEV_HEADER=true` 才接受 `X-User-Id: <正整数>`，其他环境开启会拒绝启动。运营后台再叠加 `RequireAdmin` 角色校验。登录 / 注册按客户端 IP 限制 5 次/分钟，超限返回 429 `RATE_LIMITED` + `Retry-After`。
 
 **路由可裁剪**：`NewRouter` 的 `Catalog` / `Points` / `Orders` / `Admin` / `Roles` 端口为 nil 时不挂载对应分组，单测可以只测目标模块。
 
@@ -339,17 +339,17 @@ pwsh -File .\scripts\verify.ps1
 | 层级 | 范围 | 命令 | 现状 |
 | --- | --- | --- | --- |
 | 单元测试（Go · domain） | 碳核算、积分换算、日上限、订单状态机 | `go test ./internal/domain -v` | 12 个测试函数 / 45 个用例（含表驱动子用例），全绿 |
-| 单元测试（Go · http） | 路由、中间件、认证、各 handler（假存储，不连库） | `go test ./internal/httpserver -v` | 69 个测试函数 / 69 例，全绿 |
-| 单元测试（Go · app） | `sys_config` / `travel_mode` 参数校验（UC-14） | `go test ./internal/app -v` | 2 个函数 / 34 例（表驱动），全绿 |
+| 单元测试（Go · http） | 路由、中间件、认证、限流、各 handler（假存储，不连库） | `go test ./internal/httpserver -v` | 75 个测试函数 / 94 例（含子测试），全绿 |
+| 单元测试（Go · app） | `sys_config` / `travel_mode` 参数校验、注册与商品字段校验（UC-14） | `go test ./internal/app -v` | 5 个函数 / 72 例（含子测试），全绿 |
 | 单元测试（Go · cmd/server） | 启动日志的 DSN 目标判定：本机 / 局域网 / ZeroTier / socket / 非法 DSN；写超时与请求超时的关系 | `go test ./cmd/server -v` | 2 个函数 / 15 个用例 |
 | 单元测试（前端） | Envelope 解包、错误映射、表单校验 | `npx vitest run` | 2 个文件 19 例（http 5 + validators 14） |
-| 页面测试（前端） | 登录失败态、行程上报与重复提交、商城空态/库存不足、订单取消 | `npx vitest run src/pages` | 5 个文件 16 例，jsdom + Testing Library + MSW |
+| 页面测试（前端） | 登录失败态、行程上报与重复提交、商城空态/库存不足、订单取消、兑换失败重试复用幂等键 | `npx vitest run src/pages` | 5 个文件 17 例，jsdom + Testing Library + MSW |
 | E2E（前端） | 注册 → 上报两笔行程 → 积分到账 → 商城兑换 → 取消返还；登录失败提示 | `npm run test:e2e` | Playwright + 真后端 + 共享库，2 例全绿，11 张截图存 `docs/screenshots/` |
 | 类型检查 | 前端全量 | `npx tsc --noEmit` | 零错误 |
 | 契约一致性 | `docs/api/openapi.yaml` ↔ `apps/web/src/types/api.ts` | `npm run gen:api` 后 `git diff --exit-code` | 已接入 `verify.ps1` 与 CI |
-| E2E（消费者主链路） | 注册 → 上报 → 积分到账 → 兑换 → 取消返还 | `E2E_API_TARGET=… npm run test:e2e` | 1 条用例绿，11 张截图在 `docs/screenshots/` |
-| E2E（运营后台） | 建商品 → 上架 → 改库存 → 下单 → 后台确认接单 | `npx playwright test`（apps/web） | 1 条用例绿；截图证据在 `docs/p5-evidence/` |
-| 集成测试 | repo + 真实 MySQL：兑换成功 / 积分不足 / 批次不足回滚 / 库存不足 / 限购 / 取消回填批次 / 20 并发防超卖 / 对账 / 人工调账与审计写入 / 积分批次发放 / 行程幂等与账本对账 / 并发日上限 / Outbox 重试、死信与租约 | `REPO_TEST_DSN=… go test ./internal/repo -v` | 6 个测试文件、23 个测试函数（DB 集成 18 + 纯函数 5）；**已进 CI**：`mysql:8.4` service + 10 组迁移后整包执行，0 SKIP 由 job 内清单校验强制 |
+| E2E（消费者主链路） | 注册 → 上报 → 积分到账 → 兑换 → 取消返还 | `E2E_API_TARGET=… npm run test:e2e` | 2 条用例绿，11 张截图在 `docs/screenshots/` |
+| E2E（运营后台） | 建商品 → 上架 → 改库存 → 下单 → 后台确认接单 | `npx playwright test`（apps/web） | 1 条用例已建；当前选择器仍按「确认收款」，未通过（见 `docs/P5-运营后台前端.md` §6）；截图证据在 `docs/p5-evidence/` |
+| 集成测试 | repo + 真实 MySQL：兑换成功 / 积分不足 / 批次不足回滚 / 库存不足 / 限购 / 取消回填批次 / 20 并发防超卖 / 对账 / 人工调账与审计写入 / 积分批次发放 / 行程幂等与账本对账 / 并发日上限 / Outbox 重试、死信与租约 / 跨用户同幂等键 / 同值更新 / 过期清算拒绝 / 对账批次偏差 | `REPO_TEST_DSN=… go test ./internal/repo -v` | 8 个测试文件、30 个测试函数（DB 集成 25 + 纯函数 5）；**已进 CI**：`mysql:8.4` service + 11 组迁移后整包执行，0 SKIP 由 job 内清单校验强制 |
 | 性能 | 行程上报、兑换并发 | 待建（k6） | 未建：计划 S6 起 |
 | 部署冒烟 | 迁移 15 表 + 建商品/改库存/下单/取消/调账/改参数/审计 | `pwsh -File scripts/smoke-deploy.ps1 -ApiBase …` | 一条命令全 PASS，记录见 [部署冒烟记录](docs/deploy/部署冒烟记录.md) |
 
@@ -365,11 +365,11 @@ docker compose -f deploy/docker-compose.yml up -d --build
 # 访问 http://localhost:8088（nginx 托管前端并反代 /api）
 ```
 
-compose 编排三个服务：`mysql` 首次启动按文件名顺序导入 10 组迁移（`000001`–`000010` 全部挂载）；`api` 等 `mysql` 健康检查通过后启动；`web` 用 `deploy/Dockerfile.web` 多阶段构建（`npm ci && npm run build` → nginx 托管 `dist/`），等 `api` 健康后启动，`deploy/nginx.conf` 含 SPA 回退与 `/api` 反代。物理部署拓扑见 [部署图](docs/uml/06-部署图.puml)。
+compose 编排三个服务：`mysql` 首次启动按文件名顺序导入 11 组迁移（`000001`–`000011` 全部挂载）；`api` 等 `mysql` 健康检查通过后启动；`web` 用 `deploy/Dockerfile.web` 多阶段构建（`npm ci && npm run build` → nginx 托管 `dist/`），等 `api` 健康后启动，`deploy/nginx.conf` 含 SPA 回退与 `/api` 反代。物理部署拓扑见 [部署图](docs/uml/06-部署图.puml)。
 
 迁移挂载是否齐全由 `pwsh -File scripts/check-compose-migrations.ps1` 校验（已接入 `verify.ps1`）；启动后可用 `pwsh -File scripts/smoke-deploy.ps1 -ApiBase http://127.0.0.1:8080` 跑一遍主链路冒烟。
 
-> 本机 Docker 引擎不可用（`docker version` 连 `dockerDesktopLinuxEngine` 报 500，且未安装 WSL2），因此**未做容器实跑**。替代证据：`docker compose config` 解析通过；按 compose 相同的挂载顺序在空库重放 9 组迁移得到 15 张表并跑通 API 冒烟（PR #50 新增 000010 后为 10 组，容器冒烟待重跑），全过程见 [部署冒烟记录](docs/deploy/部署冒烟记录.md)。
+> 本机 Docker 引擎不可用（`docker version` 连 `dockerDesktopLinuxEngine` 报 500，且未安装 WSL2），因此**未做容器实跑**。替代证据：`docker compose config` 解析通过；按 compose 相同的挂载顺序在空库重放当时 9 组迁移得到 15 张表并跑通 API 冒烟（PR #50 新增 000010、P1 修复新增 000011 后当前为 11 组，容器冒烟待重跑），全过程见 [部署冒烟记录](docs/deploy/部署冒烟记录.md)。
 
 ---
 
@@ -400,6 +400,8 @@ compose 编排三个服务：`mysql` 首次启动按文件名顺序导入 10 组
 
 ## 项目进度
 
+**原计划（S0–S4）**
+
 | Sprint | 周期 | 目标 | 对齐实验 | 状态 |
 | --- | --- | --- | --- | --- |
 | S0 | 第 1 周 | 技术栈验证、业务规则冻结、骨架搭建 | 准备 | ✅ 已完成 |
@@ -407,9 +409,14 @@ compose 编排三个服务：`mysql` 首次启动按文件名顺序导入 10 组
 | S2 | 第 5–7 周 | 设计建模 + 垂直切片（登录 → 上报 → 碳核算 → 积分） | 实验二 | ✅ 主链路已通（认证 + 行程 + 积分） |
 | S3 | 第 8–10 周 | 商城闭环 + 订单状态机 + Outbox Worker | 实验三 | 🚧 商城闭环、状态机与 Worker 已实现；业务处理器待接入 |
 | S4 | 第 11–13 周 | 三层测试 + 性能 + 容器化部署 + 报告四 / 五章 | 实验四 | ⏳ 未开始 |
+
+**调整后计划（当前口径）**
+
+| Sprint | 周期 | 目标 | 对齐实验 | 状态 |
+| --- | --- | --- | --- | --- |
 | S1 | 第 2–3 周 | 需求建模：角色 / 用例 / 活动图 / 域模型 / 非功能需求 + 故事地图 | 实验一 | ✅ 已完成（19 个用例、12 张分析图、40 条 Backlog） |
 | S2 | 第 4–5 周 | 设计建模：三方案对比、包图/部署图、表2-1/2-2/2-3 | 实验二 | ✅ 设计规格与 51 张 UML 已补；19/19 用例均有鲁棒图与顺序图（新增 27 张，图2-18～2-44） |
-| S3 | 第 6–7 周 | 主链路：认证 → 行程 → 碳核算 → 积分发放 | 实验二/三 | ✅ 主链路已通（含幂等与日上限）；JWT 为临时实现 |
+| S3 | 第 6–7 周 | 主链路：认证 → 行程 → 碳核算 → 积分发放 | 实验二/三 | ✅ 主链路已通（含幂等与日上限）；自签 HMAC token 为临时实现 |
 | S4 | 第 8–9 周 | 商城闭环：商品 → 兑换 → 订单状态机 → 取消退分 | 实验三 | 🚧 兑换/订单/取消主体已实现；批次发放已接入 `/trips`；并发/取消已有 repo 集成用例 |
 | S5 | 第 10–11 周 | 运营后台 + Outbox Worker + 对账/审计 | 实验三 | 🚧 运营 API 与后台三屏已实现（含参数配置 / 过期清算 / 调账与审计查询）；Worker 业务处理器待接入 |
 | S6 | 第 12–13 周 | 三层测试、部署、报告四/五章、答辩 | 实验四 | ⏳ 未开始 |
@@ -419,7 +426,7 @@ compose 编排三个服务：`mysql` 首次启动按文件名顺序导入 10 组
 - [x] 前后端可独立启动，`/healthz` `/readyz` `/api/v1/ping` 行为符合预期
 - [x] 领域规则单元测试全绿（12 个测试函数 / 45 个用例：碳核算、积分换算、日上限、订单状态机）
 - [x] 前端 TS7 类型检查通过、单测 19 例通过、生产构建成功
-- [x] 五组迁移可执行（`000001`–`000005`；Sprint 0 当时口径，现为 10 组 / 15 张表，见 `db/migrations/` 与 AGENTS §6），种子数据 `db/seed/dev_demo.sql` 可导入
+- [x] 五组迁移可执行（`000001`–`000005`；Sprint 0 当时口径，现为 11 组 / 15 张表，见 `db/migrations/` 与 AGENTS §6），种子数据 `db/seed/dev_demo.sql` 可导入
 - [x] CI 配置就绪（Go + Node 双 job）
 - [x] 数据库连通性与 `migrate up` 实跑：2026-10-20 本机 MySQL 9.7.2，`/readyz` 返回 `{"database":"up"}`
 
@@ -472,7 +479,7 @@ icacls "D:\coding\green-travel-points" /grant "$env:USERNAME:(OI)(CI)F" /T /C
 | [OpenAPI 契约](docs/api/openapi.yaml) | 全部端点的机器可读契约（3.1），前端类型由它生成 |
 | [E2E 验收截图](docs/screenshots) | 主链路 11 张截图：登录 / 注册 / 首页 / 行程 / 积分 / 商城 / 商品详情 / 订单 / 取消 / 登录失败 |
 | [前端接口需求清单](docs/前端接口需求清单.md) | 页面 ↔ 端点对照、字段与错误码需求（P4 → P2/P3） |
-| [UML 源图与导出](docs/uml) | 24 个 `.puml`：4 张用例图（总览 + 出行/积分/运营三个分区）、4 张活动图、域模型、包图、部署图、2 张鲁棒图（市民 / 运营管理员各一张）、9 张序列图、2 张状态图；`out/` 下为 24 张 PNG |
+| [UML 源图与导出](docs/uml) | 51 个 `.puml`：4 张用例图（总览 + 出行/积分/运营三个分区）、4 张活动图、1 张域模型、1 张包图、1 张部署图、19 张鲁棒图、19 张序列图、2 张状态图；19/19 用例均有鲁棒图与顺序图；`out/` 下为 51 张 PNG |
 
 ---
 

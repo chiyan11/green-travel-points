@@ -24,16 +24,25 @@ type ctxKey int
 const userIDKey ctxKey = iota
 
 type AuthHandler struct {
-	db             *sql.DB
-	secret         []byte
-	allowDevHeader bool
-	logger         *slog.Logger
+	db              *sql.DB
+	secret          []byte
+	allowDevHeader  bool
+	logger          *slog.Logger
+	loginLimiter    *rateLimiter
+	registerLimiter *rateLimiter
 }
 
 // NewAuthHandler 构造认证处理器。allowDevHeader 只在 AUTH_ALLOW_DEV_HEADER=true 时为真，
 // 此时才允许在没有有效 Bearer 的情况下读取 X-User-Id 开发身份头。
 func NewAuthHandler(db *sql.DB, secret string, allowDevHeader bool, logger *slog.Logger) *AuthHandler {
-	return &AuthHandler{db: db, secret: []byte(secret), allowDevHeader: allowDevHeader, logger: logger}
+	return &AuthHandler{
+		db:              db,
+		secret:          []byte(secret),
+		allowDevHeader:  allowDevHeader,
+		logger:          logger,
+		loginLimiter:    newRateLimiter(authRateLimitPerMinute, authRateWindow),
+		registerLimiter: newRateLimiter(authRateLimitPerMinute, authRateWindow),
+	}
 }
 
 type authUser struct {
@@ -43,6 +52,16 @@ type authUser struct {
 	CreatedAt time.Time
 }
 
+// dummyPasswordHash 在账号不存在时仍执行一次同等代价的 PBKDF2 校验，
+// 避免通过响应时间差异判断手机号是否已注册。
+var dummyPasswordHash = func() string {
+	h, err := passwordHash("dummy-password-for-timing")
+	if err != nil {
+		panic("auth: 生成 dummy 口令摘要失败: " + err.Error())
+	}
+	return h
+}()
+
 type authRequest struct {
 	Phone    string `json:"phone"`
 	Account  string `json:"account"`
@@ -51,26 +70,27 @@ type authRequest struct {
 }
 
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
+	if ok, retry := h.registerLimiter.allow(clientKey(r)); !ok {
+		w.Header().Set("Retry-After", strconv.Itoa(retry))
+		Fail(w, http.StatusTooManyRequests, CodeRateLimited, "注册过于频繁，请稍后再试")
+		return
+	}
 	var in authRequest
 	if err := decodeJSONBody(w, r, &in); err != nil {
 		failDecode(w, err)
-		return
-	}
-	if len(in.Password) < 6 {
-		Fail(w, http.StatusBadRequest, CodeInvalidArgument, "密码至少 6 位")
 		return
 	}
 	phone := strings.TrimSpace(in.Phone)
 	if phone == "" {
 		phone = strings.TrimSpace(in.Account)
 	}
-	if phone == "" {
-		Fail(w, http.StatusBadRequest, CodeInvalidArgument, "手机号不能为空")
-		return
-	}
 	nickname := strings.TrimSpace(in.Nickname)
 	if nickname == "" {
 		nickname = phone
+	}
+	if err := app.ValidateRegisterInput(phone, nickname, in.Password); err != nil {
+		Fail(w, http.StatusBadRequest, CodeInvalidArgument, "手机号需为 11 位大陆号码；昵称最长 64 字；密码 6–128 位")
+		return
 	}
 	if h.db == nil {
 		Fail(w, http.StatusServiceUnavailable, CodeUnavailable, "数据库不可用")
@@ -120,6 +140,11 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
+	if ok, retry := h.loginLimiter.allow(clientKey(r)); !ok {
+		w.Header().Set("Retry-After", strconv.Itoa(retry))
+		Fail(w, http.StatusTooManyRequests, CodeRateLimited, "登录过于频繁，请稍后再试")
+		return
+	}
 	var in authRequest
 	if err := decodeJSONBody(w, r, &in); err != nil {
 		failDecode(w, err)
@@ -142,7 +167,19 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	err := h.db.QueryRowContext(r.Context(),
 		"SELECT id, phone, nickname, password_hash, status, created_at FROM `user` WHERE phone = ?",
 		account).Scan(&u.ID, &u.Phone, &u.Nickname, &hash, &status, &u.CreatedAt)
-	if err != nil || status != "ACTIVE" || !passwordMatches(hash, in.Password) {
+	if errors.Is(err, sql.ErrNoRows) {
+		// 账号不存在时也执行一次同代价的 PBKDF2，避免时序差异暴露手机号是否已注册。
+		_ = passwordMatches(dummyPasswordHash, in.Password)
+		Fail(w, http.StatusUnauthorized, CodeUnauthorized, "账号或密码错误")
+		return
+	}
+	if err != nil {
+		FailInternal(w, h.logger, err)
+		return
+	}
+	// 先做口令校验再判状态，保证冻结账号与密码错误耗时一致。
+	passwordOK := passwordMatches(hash, in.Password)
+	if !passwordOK || status != "ACTIVE" {
 		Fail(w, http.StatusUnauthorized, CodeUnauthorized, "账号或密码错误")
 		return
 	}
@@ -240,6 +277,8 @@ func failFromStore(w http.ResponseWriter, logger *slog.Logger, err error) {
 		Fail(w, http.StatusConflict, CodeLimitExceeded, "超出单用户限兑数量")
 	case errors.Is(err, app.ErrIllegalTransition):
 		Fail(w, http.StatusConflict, CodeIllegalTransition, "当前订单状态不允许该操作")
+	case errors.Is(err, app.ErrConflict):
+		Fail(w, http.StatusConflict, CodeConflict, "数据状态冲突，请先对账或检查重复数据")
 	case errors.Is(err, app.ErrInvalidInput):
 		Fail(w, http.StatusBadRequest, CodeInvalidArgument, "参数不合法")
 	default:

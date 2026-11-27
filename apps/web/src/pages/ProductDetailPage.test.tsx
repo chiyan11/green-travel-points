@@ -116,4 +116,52 @@ describe('ProductDetailPage', () => {
 
     expect(await screen.findByTestId('route-stub')).toBeInTheDocument()
   })
+  it('兑换失败后重试复用同一个幂等键', async () => {
+    const keys: string[] = []
+    let calls = 0
+    server.use(
+      http.get('*/api/v1/products/1', () => okJson(makeProduct())),
+      http.get('*/api/v1/points/summary', () => okJson(makeSummary())),
+      http.post('*/api/v1/orders', ({ request }) => {
+        keys.push(request.headers.get('Idempotency-Key') ?? '')
+        calls += 1
+        if (calls === 1) {
+          return failJson(500, 'INTERNAL', '服务器内部错误')
+        }
+        return okJson(
+          {
+            id: 7,
+            userId: 1005,
+            orderNo: 'GT202611240001',
+            productId: 1,
+            skuId: 1,
+            productName: '环保帆布袋',
+            skuName: '默认',
+            pointsSpent: 100,
+            quantity: 1,
+            receiver: '本人',
+            status: 'PAID',
+            redeemCode: 'RC-0007',
+            createdAt: '2026-11-24T02:00:00Z',
+            updatedAt: '2026-11-24T02:00:00Z',
+          },
+          { status: 201, message: 'created' },
+        )
+      }),
+    )
+    renderDetail()
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: '确认兑换' }))
+    await user.click(await screen.findByRole('button', { name: '确认兑换并生成核销码' }))
+    expect(await screen.findByText('服务器内部错误')).toBeInTheDocument()
+
+    await user.click(await screen.findByRole('button', { name: '确认兑换' }))
+    await user.click(await screen.findByRole('button', { name: '确认兑换并生成核销码' }))
+
+    expect(await screen.findByTestId('route-stub')).toBeInTheDocument()
+    expect(keys).toHaveLength(2)
+    expect(keys[0]).not.toBe('')
+    expect(keys[1]).toBe(keys[0])
+  })
 })

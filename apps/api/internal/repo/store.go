@@ -27,3 +27,10 @@ func isDuplicate(err error) bool {
 	var me *mysql.MySQLError
 	return errors.As(err, &me) && me.Number == 1062
 }
+
+// isDataTooLong 判断是否为字段超长（MySQL 1406）。SQL 模式非严格时 MySQL 会截断而
+// 不报错，因此 handler 侧的长度校验仍是第一道防线，这里兜底第二道。
+func isDataTooLong(err error) bool {
+	var me *mysql.MySQLError
+	return errors.As(err, &me) && me.Number == 1406
+}

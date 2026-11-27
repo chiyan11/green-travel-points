@@ -17,6 +17,7 @@ const (
 	CodeConflict        = "CONFLICT"
 	CodeInternal        = "INTERNAL"
 	CodeUnavailable     = "UNAVAILABLE"
+	CodeRateLimited     = "RATE_LIMITED"
 
 	// P3 业务细分错误码（与前端接口清单的"待确认问题 2"对齐）。
 	CodeInsufficientPoints = "INSUFFICIENT_POINTS"

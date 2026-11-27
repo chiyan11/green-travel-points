@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -227,10 +228,11 @@ func placeholders(n int) string {
 // 语义与不变量：
 //   - 每批次最多一条 EXPIRE 流水：biz_ref_type='point_batch' + biz_ref_id=batch_id，
 //     由 uk_point_txn_biz 兜底，重复执行不会重复扣分；
-//   - 过期量取 min(batch.remaining, account.balance)：历史数据账实不符（余额小于批次余量）时
-//     只扣得动的部分，批次仍置 EXPIRED 并归零，差额留给 /admin/points/reconcile 暴露；
+//   - 先校验 balance >= 该账户到期批次余量合计：不足说明账实不符，整笔回滚并返回
+//     ErrConflict，交给 /admin/points/reconcile 暴露差额，绝不允许把差额静默抹掉；
+//   - 过期量即 batch.remaining：批次置 EXPIRED 并归零，写 EXPIRE 反向流水与 point_batch_txn；
 //   - 全程单事务，锁顺序 account → batch（与 CreateOrder 一致，避免交叉死锁）；
-//   - 结束后 Σpoint_account.balance 与 Σpoint_batch.remaining(ACTIVE) 仍然相等（正常数据下）。
+//   - 正常数据下结束后 Σpoint_account.balance 与 Σpoint_batch.remaining(ACTIVE) 仍然相等。
 func (s *Store) ExpirePoints(ctx context.Context) (app.ExpireResult, error) {
 	out := app.ExpireResult{}
 
@@ -262,12 +264,17 @@ func (s *Store) ExpirePoints(ctx context.Context) (app.ExpireResult, error) {
 		if err != nil {
 			return out, err
 		}
+		var due int64
+		for _, b := range batches {
+			due += b.remaining
+		}
+		if due > balance {
+			// 余额不足以覆盖到期批次：整笔回滚，让对账接口暴露差额，由运营先修数据。
+			return out, fmt.Errorf("账户 %d 到期批次合计 %d 大于余额 %d: %w", accountID, due, balance, app.ErrConflict)
+		}
 		balanceChanged := false
 		for _, b := range batches {
 			expire := b.remaining
-			if expire > balance {
-				expire = balance
-			}
 			if _, err := tx.ExecContext(ctx,
 				`UPDATE point_batch SET remaining = 0, status = 'EXPIRED' WHERE id = ?`, b.id); err != nil {
 				return out, err

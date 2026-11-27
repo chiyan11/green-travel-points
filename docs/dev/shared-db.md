@@ -61,16 +61,16 @@ curl http://127.0.0.1:8080/readyz
 
 ## 3. 演示数据
 
-已导入 `db/seed/dev_demo.sql`：
+共享库的演示账号以库中现有数据为准，**不要重跑 `db/seed/dev_demo.sql`**：
 
 | 数据 | 说明 |
 | --- | --- |
-| 用户 `1` | 演示市民，手机号 13800000001，积分 1200 |
+| 用户 `1` | 演示市民，手机号 13800000001；余额以库中为准，旧占位哈希按 seed 头部说明做定向 UPDATE |
 | 用户 `1002` | 运营管理员（`role=ADMIN`），用于后台接口 |
 | 商品 `1001–1003` | 环保帆布袋 100 分 / 咖啡券 300 分 / 骑行头盔 800 分 |
-| 积分批次 / 流水 | 与账户 1200 分对齐 |
+| 积分批次 / 流水 | 以库中现有数据为准 |
 
-后台接口测试头：`X-User-Id: 1002`；普通用户头：`X-User-Id: 1`。
+后台接口测试头：`X-User-Id: 1002`；普通用户头：`X-User-Id: 1`。仅 `APP_ENV=dev` 且 `AUTH_ALLOW_DEV_HEADER=true` 时生效，否则 401。
 
 ## 4. 相关命令
 
@@ -79,8 +79,7 @@ curl http://127.0.0.1:8080/readyz
 $env:MYSQL_PWD="greentravel"
 mysql --user=greentravel --host=10.213.180.114 --port=3306 --default-character-set=utf8mb4 green_travel_points -e "SHOW TABLES;"
 
-# 重新导入演示数据（幂等，不会重复插入）
-mysql --user=greentravel --host=10.213.180.114 --port=3306 --default-character-set=utf8mb4 green_travel_points < db/seed/dev_demo.sql
+# 共享库禁止重跑 seed；演示账号口令按 db/seed/dev_demo.sql 头部说明做定向 UPDATE
 ```
 
 ## 5. 注意事项
@@ -99,8 +98,8 @@ mysql --user=greentravel --host=10.213.180.114 --port=3306 --default-character-s
 
 ### 6.1 三条铁律
 
-1. **只新增，不改历史**。新结构一律建 `000006_xxx.up.sql` + `000006_xxx.down.sql`，
-   `000001`–`000005` 一个字都不再动——别人库里那几组已经跑过，改了不会重跑，
+1. **只新增，不改历史**。新结构建下一个未执行序号（当前仓库已有 `000001`–`000011`），
+   已执行的历史迁移一个字都不再动——别人库里那几组已经跑过，改了不会重跑，
    只会让两边悄悄不一致。
 2. **共享库的 DDL 同一时间只由一个人执行**。各自同时 `ALTER` 会撞表锁或互相覆盖；
    执行前在群里说一句「我现在改共享库」，改完再说「好了」。
@@ -140,7 +139,7 @@ Get-ChildItem db\migrations\*.up.sql | Sort-Object Name | ForEach-Object {
 ```powershell
 git pull --rebase          # 拿迁移文件（留档 / 本地库复现用）
 # 只有「用本地库」的人需要继续：
-#   Get-ChildItem db\migrations\00000[6-9]*.up.sql | Sort-Object Name | ForEach-Object { ...同上... }
+#   从 db\migrations\000006_*.up.sql 起按文件名顺序跑到最新（当前含 000011）
 # 最后重启后端（连共享库的人只做这一步）
 ```
 
@@ -156,6 +155,7 @@ git pull --rebase          # 拿迁移文件（留档 / 本地库复现用）
 | 日期 | 迁移 | 执行人 | 目标库 | 结果证据 |
 | --- | --- | --- | --- | --- |
 | 2026-11-17 | `000003`–`000005` | 李响（本机） | 本机 127.0.0.1 | `SHOW TABLES` 13 张，`/readyz` 200 |
+| TODO | `000006`–`000011` | 待执行者确认 | 共享库 | 本表尚无登记；需执行者补 `SHOW TABLES` / `DESCRIBE` 证据 |
 
 ### 6.5 三个常见坑
 
@@ -175,13 +175,13 @@ git pull --rebase          # 拿迁移文件（留档 / 本地库复现用）
 | `GET /api/v1/trips` | 1.1 s | |
 | `GET /api/v1/points/summary` | 3.5 s | |
 | `GET /api/v1/points/transactions` | 4.6 s | |
-| `POST /api/v1/trips` | 12–20 s | 一个事务里 8 条 SQL（trip / carbon / account / txn / outbox），每条都要一次跨网往返 |
+| `POST /api/v1/trips` | 12–20 s | 一个事务里至少 9 条 SQL（travel_mode 查询 / 账户行锁 / 当日流水汇总 / 行程 / 碳记录 / 积分流水 / 批次 / 账户更新 / Outbox），每条都要一次跨网往返 |
 | `POST /api/v1/orders` | 12 s | 同理，行锁 + 账本写入 |
 
 两个直接后果：
 
 1. **前端 E2E 的超时必须放宽**：`apps/web/playwright.config.ts` 里 `timeout: 300_000`、`expect.timeout` 与 `actionTimeout` 都是 `120_000`，压到 5–10 s 会稳定假失败（第一次跑就是被 30 s 的 URL 断言卡住的）。
 2. **`/readyz` 冷启动会 503**：`apps/api/internal/httpserver/health.go` 里探活超时写死 2 s，而冷连接要 2–3 s。想让就绪检查变绿，先打一次真实接口把连接池热起来，或者等代码把超时调大。
-3. **写请求会比服务器的写超时先撞线**：`apps/api/cmd/server/main.go` 原本把 `WriteTimeout` 写死 30 s，比 `HTTP_REQUEST_TIMEOUT` 还早到期，于是 30 s 左右的兑换/取消会以 502 出现在浏览器侧（Vite dev 代理把被掐断的连接报成 502），而后端日志里是一条 `status=200 duration_ms≈30000`。现在 `WriteTimeout = serverWriteTimeout(cfg.HTTPRequestTimeout)`（请求超时 + 15 s），对着共享库跑时把 `HTTP_REQUEST_TIMEOUT=90s` 才有意义。
+3. **写请求会比服务器的写超时先撞线**：`apps/api/cmd/server/main.go` 原本把 `WriteTimeout` 写死 30 s，比 `HTTP_REQUEST_TIMEOUT` 还早到期，于是 30 s 左右的兑换/取消会以 502 出现在浏览器侧（Vite dev 代理把被掐断的连接报成 502），而后端日志里是一条 `status=200 duration_ms≈30000`。现在 `WriteTimeout = serverWriteTimeout(cfg.HTTPRequestTimeout)`（请求超时 + 15 s）；对着共享库跑时 `HTTP_REQUEST_TIMEOUT=60s` 是底线，写入仍接近上限再抬到 `90s`。
 4. **运营后台 E2E 的种子账号只在本机开发库有效**：共享库里 `13800000002`（ADMIN）的口令哈希与本机不同，`apps/web/e2e/admin-console.e2e.ts` 已改成开跑前探一次登录、失败就跳过并给出原因；要真跑，用 `E2E_ADMIN_PHONE` / `E2E_ADMIN_PASSWORD` / `E2E_CITIZEN_PHONE` / `E2E_CITIZEN_PASSWORD` 覆盖。
 

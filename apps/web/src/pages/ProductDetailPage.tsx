@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactNode } from 'react'
+import { useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { IconGift, IconPackage, IconTicket } from '@/components/icons'
@@ -17,6 +17,8 @@ export function ProductDetailPage(): ReactNode {
   const [error, setError] = useState('')
   const [confirming, setConfirming] = useState(false)
   const [pending, setPending] = useState(false)
+  // 一次兑换意图只生成一个幂等键：失败重试复用，成功或用户取消后清空。
+  const idempotencyKeyRef = useRef('')
 
   const { data: product } = useQuery({
     queryKey: ['product', id],
@@ -43,8 +45,12 @@ export function ProductDetailPage(): ReactNode {
     if (insufficient || soldOut) return
     setError('')
     setPending(true)
+    if (idempotencyKeyRef.current === '') {
+      idempotencyKeyRef.current = crypto.randomUUID()
+    }
     try {
-      const order = await createOrder(product.id, receiver)
+      const order = await createOrder(product.id, receiver, idempotencyKeyRef.current)
+      idempotencyKeyRef.current = ''
       // 下单事务里已经扣分并占了库存，所以余额、库存、订单三处都要失效：
       // 余额先 await（顶栏和本页读同一份 summary，否则会先看到兑换前的数字），
       // 商品列表与详情的库存同样要等刷新完再跳，否则回商城还是旧库存。
@@ -67,6 +73,9 @@ export function ProductDetailPage(): ReactNode {
     e.preventDefault()
     // 禁用态只挡点击，回车仍会提交表单，这里再挡一道
     if (insufficient || soldOut) return
+    if (idempotencyKeyRef.current === '') {
+      idempotencyKeyRef.current = crypto.randomUUID()
+    }
     setConfirming(true)
   }
 
@@ -177,7 +186,10 @@ export function ProductDetailPage(): ReactNode {
               <button
                 type="button"
                 className="btn btn--ghost"
-                onClick={() => setConfirming(false)}
+                onClick={() => {
+                  setConfirming(false)
+                  idempotencyKeyRef.current = ''
+                }}
                 disabled={pending}
               >
                 再想想

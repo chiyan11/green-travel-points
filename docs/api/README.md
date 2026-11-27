@@ -40,6 +40,8 @@ npm run gen:api     # 读 ../../docs/api/openapi.yaml，生成 src/types/api.ts�
 - 金额/积分：整数 `int64`。
 - 身份：使用 `Authorization: Bearer <token>`（登录 / 注册响应里的 `token`）。仅 `APP_ENV=dev` 且显式设置 `AUTH_ALLOW_DEV_HEADER=true` 时接受 `X-User-Id: <正整数>`；其他环境开启该开关会拒绝启动，生产还必须显式设置 `AUTH_SECRET`。
   运营接口额外要求角色为 `ADMIN`（`RequireAdmin`），越权返回 403 `FORBIDDEN`。
+  注册约束：手机号为 11 位中国大陆号码（`^1[3-9]\d{9}$`）、昵称 ≤64 字、密码 6–128 位。
+  登录与注册按客户端 IP 限流 5 次/分钟，超限返回 `429 RATE_LIMITED` 并带 `Retry-After`（秒）。
   注意：当前 token 是自签 HMAC-SHA256 的紧凑格式，并非标准 JWT（无 header 段），仅课程范围内可用。
 
 ## 1. 商品目录（M6，公开）
@@ -67,7 +69,7 @@ npm run gen:api     # 读 ../../docs/api/openapi.yaml，生成 src/types/api.ts�
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | `/api/v1/orders` | 兑换下单；请求头可选 `Idempotency-Key`（BR-15） |
+| POST | `/api/v1/orders` | 兑换下单；请求头可选 `Idempotency-Key`（BR-15，≤64 字符，同一用户内唯一） |
 | GET | `/api/v1/orders` | 我的订单；`status` 可选 |
 | POST | `/api/v1/orders/{id}/cancel` | 取消订单（仅 `PENDING`），body `{"reason":"..."}` |
 
@@ -75,7 +77,7 @@ npm run gen:api     # 读 ../../docs/api/openapi.yaml，生成 src/types/api.ts�
 
 事务步骤（与 `docs/uml/10-序列图-兑换下单.puml` 一致）：
 0. 事务外先 `INSERT IGNORE INTO point_account` 建空账户——事务内先取共享锁再升排他锁会与并发的同名 INSERT 互等（MySQL 1213），见 `apps/api/internal/repo/orders.go` 注释；
-1. 幂等键命中 → 返回原订单；
+1. 幂等键命中 → 返回原订单；唯一索引为 `(user_id, idempotency_key)`，不同用户可用同一键互不影响；键超 64 字符直接 400；
 2. `point_account` 行锁 → `product_sku` 行锁（固定顺序防死锁）；
 3. 锁后复核：商品在线 / 库存 > 0 / `balance - frozen ≥ 价格` / 未超 `limit_per_user`；
 4. 写 `redeem_order` + `point_txn(REDEEM)` + 扣余额 + 扣库存 + 按 FIFO 消耗 `point_batch`；
@@ -237,7 +239,7 @@ UPDATE user SET password_hash =
 | POST | `/api/v1/admin/orders/{id}/confirm` | `PENDING → PAID`（商户确认） |
 | POST | `/api/v1/admin/orders/{id}/ship` | `PAID → SHIPPED`（发货） |
 | POST | `/api/v1/admin/orders/{id}/complete` | `SHIPPED → COMPLETED`（核销完成） |
-| GET | `/api/v1/admin/points/reconcile` | 全量积分对账：`balance == Σ(txn)`，返回不一致账户（BR-07 证据） |
+| GET | `/api/v1/admin/points/reconcile` | 全量积分对账：校验余额、流水合计与批次守恒，返回不一致账户（BR-07 证据） |
 | POST | `/api/v1/admin/points/expire` | 手动触发积分过期清算：到期批次置 `EXPIRED`、写 `EXPIRE` 流水、扣余额 |
 | POST | `/api/v1/admin/points/adjust` | 人工调增 / 调减积分（UC-15），必填理由，变动写 `audit_log` |
 | GET | `/api/v1/admin/audit-logs` | 审计日志查询（UC-19）：按操作人 / 动作 / 对象过滤 |
@@ -259,6 +261,11 @@ UPDATE user SET password_hash =
   "skus": [{"name": "标准款", "pointsPrice": 120, "stock": 20}]
 }
 ```
+
+字段约束（超限或非法 → `400 INVALID_ARGUMENT`）：商品名 ≤128 字、描述 ≤500 字、分类 ≤32 字、
+图片 URL ≤255 字、SKU 名 ≤64 字、`pointsPrice ≥ 1`、`stock ≥ 0`、`limitPerUser ≥ 0`、`merchantId ≥ 1`；
+同一商户下商品名或同商品下 SKU 名重复（大小写不敏感）→ `409 CONFLICT`。
+同名更新与同值改库存都算成功（幂等，不返回 404）。
 
 订单流转非法时返回 `409 ILLEGAL_TRANSITION`；每次流转都会写 `event_outbox`
 （`OrderConfirmed` / `OrderShipped` / `OrderCompleted`）；业务消费者未接入，Worker 暂不启动，事件保持待投递。
@@ -339,7 +346,7 @@ UPDATE user SET password_hash =
 | 幂等 | `uk_point_txn_biz(biz_ref_type, biz_ref_id, txn_type)` 保证每批次最多一条 `EXPIRE` 流水；重复调用第二次返回全 0 |
 | 批次 | 置 `status='EXPIRED'`、`remaining=0`；同时在 `point_batch_txn` 记一笔负明细，避免取消订单时把已过期的量回填成可用积分 |
 | 余额 | `point_account.balance` 扣减并 `version+1`，全程单事务；锁顺序 `account → batch`（与下单一致，避免死锁） |
-| 账实不符 | 若历史数据里余额小于批次余量，只扣得动的部分（`min(remaining, balance)`），批次仍归零置 `EXPIRED`，差额由 `/admin/points/reconcile` 暴露 |
+| 账实不符 | 清算前先校验 `balance ≥ Σ(到期批次 remaining)`；不足则整笔回滚并返回 `409 CONFLICT`（不写 `EXPIRE`、不改批次与余额），差额由 `/admin/points/reconcile` 定位 |
 | 不变量 | 正常数据下结束后仍满足 `Σ(point_account.balance) − Σ(point_batch.remaining WHERE status='ACTIVE') = 0` |
 
 演示步骤（本地库）：
@@ -358,7 +365,23 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8080/api/v1/admi
 #    GET /api/v1/points/transactions?type=EXPIRE → 能看到「积分过期」流水
 ```
 
-> 已知前提：`/trips` 发分已在同一事务写 `point_batch`；批次不足已改为整笔失败回滚（PR #40），但 `consumeBatches` 仍未过滤 `expires_at`，过期批次可能被优先扣减，本地库若存在过期批次，余额与批次剩余可能不等。过期清算只动批次里真实存在的量，对账差值不是本接口引入的；过期过滤属 DEV-03。
+> 已知前提：`/trips` 发分已在同一事务写 `point_batch`；批次不足已改为整笔失败回滚（PR #40），但 `consumeBatches` 仍未过滤 `expires_at`，过期批次可能被优先扣减，本地库若存在过期批次，余额与批次剩余可能不等。此时过期清算会拒绝执行（`409 CONFLICT`），需要用 `/admin/points/reconcile` 先定位再人工修数；过期过滤属 DEV-03。
+
+### 6.2.1 对账口径（P1-6）
+
+`GET /api/v1/admin/points/reconcile` 对每个账户同时校验三条恒等式：
+
+| 字段 | 口径 | 不一致原因码 |
+| --- | --- | --- |
+| `balance` / `ledgerSum` | `point_account.balance == Σ(point_txn.amount)` | `BALANCE_LEDGER_MISMATCH` |
+| `batchRemaining` | `Σ(point_batch.remaining WHERE status='ACTIVE')`；与 `balance` 比对 | `BATCH_BALANCE_MISMATCH` |
+| `batchLedgerSum` | `Σ(point_batch.granted_amount) + Σ(point_batch_txn.amount)`；与 `batchRemaining` 比对 | `BATCH_LEDGER_MISMATCH` |
+
+无问题只计 `accounts`，不进入 `mismatches`；有问题时该项的 `reason` 为原因码逗号拼接：
+
+```json
+{"accounts": 120, "mismatches": [{"userId": 1001, "accountId": 1001, "balance": 600, "ledgerSum": 600, "batchRemaining": 999, "batchLedgerSum": 1000, "reason": "BATCH_BALANCE_MISMATCH,BATCH_LEDGER_MISMATCH"}], "ok": false}
+```
 
 ### 6.3 人工调账与审计（UC-15 / UC-19，BR-14 / NFR-12）
 
@@ -421,7 +444,7 @@ go build ./...
 
 `internal/repo/orders_test.go` 覆盖兑换成功 / 积分不足 / 批次不足拒绝 / 库存不足 / 限购 / 取消退款回填 /
 20 并发防超卖 / 对账；`audit_test.go` 覆盖人工调账与审计；`batches_test.go` 覆盖行程发批次后的账本平衡；
-`trips_test.go` 覆盖行程幂等重放、并发限额与账本对账；`points_test.go` 覆盖 365 天碳减排窗口；`outbox_integration_test.go` 覆盖失败重投、死信与租约。共 18 例，**未设置 `REPO_TEST_DSN` 时数据库用例全部跳过**，
+`trips_test.go` 覆盖行程幂等重放、并发限额与账本对账；`points_test.go` 覆盖 365 天碳减排窗口；`outbox_integration_test.go` 覆盖失败重投、死信与租约；`p1_regression_test.go` 覆盖 P1 修复（跨用户同幂等键、同值更新不误报 404、过期清算拒绝、对账批次偏差）。数据库用例共 25 例（另有纯函数 5 例，合计 30 个测试函数）；**未设置 `REPO_TEST_DSN` 时数据库用例全部跳过**，
 所以 CI 与没装库的机器不受影响。
 
 用例会**整表清空**，因此 DSN 指向的库名必须以 `_test` 结尾，防止误洗演示库。
