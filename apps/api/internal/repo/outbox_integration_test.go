@@ -1,9 +1,11 @@
 package repo
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +15,10 @@ import (
 
 func TestOutboxDispatchRetryAndDeadLetter(t *testing.T) {
 	store := newTestStore(t)
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
 	ctx := context.Background()
 	_, err := store.db.ExecContext(ctx, `
 		INSERT INTO event_outbox (topic, aggregate_type, aggregate_id, payload)
@@ -76,6 +82,12 @@ func TestOutboxDispatchRetryAndDeadLetter(t *testing.T) {
 	}
 	if attempts != 3 || dispatchedAt.Valid || !deadLetterAt.Valid {
 		t.Fatalf("after max attempts: attempts=%d dispatchedAt=%v deadLetterAt=%v", attempts, dispatchedAt, deadLetterAt)
+	}
+	if !strings.Contains(logs.String(), `"msg":"outbox event entered dead letter"`) ||
+		!strings.Contains(logs.String(), `"topic":"TestEvent"`) ||
+		!strings.Contains(logs.String(), `"attempts":3`) ||
+		!strings.Contains(logs.String(), `"event_id":`) {
+		t.Fatalf("missing dead-letter alert: %s", logs.String())
 	}
 }
 
