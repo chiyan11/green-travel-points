@@ -4,6 +4,8 @@
 > 对应报告：实验三"系统原型构建与实现"、实验二"设计类清单 / 序列图"。
 > 状态：✅ 已实现并通过单元测试 + 本地 MySQL 联调。身份使用 `Authorization: Bearer <token>`（`POST /api/v1/auth/login` 自签签发，有效期 2 小时）；仅 `APP_ENV=dev` 且显式设置 `AUTH_ALLOW_DEV_HEADER=true` 才接受 `X-User-Id`，其他环境开启会拒绝启动。
 
+> 行程 `rawPoints` 在写入时单独保存，不依赖规则快照的展示格式；已有数据库需先执行 `000010_trip_raw_points` 迁移，共享库须先与团队协调。
+
 ## 机器可读契约：[openapi.yaml](openapi.yaml)
 
 本目录下的 `openapi.yaml` 是前后端唯一的传输契约（OpenAPI 3.1），覆盖 auth / products / points / trips / orders / admin 全部端点。
@@ -57,7 +59,7 @@ npm run gen:api     # 读 ../../docs/api/openapi.yaml，生成 src/types/api.ts�
 | GET | `/api/v1/points/transactions` | 流水；`type` 可逗号多选，支持 `TRAVEL/REDEEM/REFUND/ADJUST/EXPIRE` 及前端别名 `EARN/SPEND/REVERSE` |
 | GET | `/api/v1/points/daily-carbon?days=7` | 最近 N 天逐日碳减排量（缺失日期补 0），供前端趋势图 |
 
-每日碳减排返回：`[{"date":"2026-11-24","grams":483.2}, ...]`（`days` 默认 7，上限 90）。
+每日碳减排返回：`[{"date":"2026-11-24","grams":483.2}, ...]`（不传 `days` 时默认 7；显式传入须为 1–365 的整数，否则返回 400）。
 
 流水字段：`id, type, amount（正得负耗）, balanceAfter, reason, refType, refId, createdAt`。
 

@@ -121,7 +121,7 @@ green-travel-points/
 │       ├── scripts/fix-generated.mjs  生成后处理：去掉 @ts-nocheck、加来源说明
 │       └── vite.config.ts        端口 5173 + /api 代理（VITE_API_TARGET 可改目标）
 ├── db/
-│   ├── migrations/               9 组 up/down 迁移（见 §6）
+│   ├── migrations/               10 组 up/down 迁移（见 §6）
 │   └── seed/dev_demo.sql         演示数据：用户 1001、管理员 1002、3 个商品
 ├── deploy/                       docker-compose.yml、Dockerfile.api、Dockerfile.web、nginx.conf
 ├── docs/                         需求规格、设计规格、故事地图/Backlog、实验报告、分工计划、Sprint 0 记录、数据库记录、接口说明、前端接口清单、UML
@@ -221,7 +221,7 @@ domain ◄──────────────────────┘�
 
 ## 6. 数据层
 
-### 表清单（9 组迁移，15 张表）
+### 表清单（10 组迁移，15 张表）
 
 | 迁移 | 表 | 作用 |
 | --- | --- | --- |
@@ -234,6 +234,7 @@ domain ◄──────────────────────┘�
 | `000007` | `audit_log` | 运营审计日志（只追加：调账 / 参数变更 / 出行方式变更，含操作人、前后值、理由） |
 | `000008` | 无新表 | 数据迁移：把 `carbon_record.rule_snapshot` 的旧拼串改写成 JSON（`carbonPerPoint/dailyCap/rawPoints/grantedPoints`） |
 | `000009` | 无新表 | `event_outbox` 增加租约令牌与到期时间 |
+| `000010` | 无新表 | `carbon_record.raw_points` 独立保存原始积分，并从 JSON 快照回填 |
 
 ### 不变量（写 SQL 时不能破）
 

@@ -167,13 +167,13 @@ green-travel-points/
 │   │       ├── domain/               # 纯业务规则：碳核算、积分换算、订单状态机（45 个用例）
 │   │       ├── eventbus/             # 领域事件主题、处理器契约与 Worker
 │   │       ├── httpserver/           # 路由、中间件、统一响应壳、各业务 handler（49 个测试函数）
-│   │       └── repo/                 # 手写 SQL：连接池、行程、商品、积分、订单、运营后台；orders_test.go / audit_test.go / batches_test.go / outbox_integration_test.go 为 REPO_TEST_DSN 门控的集成测试（13 例）
+│   │       └── repo/                 # 手写 SQL：连接池、行程、商品、积分、订单、运营后台；数据库集成测试需设置 REPO_TEST_DSN
 │   └── web/                          # React 前端：用户端 9 页 + 运营后台 3 页（/admin）
 │       ├── AGENTS.md                 # 前端专项代理指南（Astryx 工作流与规则，由 astryx init 维护）
 │       ├── src/{pages,components,services,lib,themes,types}/  # themes/ = Astryx 品牌主题；pages/admin = M8 后台三屏；types/api.ts = 生成契约
 │       └── e2e/ + playwright.config.ts                        # 消费者主链路（*.spec.ts）与运营后台（*.e2e.ts）用例
 ├── db/
-│   ├── migrations/                   # 9 组 up/down：参数 / 发件箱 / 账本 / 行程 / 商城 / 批次流水 / 审计 / 快照 JSON / 发件箱租约
+│   ├── migrations/                   # 10 组 up/down：参数 / 发件箱 / 账本 / 行程 / 商城 / 批次流水 / 审计 / 快照 JSON / 发件箱租约 / 原始积分
 │   └── seed/dev_demo.sql             # 演示数据：用户 1001（1200 分）+ 3 个上架商品
 ├── deploy/                           # Dockerfile.api / Dockerfile.web / nginx.conf / docker-compose.yml
 ├── docs/
@@ -349,7 +349,7 @@ pwsh -File .\scripts\verify.ps1
 | 契约一致性 | `docs/api/openapi.yaml` ↔ `apps/web/src/types/api.ts` | `npm run gen:api` 后 `git diff --exit-code` | 已接入 `verify.ps1` 与 CI |
 | E2E（消费者主链路） | 注册 → 上报 → 积分到账 → 兑换 → 取消返还 | `E2E_API_TARGET=… npm run test:e2e` | 1 条用例绿，11 张截图在 `docs/screenshots/` |
 | E2E（运营后台） | 建商品 → 上架 → 改库存 → 下单 → 后台确认接单 | `npx playwright test`（apps/web） | 1 条用例绿；截图证据在 `docs/p5-evidence/` |
-| 集成测试 | repo + 真实 MySQL：订单 / 对账 / 调账 / 积分批次 / 行程幂等与并发上限 / Outbox 重试、死信与租约 | `REPO_TEST_DSN=… go test ./internal/repo -v` | `apps/api/internal/repo/` 下共 17 例；未设 DSN 时数据库用例 SKIP；尚未进 CI |
+| 集成测试 | repo + 真实 MySQL：订单 / 对账 / 调账 / 积分批次 / 逐日碳减排 / 行程幂等与并发上限 / Outbox 重试、死信与租约 | `REPO_TEST_DSN=… go test ./internal/repo -v` | 未设 DSN 时数据库用例 SKIP；尚未进 CI |
 | 性能 | 行程上报、兑换并发 | 待建（k6） | 未建：计划 S6 起 |
 
 指导书要求的**基本路径法**（组件测试）与**等价类划分法**（功能测试）用例表，在 S6 补齐并写入测试报告。
@@ -362,7 +362,7 @@ pwsh -File .\scripts\verify.ps1
 docker compose -f deploy/docker-compose.yml up -d --build
 ```
 
-当前 compose 只编排 `mysql` + `api` 两个服务：MySQL 首次启动按文件名顺序导入 9 组迁移，API 等 `mysql` 健康检查通过后启动。
+当前 compose 只编排 `mysql` + `api` 两个服务：MySQL 首次启动按文件名顺序导入 10 组迁移，API 等 `mysql` 健康检查通过后启动。
 
 `web` 与反向代理 nginx 的镜像配置已就绪（`deploy/Dockerfile.web` 多阶段构建 → nginx 托管 `dist/`，`deploy/nginx.conf` 含 SPA 回退与 `/api` 反代），但尚未编入 compose。物理部署拓扑见 [部署图](docs/uml/06-部署图.puml)。
 
@@ -416,7 +416,7 @@ docker compose -f deploy/docker-compose.yml up -d --build
 - [x] 前后端可独立启动，`/healthz` `/readyz` `/api/v1/ping` 行为符合预期
 - [x] 领域规则单元测试全绿（12 个测试函数 / 45 个用例：碳核算、积分换算、日上限、订单状态机）
 - [x] 前端 TS7 类型检查通过、单测 19 例通过、生产构建成功
-- [x] 五组迁移可执行（`000001`–`000005`；Sprint 0 当时口径，现为 9 组 / 15 张表，见 `db/migrations/` 与 AGENTS §6），种子数据 `db/seed/dev_demo.sql` 可导入
+- [x] 五组迁移可执行（`000001`–`000005`；Sprint 0 当时口径，现为 10 组 / 15 张表，见 `db/migrations/` 与 AGENTS §6），种子数据 `db/seed/dev_demo.sql` 可导入
 - [x] CI 配置就绪（Go + Node 双 job）
 - [x] 数据库连通性与 `migrate up` 实跑：2026-10-20 本机 MySQL 9.7.2，`/readyz` 返回 `{"database":"up"}`
 

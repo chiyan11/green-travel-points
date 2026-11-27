@@ -57,13 +57,6 @@ func TestCreateTripConcurrentDailyCap(t *testing.T) {
 }
 
 func TestTripSnapshotAndHash(t *testing.T) {
-	snapshot, err := parseTripSnapshot(`{"carbonPerPoint":100,"dailyCap":500,"rawPoints":12,"grantedPoints":10}`)
-	if err != nil || snapshot.RawPoints != 12 || snapshot.GrantedPoints != 10 {
-		t.Fatalf("snapshot = %+v, err = %v", snapshot, err)
-	}
-	if _, err := parseTripSnapshot("not-json"); err == nil {
-		t.Fatal("无效快照不应被接受")
-	}
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	if hashTrip(1, "bus", 10.000001, now) == hashTrip(1, "bus", 10.000002, now) {
 		t.Fatal("六位小数不同的距离不应产生相同行程哈希")
@@ -77,8 +70,9 @@ func TestCreateTripIdempotentKeepsLedgerBalanced(t *testing.T) {
 	// 夹具的历史发放不应占用本次上报所在自然日的积分上限。
 	mustExec(t, store.db,
 		"UPDATE point_txn SET occurred_at = DATE_SUB(NOW(3), INTERVAL 1 DAY) WHERE account_id = ?", testAccountID)
+	mustExec(t, store.db, "UPDATE point_txn SET occurred_at = NOW(3) WHERE id = 9002")
 	input := app.CreateTripInput{
-		UserID: testUserID, Mode: "bus", DistanceKm: 10,
+		UserID: testUserID, Mode: "walk", DistanceKm: 100,
 		TraveledAt: time.Now().Add(-time.Minute).UTC().Truncate(time.Millisecond),
 	}
 
@@ -89,12 +83,21 @@ func TestCreateTripIdempotentKeepsLedgerBalanced(t *testing.T) {
 	if created.GrantedPoints <= 0 {
 		t.Fatalf("发放积分 = %d，期望正数", created.GrantedPoints)
 	}
+	if created.RawPoints <= created.GrantedPoints {
+		t.Fatalf("应触发每日上限: %+v", created)
+	}
+	mustExec(t, store.db, "UPDATE carbon_record SET rule_snapshot = 'changed-format' WHERE trip_id = (SELECT id FROM trip_record WHERE user_id = ? AND trip_hash = ?)",
+		input.UserID, hashTrip(input.UserID, input.Mode, input.DistanceKm, input.TraveledAt))
 	replayed, err := store.CreateTrip(ctx, input)
 	if err != nil {
 		t.Fatalf("幂等重放失败: %v", err)
 	}
-	if replayed.ID != created.ID || replayed.GrantedPoints != created.GrantedPoints {
+	if replayed.ID != created.ID || replayed.GrantedPoints != created.GrantedPoints || replayed.RawPoints != created.RawPoints {
 		t.Fatalf("幂等重放结果不一致: created=%+v replayed=%+v", created, replayed)
+	}
+	list, err := store.ListTrips(ctx, app.TripQuery{UserID: input.UserID, Page: 1, PageSize: 20})
+	if err != nil || len(list.Items) != 1 || list.Items[0].RawPoints != created.RawPoints || !list.Items[0].CappedByDaily {
+		t.Fatalf("快照变更后的列表结果: %+v, err=%v", list, err)
 	}
 
 	tripID := mustQueryInt(t, store.db,
