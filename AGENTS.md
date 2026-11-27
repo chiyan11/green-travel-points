@@ -60,7 +60,7 @@ docker compose -f deploy/docker-compose.yml up -d --build
 3. **缓存重定向。** 若全局缓存目录不可写（受限沙箱、只读用户目录），先执行 `. .\scripts\dev-env.ps1`，它把 `GOCACHE` / `GOMODCACHE` / `npm` 缓存指到仓库内 `.cache/`。
 4. **种子账号可直接登录。** `db/seed/dev_demo.sql` 自带合法的 `pbkdf2$600000$<salt>$<digest>` 口令哈希：市民 `13800000001` / `demo123456`（user 1001，1200 分），运营管理员 `13800000002` / `admin123456`（user 1002，运营后台 `/admin` 用它登录）。也可注册新账号；开发身份头仅在 `APP_ENV=dev` 且显式设置 `AUTH_ALLOW_DEV_HEADER=true` 时生效，其他环境开启会拒绝启动。**仅限按 seed 初始化的本地库**：共享库（`docs/dev/shared-db.md`）仍是旧占位哈希且演示用户 id=1，seed 明令禁止在共享库执行，只可按头部说明做定向 UPDATE。
 
-> **团队共享库（ZeroTier 内网）**：连接方式见 [`docs/dev/shared-db.md`](dev/shared-db.md)。
+> **团队共享库（ZeroTier 内网）**：连接方式见 [`docs/dev/shared-db.md`](docs/dev/shared-db.md)。
 > 该链路延迟较高，后端启动需带 `HTTP_REQUEST_TIMEOUT=60s`，`DB_DSN` 要加 `timeout/readTimeout/writeTimeout`；
 > 日常开发建议本地库，联调/演示切共享库。
 > **若本机就是共享库主机**（`docs/dev/shared-db.md` 顶部写明主机名的那台），`127.0.0.1` 与共享库是**同一实例**：
@@ -193,7 +193,7 @@ domain ◄──────────────────────┘�
 | 商品 | `GET /api/v1/products`、`GET /api/v1/products/{id}` | 公开 |
 | 积分 | `GET /api/v1/points/summary`、`GET /api/v1/points/transactions`、`GET /api/v1/points/daily-carbon` | 需身份 |
 | 兑换 | `POST /api/v1/orders`、`GET /api/v1/orders`、`POST /api/v1/orders/{id}/cancel` | 需身份 |
-| 运营 | `GET|POST /api/v1/admin/products`、`PATCH /api/v1/admin/products/{id}`、`PUT /api/v1/admin/skus/{id}/stock`、`GET /api/v1/admin/orders`、`POST /api/v1/admin/orders/{id}/(confirm|ship|complete)`、`POST /api/v1/admin/points/adjust`、`GET /api/v1/admin/points/reconcile`、`GET /api/v1/admin/audit-logs`、`POST /api/v1/admin/points/expire`、`GET|PUT /api/v1/admin/config`、`PUT /api/v1/admin/travel-modes/{code}` | 需 ADMIN |
+| 运营 | `GET\|POST /api/v1/admin/products`、`PATCH /api/v1/admin/products/{id}`、`PUT /api/v1/admin/skus/{id}/stock`、`GET /api/v1/admin/orders`、`POST /api/v1/admin/orders/{id}/(confirm\|ship\|complete)`、`POST /api/v1/admin/points/adjust`、`GET /api/v1/admin/points/reconcile`、`GET /api/v1/admin/audit-logs`、`POST /api/v1/admin/points/expire`、`GET\|PUT /api/v1/admin/config`、`PUT /api/v1/admin/travel-modes/{code}` | 需 ADMIN |
 
 身份：使用 `Authorization: Bearer <token>`（登录签发，2 小时过期）；仅 `APP_ENV=dev` 且显式设置 `AUTH_ALLOW_DEV_HEADER=true` 时接受 `X-User-Id: <正整数>`，其他环境开启直接拒绝启动。运营组再叠加 `RequireAdmin`，越权 403。
 
@@ -209,7 +209,7 @@ domain ◄──────────────────────┘�
 | 积分换算 | `floor(碳减排克数 / 100 + 1e-9)`，即 100 g = 1 分 | `apps/api/internal/domain/points.go:30` 的 `DefaultPointsRule` |
 | 每日积分上限 | 500 分 | 同上 `DailyCap` |
 | 有效距离 | 0.1 km ≤ d ≤ 100 km | 同上 `MinDistanceKm` / `MaxDistanceKm` |
-| 订单状态机 | `PENDING → PAID | CANCELLED`；`PAID → SHIPPED | CANCELLED`；`SHIPPED → COMPLETED | CANCELLED` | `apps/api/internal/domain/order.go` 的 `orderTransitions` |
+| 订单状态机 | `PENDING → PAID \| CANCELLED`；`PAID → SHIPPED \| CANCELLED`；`SHIPPED → COMPLETED \| CANCELLED` | `apps/api/internal/domain/order.go` 的 `orderTransitions` |
 
 改规则的固定动作：
 
@@ -297,9 +297,9 @@ pages/*.tsx  ──►  services/*.ts  ──►  lib/http.ts  ──►  fetch
 | 层级 | 位置 | 规模 | 特点 |
 | --- | --- | --- | --- |
 | 领域单测 | `apps/api/internal/domain/*_test.go` | 12 个函数 / 45 例 | 表驱动，覆盖边界与非法输入 |
-| HTTP 单测 | `apps/api/internal/httpserver/*_test.go` | 49 例 | 注入假存储，**不连 MySQL**；断言响应壳与错误码 |
+| HTTP 单测 | `apps/api/internal/httpserver/*_test.go` | 69 例 | 注入假存储，**不连 MySQL**；断言响应壳与错误码 |
 | 参数校验单测 | `apps/api/internal/app/admin_test.go` | 2 个函数 / 34 例 | `sys_config` 数值规则与 `travel_mode` 更新校验，纯函数表驱动 |
-| repo 集成测试 | `apps/api/internal/repo/orders_test.go`、`audit_test.go`、`batches_test.go`、`trips_test.go`、`outbox_test.go`、`outbox_integration_test.go` | 6 文件、22 个函数（DB 集成 17 + 纯函数 5） | 真连 MySQL；`REPO_TEST_DSN` 未设置时数据库用例 SKIP（CI 必设）；DSN 数据库名必须以 `_test` 结尾 |
+| repo 集成测试 | `apps/api/internal/repo/orders_test.go`、`audit_test.go`、`batches_test.go`、`trips_test.go`、`outbox_test.go`、`outbox_integration_test.go` | 6 文件、22 个测试函数（DB 集成 17 + 纯函数 5） | 真连 MySQL；`REPO_TEST_DSN` 未设置时数据库用例 SKIP（CI 必设）；DSN 数据库名必须以 `_test` 结尾 |
 | 启动日志单测 | `apps/api/cmd/server/dbendpoint_test.go` | 2 个函数 / 15 例 | 表驱动：默认 DSN、局域网 / ZeroTier、localhost、IPv6 回环、unix socket、省略地址、非法 DSN；另测 `WriteTimeout` 跟随请求超时 |
 | 前端单测 | `apps/web/src/lib/*.test.ts` | 2 文件 19 例 | `http.test.ts` 用 `vi.stubGlobal('fetch')` 测解包与错误映射；`validators.test.ts` 测校验规则 |
 | 前端页面测试 | `apps/web/src/pages/*.test.tsx` | 5 文件 16 例 | jsdom + Testing Library + MSW 3 拦截 `fetch`；`src/test/render.tsx` 提供 QueryClient/路由壳，`src/test/http.ts` 造 `{code,message,data}` 壳（测试里也重放后端协议，不是随手 mock） |
