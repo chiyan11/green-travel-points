@@ -120,7 +120,7 @@ flowchart LR
 | 后端 | Go + [chi](https://github.com/go-chi/chi) | go 1.24 / chi v5.2.3 | 标准库 `net/http` 语义 + 轻量路由，无框架魔法，便于讲清分层 |
 | 数据访问 | `database/sql`，手写 SQL | mysql 驱动 v1.9.3 | SQL 可见可审；`apps/api/sqlc.yaml` 已就绪但 sqlc 尚未启用 |
 | 迁移 | golang-migrate 风格的 `db/migrations` | — | up / down 成对，可回滚 |
-| 事件 | 事务性 Outbox 表 + 轮询 Worker | — | 不引入 Kafka / Redis，仍在关系库里保证"业务成功 ⇒ 事件必达"；Worker 按批轮询、退避重试并写死信，业务处理器待各模块接入 |
+| 事件 | 事务性 Outbox 表 + 轮询 Worker | — | 业务数据与事件同事务写入；Worker 支持轮询、退避重试和死信，但业务消费者尚未接入，不能保证事件已投递 |
 | 前端 | React + TypeScript 7 + Vite + TanStack Query | 19.3 / 7.0.2 / 8.3 / 5.104 | TS7 原生编译器（Go 实现），构建快；Query 统一服务端状态 |
 | 设计系统 | [Astryx](https://astryx.atmeta.com/)（`@astryxdesign/core` + `theme-neutral`，品牌子主题在 `apps/web/src/themes/green-travel/`） | 0.7.17 | `main.tsx` 按层导入 4 份样式表并挂 `Theme` + `LinkProvider`；控件用 Astryx，业务样式仍是一个 `styles.css`（自带设计 token：品牌绿 / 积分琥珀 / 字号阶梯 / 12px 卡片圆角 / 单档阴影），无 StyleX/Tailwind 编译器 |
 | 图形 | 手写线性图标 + CSS 柱状图 | — | `src/components/icons.tsx` 是 24×24 单色 SVG 集合，不引图标库；碳减排趋势用 CSS 柱状（`CarbonTrendChart`，UI 默认近 7 日，接口支持 1–365 天），不引图表库 |
@@ -147,6 +147,51 @@ Worker 实现支持轮询和重试，但业务消费者未接入前不启动，�
 ```
 
 > **实现现状**：行程上报、下单 / 取消、运营流转都在各自事务里 `INSERT event_outbox`；Worker 具备短事务认领、指数退避和死信处理，事件进入死信后输出包含事件 ID、主题和次数的错误日志，但尚未接入外部告警平台。业务消费者尚未接入，当前不启动 Worker。事件主题已统一使用 `eventbus` 常量。
+
+### Outbox 死信处理
+
+以下是数据库运维手册，不是已实现的管理接口。**当前服务未启动 Worker，也没有业务消费者**：重置死信只会让事件回到待投递状态，不会实际投递。订单创建事件目前使用 `OrderPaid`，但订单仍为 `PENDING`，不要据事件名称推断订单已支付。确认消费者、事件语义与部署方案后再安排投递；消费者必须按事件 ID 做幂等处理，避免租约过期或重放导致重复副作用。
+
+1. 先以只读方式确认连接的是目标数据库，查询死信；事件内容和错误信息可能包含敏感数据，应限制访问和传播。
+
+   ```sql
+   SELECT DATABASE() AS current_database;
+   SELECT id, topic, aggregate_type, aggregate_id, attempts, last_error,
+          dead_letter_at, lease_until, payload
+   FROM event_outbox
+   WHERE dead_letter_at IS NOT NULL
+   ORDER BY dead_letter_at, id
+   LIMIT 100;
+   ```
+
+2. 排查并修复失败原因，确认目标事件允许重放，记录操作人、事件 ID、原错误和时间。共享库修改前须与团队对齐并确认备份；不要对所有死信批量操作。
+3. 在同一数据库会话中将下面的 `NULL` 替换为确认过的单个事件 ID，开启事务并核对锁定的记录。未找到记录时回滚，检查仍有有效租约时不要重放。
+
+   ```sql
+   SET @event_id = NULL;
+   START TRANSACTION;
+   SELECT id, topic, attempts, last_error, dead_letter_at, dispatched_at, lease_until
+   FROM event_outbox
+   WHERE id = @event_id AND dead_letter_at IS NOT NULL
+     AND dispatched_at IS NULL
+     AND (lease_until IS NULL OR lease_until <= NOW(3))
+   FOR UPDATE;
+   ```
+
+4. 确认记录无误后执行以下更新并检查 `ROW_COUNT()`：只有结果为 1 才提交；否则回滚。更新保留 `last_error` 供排查，成功投递后 Worker 才会清除它。
+
+   ```sql
+   UPDATE event_outbox
+   SET dead_letter_at = NULL, attempts = 0, available_at = NOW(3),
+       lease_token = NULL, lease_until = NULL
+   WHERE id = @event_id AND dead_letter_at IS NOT NULL
+     AND dispatched_at IS NULL
+     AND (lease_until IS NULL OR lease_until <= NOW(3));
+   SELECT ROW_COUNT() AS changed_rows;
+   -- 核对为 1 后执行 COMMIT；否则执行 ROLLBACK。
+   ```
+
+5. 消费者和 Worker 启用后，按事件 ID 查询 `dispatched_at`、`attempts`、`last_error` 和 `dead_letter_at`，确认处理结果。SQL 手册不提供自动审计或重放接口，须保留人工操作记录。
 
 选择 EDA 而非“经典分层同步调用”的理由、与其他架构方案的对比，写在 [设计规格说明书](docs/设计规格说明书.md) 的「2.1.1 架构决策与选型」（含候选方案对比、约束支持度与决策记录）；逻辑架构（包图）、物理架构（部署图）见 [docs/uml](docs/uml)。
 
