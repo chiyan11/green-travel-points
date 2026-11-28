@@ -387,8 +387,6 @@ export interface PingResponse {
 }
 
 export interface PingResult {
-  /** @example "dev" */
-  env: string;
   /** @example "green-travel-points" */
   pong: string;
 }

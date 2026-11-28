@@ -17,10 +17,10 @@ describe('api.get', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
       code: 'OK',
       message: 'ok',
-      data: { env: 'dev', pong: 'green-travel-points' },
+      data: { pong: 'green-travel-points' },
     })))
 
-    await expect(fetchPing()).resolves.toEqual({ env: 'dev', pong: 'green-travel-points' })
+    await expect(fetchPing()).resolves.toEqual({ pong: 'green-travel-points' })
   })
 
   it('业务错误码转换为 ApiError', async () => {
