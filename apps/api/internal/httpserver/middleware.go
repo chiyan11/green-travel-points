@@ -1,8 +1,10 @@
 package httpserver
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
+	"runtime/debug"
 	"time"
 
 	"github.com/go-chi/chi/v5/middleware"
@@ -27,6 +29,27 @@ func (r *statusRecorder) Write(b []byte) (int, error) {
 	n, err := r.ResponseWriter.Write(b)
 	r.bytes += n
 	return n, err
+}
+
+func recoverJSON(logger *slog.Logger) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			rec := &statusRecorder{ResponseWriter: w}
+			defer func() {
+				if value := recover(); value != nil {
+					if err, ok := value.(error); ok && errors.Is(err, http.ErrAbortHandler) {
+						panic(value)
+					}
+					logger.Error("httpserver: panic", "err", value, "stack", string(debug.Stack()))
+					if rec.status != 0 {
+						panic(http.ErrAbortHandler)
+					}
+					Fail(rec, http.StatusInternalServerError, CodeInternal, "服务器内部错误")
+				}
+			}()
+			next.ServeHTTP(rec, r)
+		})
+	}
 }
 
 // RequestLogger 输出结构化访问日志（method / path / status / 耗时 / 请求 ID）。

@@ -57,8 +57,8 @@ func NewRouter(opt Options) http.Handler {
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
-	r.Use(middleware.Recoverer)
 	r.Use(RequestLogger(logger))
+	r.Use(recoverJSON(logger))
 	r.Use(middleware.Timeout(opt.RequestTimeout))
 
 	health := Health{DB: opt.DB, Logger: logger}

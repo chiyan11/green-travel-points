@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -8,7 +9,64 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"greentravelpoints/internal/app"
 )
+
+type panicCatalog struct{ fakeCatalog }
+
+func (panicCatalog) ListProducts(context.Context, app.ProductQuery) (app.Page[app.Product], error) {
+	panic("private database detail")
+}
+
+func TestPanicUsesEnvelope(t *testing.T) {
+	h := NewRouter(Options{Logger: discardLogger(), Catalog: panicCatalog{}})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/products", nil))
+	var env Envelope
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatal(err)
+	}
+	if rec.Code != http.StatusInternalServerError || env.Code != CodeInternal ||
+		env.Message != "服务器内部错误" || rec.Header().Get("Content-Type") != "application/json; charset=utf-8" {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRecoverJSONHandlesNonComparablePanic(t *testing.T) {
+	rec := httptest.NewRecorder()
+	recoverJSON(discardLogger())(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		panic([]string{"private"})
+	})).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	if rec.Code != http.StatusInternalServerError || !json.Valid(rec.Body.Bytes()) {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRecoverJSONAbortsCommittedResponses(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		fn   http.HandlerFunc
+	}{
+		{"committed", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			panic("failed after headers")
+		}},
+		{"abort handler", func(http.ResponseWriter, *http.Request) {
+			panic(http.ErrAbortHandler)
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			defer func() {
+				if got := recover(); got != http.ErrAbortHandler {
+					t.Fatalf("panic = %v, want ErrAbortHandler", got)
+				}
+			}()
+			recoverJSON(discardLogger())(tt.fn).ServeHTTP(
+				httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+		})
+	}
+}
 
 func testRouter(dbless bool) http.Handler {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
