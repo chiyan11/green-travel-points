@@ -18,7 +18,10 @@ type adminHandler struct {
 
 // listProducts 后台商品列表：GET /api/v1/admin/products?status=&keyword=&page=
 func (h adminHandler) listProducts(w http.ResponseWriter, r *http.Request) {
-	page, pageSize := parsePaging(r)
+	page, pageSize, ok := parsePaging(w, r)
+	if !ok {
+		return
+	}
 	res, err := h.store.ListAllProducts(r.Context(), app.AdminProductQuery{
 		Page:     page,
 		PageSize: pageSize,
@@ -109,7 +112,10 @@ func (h adminHandler) setStock(w http.ResponseWriter, r *http.Request) {
 
 // listOrders 后台订单列表：GET /api/v1/admin/orders?status=&page=
 func (h adminHandler) listOrders(w http.ResponseWriter, r *http.Request) {
-	page, pageSize := parsePaging(r)
+	page, pageSize, ok := parsePaging(w, r)
+	if !ok {
+		return
+	}
 	res, err := h.store.ListAllOrders(r.Context(), app.AdminOrderQuery{
 		Page:     page,
 		PageSize: pageSize,
@@ -250,7 +256,10 @@ func (h adminHandler) adjustPoints(w http.ResponseWriter, r *http.Request) {
 
 // auditLogs 审计日志查询：GET /api/v1/admin/audit-logs?operatorId=&action=&targetType=&targetKey=&page=
 func (h adminHandler) auditLogs(w http.ResponseWriter, r *http.Request) {
-	page, pageSize := parsePaging(r)
+	page, pageSize, ok := parsePaging(w, r)
+	if !ok {
+		return
+	}
 	operatorID, _ := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("operatorId")), 10, 64)
 	res, err := h.store.ListAuditLogs(r.Context(), app.AuditQuery{
 		OperatorID: operatorID,

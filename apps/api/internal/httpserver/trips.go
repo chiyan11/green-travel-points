@@ -77,7 +77,10 @@ func (h *TripHandler) List(w http.ResponseWriter, r *http.Request) {
 		Fail(w, http.StatusServiceUnavailable, CodeUnavailable, "数据库不可用")
 		return
 	}
-	page, pageSize := parsePaging(r)
+	page, pageSize, ok := parsePaging(w, r)
+	if !ok {
+		return
+	}
 	res, err := h.store.ListTrips(r.Context(), app.TripQuery{UserID: userID, Page: page, PageSize: pageSize})
 	if err != nil {
 		FailInternal(w, h.logger, err)

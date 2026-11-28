@@ -292,9 +292,13 @@ func failFromStore(w http.ResponseWriter, logger *slog.Logger, err error) {
 	}
 }
 
-func parsePaging(r *http.Request) (page, pageSize int) {
+func parsePaging(w http.ResponseWriter, r *http.Request) (page, pageSize int, ok bool) {
 	page, _ = strconv.Atoi(r.URL.Query().Get("page"))
 	pageSize, _ = strconv.Atoi(r.URL.Query().Get("pageSize"))
+	if page > 100000 {
+		Fail(w, http.StatusBadRequest, CodeInvalidArgument, "page 不能超过 100000")
+		return 0, 0, false
+	}
 	if page < 1 {
 		page = 1
 	}
@@ -304,7 +308,7 @@ func parsePaging(r *http.Request) (page, pageSize int) {
 	if pageSize > 100 {
 		pageSize = 100
 	}
-	return page, pageSize
+	return page, pageSize, true
 }
 
 func (h *AuthHandler) issue(id int64) (string, error) {

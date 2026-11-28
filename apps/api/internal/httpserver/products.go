@@ -18,7 +18,10 @@ type catalogHandler struct {
 
 // list 返回商品列表：?page=&pageSize=&category=&keyword=&onlyInStock=true
 func (h catalogHandler) list(w http.ResponseWriter, r *http.Request) {
-	page, pageSize := parsePaging(r)
+	page, pageSize, ok := parsePaging(w, r)
+	if !ok {
+		return
+	}
 	q := app.ProductQuery{
 		Page:        page,
 		PageSize:    pageSize,
