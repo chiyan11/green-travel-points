@@ -5,7 +5,11 @@
 #   http://127.0.0.1:8088/                    # Web 入口（nginx → api）
 #
 # 端口默认避让本机常用端口：MySQL 3307、Web 8088、API 8080；
-# 需要改端口时用环境变量覆盖，例如 MYSQL_PORT=3306 WEB_PORT=80。
+# 需要改端口时用环境变量覆盖，例如 MYSQL_PORT=3306 WEB_PORT=80 API_PORT=18080。
+#
+# 首次启动（数据卷为空）会按文件名顺序执行 01..11 的迁移，再由 99_seed.sh 导入
+# db/seed/dev_demo.sql，因此 down -v && up 之后种子账号可直接登录。
+# 不希望灌演示数据时设置 SEED_ON_INIT=0。
 #
 # 说明：本机若已安装 MySQL 服务（如 MySQL97），更省事的是跳过 mysql 服务，
 # 直接把 apps/api 的 DB_DSN 指向本机实例，见 README「数据库准备」。
@@ -21,6 +25,8 @@ services:
       MYSQL_USER: greentravel
       MYSQL_PASSWORD: greentravel
       TZ: Asia/Shanghai
+      # 1 = 首次初始化时导入 db/seed/dev_demo.sql；0 = 只建表不灌数据。
+      SEED_ON_INIT: ${SEED_ON_INIT:-1}
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_0900_ai_ci
@@ -42,6 +48,9 @@ services:
       - ../db/migrations/000009_outbox_lease.up.sql:/docker-entrypoint-initdb.d/09_outbox_lease.sql:ro
       - ../db/migrations/000010_trip_raw_points.up.sql:/docker-entrypoint-initdb.d/10_trip_raw_points.sql:ro
       - ../db/migrations/000011_order_idem_per_user.up.sql:/docker-entrypoint-initdb.d/11_order_idem_per_user.sql:ro
+      # 迁移全部执行完再导种子（99 排最后）；SEED_ON_INIT=0 时脚本自行跳过。
+      - ../db/seed/dev_demo.sql:/seed/dev_demo.sql:ro
+      - ../db/seed/docker-init.sh:/docker-entrypoint-initdb.d/99_seed.sh:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot"]
       interval: 5s
@@ -59,10 +68,18 @@ services:
       HTTP_ADDR: :8080
       DB_DSN: greentravel:greentravel@tcp(mysql:3306)/green_travel_points?parseTime=true&loc=Local&charset=utf8mb4
     ports:
-      - "8080:8080"
+      - "${API_PORT:-8080}:8080"
     depends_on:
       mysql:
         condition: service_healthy
+    # /healthz 不依赖数据库，镜像内也有 HEALTHCHECK；这里显式声明，
+    # web 的 `condition: service_healthy` 才有可满足的判定。
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
 
   web:
     build:
@@ -75,3 +92,9 @@ services:
     depends_on:
       api:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s

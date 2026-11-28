@@ -7,6 +7,8 @@ WORKDIR /src
 COPY apps/api/go.mod apps/api/go.sum ./
 RUN go mod download
 
+# 只复制后端源码目录；仓库根的 .dockerignore 已挡掉 .git / .cache / node_modules / dist，
+# 不再有 `COPY . .` 把整个工作区（含前端与本地缓存）搬进构建层。
 COPY apps/api/ ./
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server
 
