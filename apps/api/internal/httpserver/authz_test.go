@@ -2,12 +2,74 @@ package httpserver
 
 import (
 	"context"
+	"database/sql"
+	"database/sql/driver"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"github.com/go-sql-driver/mysql"
 
 	"greentravelpoints/internal/app"
 )
+
+type registerErrorConnector struct{ err error }
+
+func (c registerErrorConnector) Connect(context.Context) (driver.Conn, error) {
+	return registerErrorConn{err: c.err}, nil
+}
+func (c registerErrorConnector) Driver() driver.Driver { return registerErrorDriver{err: c.err} }
+
+type registerErrorDriver struct{ err error }
+
+func (d registerErrorDriver) Open(string) (driver.Conn, error) {
+	return registerErrorConn{err: d.err}, nil
+}
+
+type registerErrorConn struct{ err error }
+
+func (c registerErrorConn) Prepare(string) (driver.Stmt, error) {
+	return nil, errors.New("unexpected prepare")
+}
+func (registerErrorConn) Close() error              { return nil }
+func (registerErrorConn) Begin() (driver.Tx, error) { return registerErrorTx{}, nil }
+func (c registerErrorConn) ExecContext(context.Context, string, []driver.NamedValue) (driver.Result, error) {
+	return nil, c.err
+}
+
+type registerErrorTx struct{}
+
+func (registerErrorTx) Commit() error   { return nil }
+func (registerErrorTx) Rollback() error { return nil }
+
+func TestRegisterDuplicateUsesMySQLErrorCode(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		err  error
+		want int
+		code string
+	}{
+		{"wrapped duplicate code", fmt.Errorf("insert: %w", &mysql.MySQLError{Number: 1062, Message: "other wording"}), http.StatusConflict, CodeConflict},
+		{"duplicate text only", errors.New("duplicate network request"), http.StatusInternalServerError, CodeInternal},
+		{"other mysql error", &mysql.MySQLError{Number: 1205, Message: "duplicate"}, http.StatusInternalServerError, CodeInternal},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			db := sql.OpenDB(registerErrorConnector{err: tt.err})
+			defer db.Close()
+			handler := NewAuthHandler(db, "test-secret", false, discardLogger())
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register",
+				strings.NewReader(`{"phone":"13800000001","password":"demo123456"}`))
+			rec := httptest.NewRecorder()
+			handler.Register(rec, req)
+			if rec.Code != tt.want || !strings.Contains(rec.Body.String(), `"code":"`+tt.code+`"`) {
+				t.Fatalf("status=%d body=%s, want status=%d code=%s", rec.Code, rec.Body.String(), tt.want, tt.code)
+			}
+		})
+	}
+}
 
 // 这一组用例锁死「身份从哪来」的约定：
 //   - 默认只认 Bearer，匿名一律 401；
