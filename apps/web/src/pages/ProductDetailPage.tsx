@@ -6,6 +6,7 @@ import { getProduct } from '@/services/products'
 import { createOrder } from '@/services/orders'
 import { getSummary } from '@/services/points'
 import { formatPoints } from '@/lib/format'
+import { newIdempotencyKey } from '@/lib/idempotency'
 import { productCoverKind } from '@/lib/productCover'
 
 /** 商品详情：价格与「兑换后还剩多少分」是决策信息，放在同一屏内。 */
@@ -17,8 +18,16 @@ export function ProductDetailPage(): ReactNode {
   const [error, setError] = useState('')
   const [confirming, setConfirming] = useState(false)
   const [pending, setPending] = useState(false)
-  // 一次兑换意图只生成一个幂等键：失败重试复用，成功或用户取消后清空。
-  const idempotencyKeyRef = useRef('')
+  // 一次兑换意图只生成一个幂等键：失败重试复用；换商品或兑换成功后重新生成。
+  // 注意「再想想」不清空——响应可能已经到达服务端，重开弹窗必须沿用同一个键才不会重复扣分。
+  const idempotencyRef = useRef<{ productId: string; key: string } | null>(null)
+
+  const keyFor = (productId: string): string => {
+    if (idempotencyRef.current?.productId !== productId) {
+      idempotencyRef.current = { productId, key: newIdempotencyKey() }
+    }
+    return idempotencyRef.current.key
+  }
 
   const { data: product } = useQuery({
     queryKey: ['product', id],
@@ -45,12 +54,9 @@ export function ProductDetailPage(): ReactNode {
     if (insufficient || soldOut) return
     setError('')
     setPending(true)
-    if (idempotencyKeyRef.current === '') {
-      idempotencyKeyRef.current = crypto.randomUUID()
-    }
     try {
-      const order = await createOrder(product.id, receiver, idempotencyKeyRef.current)
-      idempotencyKeyRef.current = ''
+      const order = await createOrder(product.id, receiver, keyFor(product.id))
+      idempotencyRef.current = null
       // 下单事务里已经扣分并占了库存，所以余额、库存、订单三处都要失效：
       // 余额先 await（顶栏和本页读同一份 summary，否则会先看到兑换前的数字），
       // 商品列表与详情的库存同样要等刷新完再跳，否则回商城还是旧库存。
@@ -73,10 +79,13 @@ export function ProductDetailPage(): ReactNode {
     e.preventDefault()
     // 禁用态只挡点击，回车仍会提交表单，这里再挡一道
     if (insufficient || soldOut) return
-    if (idempotencyKeyRef.current === '') {
-      idempotencyKeyRef.current = crypto.randomUUID()
+    try {
+      // 提前生成：非安全上下文（局域网 http）拿不到随机源要当场提示，而不是静默无反应
+      keyFor(product.id)
+      setConfirming(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '无法发起兑换，请稍后重试')
     }
-    setConfirming(true)
   }
 
   const buttonLabel = insufficient ? '积分不足' : soldOut ? '已兑完' : '确认兑换'
@@ -186,10 +195,7 @@ export function ProductDetailPage(): ReactNode {
               <button
                 type="button"
                 className="btn btn--ghost"
-                onClick={() => {
-                  setConfirming(false)
-                  idempotencyKeyRef.current = ''
-                }}
+                onClick={() => setConfirming(false)}
                 disabled={pending}
               >
                 再想想
