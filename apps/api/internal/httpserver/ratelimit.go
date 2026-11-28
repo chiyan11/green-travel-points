@@ -72,7 +72,7 @@ func (l *rateLimiter) allow(key string) (bool, int) {
 	return true, 0
 }
 
-// clientKey 取请求来源 IP。router 已挂 middleware.RealIP，经反向代理时也能拿到真实地址。
+// clientKey 取直连地址，不信任未经验证的代理头。
 func clientKey(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {

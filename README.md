@@ -299,7 +299,7 @@ pwsh -File .\scripts\verify.ps1
 | 兑换 | `POST /api/v1/orders`、`GET /api/v1/orders`、`POST /api/v1/orders/{id}/cancel` | 支持 `Idempotency-Key`（≤64 字符，按用户唯一）；按 FIFO 消耗积分批次 |
 | 运营 | `/api/v1/admin/products`、`/api/v1/admin/skus/{id}/stock`、`/api/v1/admin/orders`（含 confirm / ship / complete）、`POST /api/v1/admin/points/adjust`、`/api/v1/admin/points/reconcile`、`/api/v1/admin/audit-logs`、`/api/v1/admin/points/expire`、`/api/v1/admin/config`、`/api/v1/admin/travel-modes/{code}` | 需 `ADMIN` 角色，非法流转返回 409 |
 
-**身份鉴权**：使用 `Authorization: Bearer <token>`（登录颁发，2 小时过期）；仅 `APP_ENV=dev` 且显式设 `AUTH_ALLOW_DEV_HEADER=true` 才接受 `X-User-Id: <正整数>`，其他环境开启会拒绝启动。运营后台再叠加 `RequireAdmin` 角色校验。登录 / 注册按客户端 IP 限制 5 次/分钟，超限返回 429 `RATE_LIMITED` + `Retry-After`。
+**身份鉴权**：使用 `Authorization: Bearer <token>`（登录颁发，2 小时过期）；仅 `APP_ENV=dev` 且显式设 `AUTH_ALLOW_DEV_HEADER=true` 才接受 `X-User-Id: <正整数>`，其他环境开启会拒绝启动。运营后台再叠加 `RequireAdmin` 角色校验。登录 / 注册按直连 IP 限制 5 次/分钟，超限返回 429 `RATE_LIMITED` + `Retry-After`；不信任代理头，nginx 后的客户端会共享代理 IP 的额度，需与部署负责人确认受信代理方案。
 
 **路由可裁剪**：`NewRouter` 的 `Catalog` / `Points` / `Orders` / `Admin` / `Roles` 端口为 nil 时不挂载对应分组，单测可以只测目标模块。
 

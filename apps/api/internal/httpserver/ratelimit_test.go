@@ -1,10 +1,39 @@
 package httpserver
 
 import (
+	"fmt"
+	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestRateLimitIgnoresForwardedHeaders(t *testing.T) {
+	for _, path := range []string{"/api/v1/auth/login", "/api/v1/auth/register"} {
+		t.Run(path, func(t *testing.T) {
+			h := NewRouter(Options{})
+			for i := 0; i < 6; i++ {
+				req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
+				req.RemoteAddr = fmt.Sprintf("192.0.2.1:%d", 1000+i)
+				if i > 0 {
+					req.Header.Set("X-Forwarded-For", fmt.Sprintf("198.51.100.%d", i))
+					req.Header.Set("X-Real-IP", fmt.Sprintf("203.0.113.%d", i))
+				}
+				rec := httptest.NewRecorder()
+				h.ServeHTTP(rec, req)
+				if i < 5 && rec.Code == http.StatusTooManyRequests {
+					t.Fatalf("request %d unexpectedly limited", i+1)
+				}
+				if i == 5 && (rec.Code != http.StatusTooManyRequests ||
+					rec.Header().Get("Retry-After") == "" ||
+					!strings.Contains(rec.Body.String(), `"RATE_LIMITED"`)) {
+					t.Fatalf("request 6: status=%d retry=%q body=%s", rec.Code, rec.Header().Get("Retry-After"), rec.Body.String())
+				}
+			}
+		})
+	}
+}
 
 func TestRateLimiterWindow(t *testing.T) {
 	now := time.Date(2026, 11, 27, 10, 0, 0, 0, time.UTC)
