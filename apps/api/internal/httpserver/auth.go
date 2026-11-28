@@ -15,6 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-sql-driver/mysql"
+
 	"greentravelpoints/internal/app"
 )
 
@@ -111,7 +113,8 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		phone, nickname, hash)
 	if err != nil {
 		_ = tx.Rollback()
-		if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
+		var mysqlErr *mysql.MySQLError
+		if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
 			Fail(w, http.StatusConflict, CodeConflict, "手机号已注册")
 			return
 		}
