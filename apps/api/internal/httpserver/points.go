@@ -30,7 +30,10 @@ func (h pointsHandler) summary(w http.ResponseWriter, r *http.Request) {
 // transactions 返回积分流水：
 // GET /api/v1/points/transactions?page=&pageSize=&type=TRAVEL,REDEEM
 func (h pointsHandler) transactions(w http.ResponseWriter, r *http.Request) {
-	page, pageSize := parsePaging(r)
+	page, pageSize, ok := parsePaging(w, r)
+	if !ok {
+		return
+	}
 	types := make([]string, 0, 3)
 	for _, raw := range strings.Split(r.URL.Query().Get("type"), ",") {
 		if t := strings.TrimSpace(raw); t != "" {

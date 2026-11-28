@@ -83,3 +83,56 @@ func TestNotFoundUsesEnvelope(t *testing.T) {
 		t.Fatalf("code = %q, 期望 %q", env.Code, CodeNotFound)
 	}
 }
+
+func TestPagingLimit(t *testing.T) {
+	for _, tt := range []struct {
+		query    string
+		wantPage int
+		wantSize int
+		wantOK   bool
+	}{
+		{"", 1, 20, true},
+		{"?page=-1&pageSize=101", 1, 100, true},
+		{"?page=100000&pageSize=1", 100000, 1, true},
+		{"?page=100001", 0, 0, false},
+		{"?page=999999999999999999999999999", 0, 0, false},
+	} {
+		t.Run(tt.query, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			page, size, ok := parsePaging(rec, httptest.NewRequest(http.MethodGet, "/"+tt.query, nil))
+			if page != tt.wantPage || size != tt.wantSize || ok != tt.wantOK {
+				t.Fatalf("page=%d size=%d ok=%v", page, size, ok)
+			}
+			if !ok && (rec.Code != http.StatusBadRequest || !json.Valid(rec.Body.Bytes())) {
+				t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestPagingLimitOnListRoutes(t *testing.T) {
+	h := NewRouter(Options{
+		Logger: discardLogger(), AllowDevHeader: true,
+		Catalog: fakeCatalog{}, Points: fakePoints{}, Orders: fakeOrders{},
+		Trips: fakeTrips{}, Admin: fakeAdmin{}, Roles: fakeRoles{role: "ADMIN"},
+	})
+	for _, path := range []string{
+		"/api/v1/products", "/api/v1/points/transactions", "/api/v1/orders",
+		"/api/v1/trips", "/api/v1/admin/products", "/api/v1/admin/orders",
+		"/api/v1/admin/audit-logs",
+	} {
+		t.Run(path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, path+"?page=1000000000", nil)
+			req.Header.Set("X-User-Id", "1")
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			var env Envelope
+			if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+				t.Fatalf("invalid JSON: %v", err)
+			}
+			if rec.Code != http.StatusBadRequest || env.Code != CodeInvalidArgument {
+				t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}

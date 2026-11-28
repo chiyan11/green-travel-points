@@ -72,7 +72,10 @@ func (h orderHandler) create(w http.ResponseWriter, r *http.Request) {
 
 // list 返回当前用户订单：GET /api/v1/orders?page=&pageSize=&status=
 func (h orderHandler) list(w http.ResponseWriter, r *http.Request) {
-	page, pageSize := parsePaging(r)
+	page, pageSize, ok := parsePaging(w, r)
+	if !ok {
+		return
+	}
 	res, err := h.store.ListOrders(r.Context(), app.OrderQuery{
 		UserID:   UserID(r.Context()),
 		Page:     page,

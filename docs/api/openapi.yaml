@@ -9,7 +9,7 @@ info:
     - 全部响应都是统一外壳 `{ code, message, data }`：`code` 为稳定的业务码（前端与接口测试按它断言），
       HTTP 状态码表达协议层语义；`data` 在失败响应中通常缺省。
     - 所有 JSON 字段一律 camelCase，时间字段为 RFC 3339（`2026-11-24T10:00:00+08:00`）。
-    - 分页参数 `page`（默认 1，小于 1 按 1 处理）、`pageSize`（默认 20，上限 100）。
+    - 分页参数 `page`（默认 1，小于 1 按 1 处理，上限 100000）、`pageSize`（默认 20，上限 100）。
     - 金额类字段 `pointsPrice` / `amount` / `pointsSpent` 均为整数积分，无小数。
     - 碳减排量 `carbonSavedGrams` / `grams` / `totalCarbonSavedGrams` 为浮点克数（gCO2e）。
 
@@ -734,6 +734,7 @@ components:
       schema:
         type: integer
         minimum: 1
+        maximum: 100000
         default: 1
     PageSize:
       name: pageSize
