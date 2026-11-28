@@ -175,7 +175,9 @@ green-travel-points/
 ├── db/
 │   ├── migrations/                   # 11 组 up/down：参数 / 发件箱 / 账本 / 行程 / 商城 / 批次流水 / 审计 / 快照 JSON / 发件箱租约 / 原始积分 / 幂等键
 │   └── seed/dev_demo.sql             # 演示数据：用户 1001（1200 分）+ 3 个上架商品
+│       └── docker-init.sh            # compose initdb 包装：SEED_ON_INIT 控制是否导入上面的 seed
 ├── deploy/                           # Dockerfile.api / Dockerfile.web / nginx.conf / docker-compose.yml
+├── .dockerignore                     # 构建上下文只留源码：挡掉 node_modules / dist / .cache / .git
 ├── docs/
 │   ├── api/README.md                 # M5–M8 接口契约：字段、事务步骤、错误码、联调步骤
 │   ├── uml/                          # 51 个 .puml 源图 + out/ 51 张 PNG + .tools/(plantuml.jar, graphviz)
@@ -239,7 +241,7 @@ Get-ChildItem db/migrations/*.up.sql | Sort-Object Name | ForEach-Object {
   Get-Content $_ -Raw | mysql -h 127.0.0.1 -u greentravel -pgreentravel green_travel_points
 }
 
-# 方式 C：Docker Compose（连带起 API；首次启动自动导入迁移）
+# 方式 C：Docker Compose（连带起 API；首次启动自动导入迁移 + 演示 seed）
 docker compose -f deploy/docker-compose.yml up -d --build
 ```
 
@@ -343,7 +345,7 @@ pwsh -File .\scripts\verify.ps1
 | 单元测试（Go · app） | `sys_config` / `travel_mode` 参数校验、注册与商品字段校验（UC-14） | `go test ./internal/app -v` | 5 个函数 / 72 例（含子测试），全绿 |
 | 单元测试（Go · cmd/server） | 启动日志的 DSN 目标判定：本机 / 局域网 / ZeroTier / socket / 非法 DSN；写超时与请求超时的关系 | `go test ./cmd/server -v` | 2 个函数 / 15 个用例 |
 | 单元测试（前端） | Envelope 解包、错误映射、表单校验 | `npx vitest run` | 2 个文件 19 例（http 5 + validators 14） |
-| 页面测试（前端） | 登录失败态、行程上报与重复提交、商城空态/库存不足、订单取消、兑换失败重试复用幂等键 | `npx vitest run src/pages` | 5 个文件 17 例，jsdom + Testing Library + MSW |
+| 页面测试（前端） | 登录失败态、行程上报与重复提交、商城空态/库存不足、订单取消、兑换失败重试复用幂等键、后台订单二次确认/按行禁用、后台角色门 403/200、新建商品后列表 refetch | `npx vitest run src/pages` | 8 个文件 22 例，jsdom + Testing Library + MSW |
 | E2E（前端） | 注册 → 上报两笔行程 → 积分到账 → 商城兑换 → 取消返还；登录失败提示 | `npm run test:e2e` | Playwright + 真后端 + 共享库，2 例全绿，11 张截图存 `docs/screenshots/` |
 | 类型检查 | 前端全量 | `npx tsc --noEmit` | 零错误 |
 | 契约一致性 | `docs/api/openapi.yaml` ↔ `apps/web/src/types/api.ts` | `npm run gen:api` 后 `git diff --exit-code` | 已接入 `verify.ps1` 与 CI |
@@ -351,7 +353,7 @@ pwsh -File .\scripts\verify.ps1
 | E2E（运营后台） | 建商品 → 上架 → 改库存 → 下单 → 后台确认接单 | `npx playwright test`（apps/web） | 1 条用例已建；当前选择器仍按「确认收款」，未通过（见 `docs/P5-运营后台前端.md` §6）；截图证据在 `docs/p5-evidence/` |
 | 集成测试 | repo + 真实 MySQL：兑换成功 / 积分不足 / 批次不足回滚 / 库存不足 / 限购 / 取消回填批次 / 20 并发防超卖 / 对账 / 人工调账与审计写入 / 积分批次发放 / 行程幂等与账本对账 / 并发日上限 / Outbox 重试、死信与租约 / 跨用户同幂等键 / 同值更新 / 过期清算拒绝 / 对账批次偏差 | `REPO_TEST_DSN=… go test ./internal/repo -v` | 8 个测试文件、30 个测试函数（DB 集成 25 + 纯函数 5）；**已进 CI**：`mysql:8.4` service + 11 组迁移后整包执行，0 SKIP 由 job 内清单校验强制 |
 | 性能 | 行程上报、兑换并发 | 待建（k6） | 未建：计划 S6 起 |
-| 部署冒烟 | 迁移 15 表 + 建商品/改库存/下单/取消/调账/改参数/审计 | `pwsh -File scripts/smoke-deploy.ps1 -ApiBase …` | 一条命令全 PASS，记录见 [部署冒烟记录](docs/deploy/部署冒烟记录.md) |
+| 部署冒烟 | 探针/登录/积分/商品/订单/审计/参数（默认只读）；`-AllowMutate` 追加建商品/改库存/下单/取消/调账/改参数并冲正 | `pwsh -File scripts/smoke-deploy.ps1 -ApiBase …` | 只读与写路径均全 PASS，记录见 [部署冒烟记录](docs/deploy/部署冒烟记录.md) |
 
 指导书要求的**基本路径法**（组件测试）与**等价类划分法**（功能测试）用例表已按 9 列重写，见报告 §4.3/§4.4。
 
@@ -361,15 +363,15 @@ pwsh -File .\scripts\verify.ps1
 
 ```powershell
 docker compose -f deploy/docker-compose.yml up -d --build
-# 默认端口：web 8088 → api 8080 → mysql 3307（可用 WEB_PORT / MYSQL_PORT 覆盖）
+# 默认端口：web 8088 → api 8080 → mysql 3307（可用 WEB_PORT / API_PORT / MYSQL_PORT 覆盖）
 # 访问 http://localhost:8088（nginx 托管前端并反代 /api）
 ```
 
-compose 编排三个服务：`mysql` 首次启动按文件名顺序导入 11 组迁移（`000001`–`000011` 全部挂载）；`api` 等 `mysql` 健康检查通过后启动；`web` 用 `deploy/Dockerfile.web` 多阶段构建（`npm ci && npm run build` → nginx 托管 `dist/`），等 `api` 健康后启动，`deploy/nginx.conf` 含 SPA 回退与 `/api` 反代。物理部署拓扑见 [部署图](docs/uml/06-部署图.puml)。
+compose 编排三个服务，全部带 healthcheck：`mysql` 首次启动按文件名顺序导入 11 组迁移（`000001`–`000011`），最后执行 `99_seed.sh` 导入 `db/seed/dev_demo.sql`（`SEED_ON_INIT=0` 可关闭），因此 `down -v && up -d --build` 之后种子账号可直接登录；`api` 等 `mysql` 健康后启动，`/healthz` 探针让它自己变 healthy；`web` 等 `api` 健康后启动，`deploy/Dockerfile.web` 多阶段构建（`npm ci && npm run build` → nginx 托管 `dist/`），`deploy/nginx.conf` 含 SPA 回退、`/api` 反代、90s 代理超时与 Docker DNS 动态解析（api 容器重建后不会 502）。物理部署拓扑见 [部署图](docs/uml/06-部署图.puml)。
 
-迁移挂载是否齐全由 `pwsh -File scripts/check-compose-migrations.ps1` 校验（已接入 `verify.ps1`）；启动后可用 `pwsh -File scripts/smoke-deploy.ps1 -ApiBase http://127.0.0.1:8080` 跑一遍主链路冒烟。
+迁移挂载是否齐全由 `pwsh -File scripts/check-compose-migrations.ps1` 校验（逐行锚定挂载、跳过注释、校验 initdb 序号 1..11 连续唯一，已接入 `verify.ps1`）；启动后 `pwsh -File scripts/smoke-deploy.ps1 -ApiBase http://127.0.0.1:8080` 默认只读巡检，加 `-AllowMutate` 才跑建商品/下单/取消/调账/改参数的写路径并自动冲正、归档。
 
-> 本机 Docker 引擎不可用（`docker version` 连 `dockerDesktopLinuxEngine` 报 500，且未安装 WSL2），因此**未做容器实跑**。替代证据：`docker compose config` 解析通过；按 compose 相同的挂载顺序在空库重放当时 9 组迁移得到 15 张表并跑通 API 冒烟（PR #50 新增 000010、P1 修复新增 000011 后当前为 11 组，容器冒烟待重跑），全过程见 [部署冒烟记录](docs/deploy/部署冒烟记录.md)。
+> 本机 Docker 引擎不可用（`docker version` 连 `dockerDesktopLinuxEngine` 报 500，且未安装 WSL2），因此**未做容器实跑**。替代证据：`docker compose config` 解析通过；按 compose 相同的挂载顺序在空库重放 11 组迁移得到 15 张表、导入 seed 后跑通 API 冒烟，全过程见 [部署冒烟记录](docs/deploy/部署冒烟记录.md) 与 [P5 整改记录](docs/deploy/P5-测试与部署-整改记录.md)。
 
 ---
 
@@ -425,7 +427,7 @@ compose 编排三个服务：`mysql` 首次启动按文件名顺序导入 11 组
 
 - [x] 前后端可独立启动，`/healthz` `/readyz` `/api/v1/ping` 行为符合预期
 - [x] 领域规则单元测试全绿（12 个测试函数 / 45 个用例：碳核算、积分换算、日上限、订单状态机）
-- [x] 前端 TS7 类型检查通过、单测 19 例通过、生产构建成功
+- [x] 前端 TS7 类型检查通过、单测 41 例通过（lib 19 + 页面 22）、生产构建成功
 - [x] 五组迁移可执行（`000001`–`000005`；Sprint 0 当时口径，现为 11 组 / 15 张表，见 `db/migrations/` 与 AGENTS §6），种子数据 `db/seed/dev_demo.sql` 可导入
 - [x] CI 配置就绪（Go + Node 双 job）
 - [x] 数据库连通性与 `migrate up` 实跑：2026-10-20 本机 MySQL 9.7.2，`/readyz` 返回 `{"database":"up"}`
