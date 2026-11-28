@@ -264,6 +264,28 @@ func TestCreateOrderOutOfStock(t *testing.T) {
 	}
 }
 
+// TestCreateOrderUnknownProductNotFound 商品不存在：返回 NOT_FOUND，而不是误报 OUT_OF_STOCK。
+// 回归 DEF-02：productId 不存在时，按 product_id 查 SKU 无行会被当成“无库存”。
+func TestCreateOrderUnknownProductNotFound(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	in := newOrderInput()
+	in.ProductID = 999999
+	in.SKUId = 0
+
+	_, _, err := store.CreateOrder(ctx, in)
+	if !errors.Is(err, app.ErrNotFound) {
+		t.Fatalf("期望 ErrNotFound，实际 %v", err)
+	}
+	if got := mustQueryInt(t, store.db, `SELECT COUNT(*) FROM redeem_order`); got != 0 {
+		t.Fatalf("订单数 = %d，期望 0", got)
+	}
+	if got := mustQueryInt(t, store.db, `SELECT balance FROM point_account WHERE id = ?`, testAccountID); got != 1000 {
+		t.Fatalf("余额 = %d，期望 1000（不应扣分）", got)
+	}
+}
+
 // TestCreateOrderLimitPerUser 限购：limit_per_user=1 时第二单被拒。
 func TestCreateOrderLimitPerUser(t *testing.T) {
 	store := newTestStore(t)

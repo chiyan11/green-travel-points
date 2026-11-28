@@ -40,6 +40,7 @@ func consumeBatches(ctx context.Context, tx *sql.Tx, accountID, need, txnID int6
 	rows, err := tx.QueryContext(ctx,
 		`SELECT id, remaining FROM point_batch
 		 WHERE account_id = ? AND status = 'ACTIVE' AND remaining > 0
+		   AND expires_at > NOW(3)
 		 ORDER BY expires_at ASC, id ASC FOR UPDATE`, accountID)
 	if err != nil {
 		return err
