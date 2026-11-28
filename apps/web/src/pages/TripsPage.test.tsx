@@ -97,4 +97,17 @@ describe('TripsPage', () => {
     expect(await screen.findByText('行程距离超出上限 100km')).toBeInTheDocument()
     expect(screen.queryByText('本次结果（后端核算）')).not.toBeInTheDocument()
   })
+
+  it('行程列表加载失败时给出失败态，不伪装成「还没有行程记录」', async () => {
+    server.use(
+      http.get('*/api/v1/trips', () => failJson(500, 'INTERNAL', '查询超时')),
+    )
+    renderPage(<TripsPage />)
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('加载失败')
+    expect(alert).toHaveTextContent('查询超时')
+    expect(screen.queryByText('还没有行程记录')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '重试' })).toBeEnabled()
+  })
 })

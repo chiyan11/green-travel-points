@@ -8,6 +8,7 @@ import {
   IconRoute,
   IconSpark,
 } from '@/components/icons'
+import { QueryErrorBlock } from '@/components/QueryError'
 import { getSummary } from '@/services/points'
 import { listTrips } from '@/services/trips'
 import { formatDateTime, formatDistance, formatGrams, formatPoints } from '@/lib/format'
@@ -29,7 +30,12 @@ const ENTRIES = [
 /** 首页：左边一句主张，右边一块实时数据，下面是流程与入口。 */
 export function HomePage(): ReactNode {
   const { data: summary } = useQuery({ queryKey: ['summary'], queryFn: getSummary })
-  const { data: trips } = useQuery({ queryKey: ['trips'], queryFn: listTrips })
+  const {
+    data: trips,
+    isError: tripsError,
+    error: tripsErrorObj,
+    refetch: refetchTrips,
+  } = useQuery({ queryKey: ['trips'], queryFn: listTrips })
 
   const savedGrams = summary?.totalCarbonSavedGrams ?? 0
   // 192 g/km 基准：把碳减排换算成「少开燃油车多少公里」，让数字有体感。
@@ -110,7 +116,9 @@ export function HomePage(): ReactNode {
           </Link>
         </div>
 
-        {recent.length === 0 ? (
+        {tripsError ? (
+          <QueryErrorBlock error={tripsErrorObj} onRetry={() => void refetchTrips()} />
+        ) : recent.length === 0 ? (
           <div className="empty">
             <span className="empty__art">
               <IconSpark size={32} />

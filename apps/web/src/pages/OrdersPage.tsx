@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { IconEmptyRoute } from '@/components/icons'
+import { QueryErrorBlock } from '@/components/QueryError'
 import { cancelOrder, listOrders } from '@/services/orders'
 import { ORDER_STATUS_META, orderStatusBadgeClass } from '@/lib/orderStatus'
 import { formatDateTime, formatPoints } from '@/lib/format'
@@ -25,7 +26,13 @@ export function OrdersPage(): ReactNode {
   const [filter, setFilter] = useState<OrderStatus | 'ALL'>('ALL')
   const [error, setError] = useState('')
 
-  const { data: orders = [], isPending: ordersPending } = useQuery({
+  const {
+    data: orders = [],
+    isPending: ordersPending,
+    isError: ordersError,
+    error: ordersErrorObj,
+    refetch: refetchOrders,
+  } = useQuery({
     queryKey: ['orders'],
     queryFn: () => listOrders(),
   })
@@ -75,7 +82,9 @@ export function OrdersPage(): ReactNode {
           <h2 className="card__title">
             {filter === 'ALL' ? '全部订单' : `${FILTERS.find((f) => f.value === filter)?.label ?? ''}订单`}
           </h2>
-          <span className="muted">{ordersPending ? '加载中…' : `共 ${visible.length} 条`}</span>
+          <span className="muted">
+            {ordersPending ? '加载中…' : ordersError ? '—' : `共 ${visible.length} 条`}
+          </span>
         </div>
 
         {ordersPending ? (
@@ -93,6 +102,8 @@ export function OrdersPage(): ReactNode {
               </div>
             ))}
           </div>
+        ) : ordersError ? (
+          <QueryErrorBlock error={ordersErrorObj} onRetry={() => void refetchOrders()} />
         ) : visible.length === 0 ? (
           <div className="empty">
             <span className="empty__art">

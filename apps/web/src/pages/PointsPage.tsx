@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { CarbonTrendChart } from '@/components/CarbonTrendChart'
+import { QueryErrorBlock } from '@/components/QueryError'
 import { IconAward, IconTrendDown, IconTrendUp } from '@/components/icons'
 import { POINT_TXN_TYPE_META } from '@/lib/orderStatus'
 import { formatDateTime, formatGrams, formatPoints } from '@/lib/format'
@@ -16,12 +17,29 @@ const BIZ_LABEL: Record<PointBizRefType, string> = {
 
 /** 我的积分：一张主卡放余额与今日额度，两张副卡放累计减排与本月获得。 */
 export function PointsPage(): ReactNode {
-  const { data: summary } = useQuery({ queryKey: ['summary'], queryFn: () => getSummary() })
-  const { data: txns = [], isPending: txnsPending } = useQuery({
+  const {
+    data: summary,
+    isError: summaryError,
+    error: summaryErrorObj,
+    refetch: refetchSummary,
+  } = useQuery({ queryKey: ['summary'], queryFn: () => getSummary() })
+  const {
+    data: txns = [],
+    isPending: txnsPending,
+    isError: txnsError,
+    error: txnsErrorObj,
+    refetch: refetchTxns,
+  } = useQuery({
     queryKey: ['txns'],
     queryFn: () => listTxns(),
   })
-  const { data: trend = [], isPending: trendPending } = useQuery({
+  const {
+    data: trend = [],
+    isPending: trendPending,
+    isError: trendError,
+    error: trendErrorObj,
+    refetch: refetchTrend,
+  } = useQuery({
     queryKey: ['carbon-trend-7d'],
     queryFn: () => getCarbonSeries(7),
   })
@@ -41,6 +59,11 @@ export function PointsPage(): ReactNode {
         <span className="badge badge--muted">单日上限 {formatPoints(cap)} 分</span>
       </div>
 
+      {summaryError ? (
+        <section className="card">
+          <QueryErrorBlock error={summaryErrorObj} onRetry={() => void refetchSummary()} />
+        </section>
+      ) : (
       <div className="stat-row">
         <section className="stat stat--main stat-card">
           <div className="stat__main-row">
@@ -78,6 +101,7 @@ export function PointsPage(): ReactNode {
           <p className="stat__note">按自然月统计</p>
         </section>
       </div>
+      )}
 
       <section className="card">
         <div className="card__head">
@@ -86,6 +110,8 @@ export function PointsPage(): ReactNode {
         </div>
         {trendPending ? (
           <span className="skeleton skeleton--block" style={{ width: '100%', height: 180 }} />
+        ) : trendError ? (
+          <QueryErrorBlock error={trendErrorObj} onRetry={() => void refetchTrend()} />
         ) : (
           <CarbonTrendChart data={trend} />
         )}
@@ -94,7 +120,9 @@ export function PointsPage(): ReactNode {
       <section className="card">
         <div className="card__head">
           <h2 className="card__title">积分流水</h2>
-          <span className="muted">{txnsPending ? '加载中…' : `共 ${txns.length} 条`}</span>
+          <span className="muted">
+            {txnsPending ? '加载中…' : txnsError ? '—' : `共 ${txns.length} 条`}
+          </span>
         </div>
 
         {txnsPending ? (
@@ -109,6 +137,8 @@ export function PointsPage(): ReactNode {
               </div>
             ))}
           </div>
+        ) : txnsError ? (
+          <QueryErrorBlock error={txnsErrorObj} onRetry={() => void refetchTxns()} />
         ) : txns.length === 0 ? (
           <div className="empty">
             <span className="empty__art">

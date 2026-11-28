@@ -273,4 +273,28 @@ describe('ProductDetailPage', () => {
     expect(keys[0]).not.toBe('')
     expect(keys[1]).toBe(keys[0])
   })
+
+  it('商品详情 500 显示加载失败与重试，而不是「商品不存在」', async () => {
+    server.use(
+      http.get('*/api/v1/products/1', () => failJson(500, 'INTERNAL', '数据库连接失败')),
+      http.get('*/api/v1/points/summary', () => okJson(makeSummary())),
+    )
+    renderDetail()
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('加载失败')
+    expect(alert).toHaveTextContent('数据库连接失败')
+    expect(screen.queryByText('商品不存在或已下架。')).not.toBeInTheDocument()
+  })
+
+  it('商品 404 才显示「商品不存在或已下架」', async () => {
+    server.use(
+      http.get('*/api/v1/products/1', () => failJson(404, 'NOT_FOUND', '商品不存在')),
+      http.get('*/api/v1/points/summary', () => okJson(makeSummary())),
+    )
+    renderDetail()
+
+    expect(await screen.findByText('商品不存在或已下架。')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
 })

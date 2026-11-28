@@ -34,11 +34,11 @@ export async function listProducts(): Promise<Product[]> {
   return (page.items ?? []).map(toProduct).filter((p) => p.status === 'ONLINE')
 }
 
-export async function getProduct(id: string): Promise<Product | undefined> {
-  try {
-    const raw = await api.get<WireProduct>(`/api/v1/products/${encodeURIComponent(id)}`)
-    return toProduct(raw)
-  } catch {
-    return undefined
-  }
+/**
+ * 单个商品。失败（404 / 500 / 网络）一律抛给调用方：页面要能区分
+ * 「商品不存在」和「加载失败」，不能都画成同一句提示。
+ */
+export async function getProduct(id: string): Promise<Product> {
+  const raw = await api.get<WireProduct>(`/api/v1/products/${encodeURIComponent(id)}`)
+  return toProduct(raw)
 }

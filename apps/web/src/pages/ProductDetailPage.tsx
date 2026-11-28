@@ -2,9 +2,11 @@ import { useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { IconGift, IconPackage, IconTicket } from '@/components/icons'
+import { QueryErrorBlock } from '@/components/QueryError'
 import { getProduct } from '@/services/products'
 import { createOrder } from '@/services/orders'
 import { getSummary } from '@/services/points'
+import { ApiError } from '@/lib/http'
 import { formatPoints } from '@/lib/format'
 import { newIdempotencyKey } from '@/lib/idempotency'
 import { productCoverKind } from '@/lib/productCover'
@@ -29,11 +31,62 @@ export function ProductDetailPage(): ReactNode {
     return idempotencyRef.current.key
   }
 
-  const { data: product } = useQuery({
+  const {
+    data: product,
+    isPending: productPending,
+    isError: productError,
+    error: productErrorObj,
+    refetch: refetchProduct,
+  } = useQuery({
     queryKey: ['product', id],
-    queryFn: async () => (id ? getProduct(id) : undefined),
+    queryFn: () => getProduct(id as string),
+    enabled: Boolean(id),
   })
   const { data: summary } = useQuery({ queryKey: ['summary'], queryFn: () => getSummary() })
+
+  // 「加载中」和「加载失败」必须分开：以前两者都渲染成「商品不存在或已下架」，
+  // 用户看到 500 会以为商品真的下架了。
+  if (productPending) {
+    return (
+      <div className="page">
+        <div className="page__head">
+          <Link className="btn btn--ghost" to="/mall">
+            ← 返回商城
+          </Link>
+        </div>
+        <section className="card">
+          <div className="detail">
+            <div className="skeleton skeleton--block detail__cover" />
+            <div className="detail__body">
+              <div className="skeleton skeleton--line" />
+              <div className="skeleton skeleton--line" style={{ width: '60%' }} />
+              <div className="skeleton skeleton--block" style={{ height: 88 }} />
+            </div>
+          </div>
+        </section>
+      </div>
+    )
+  }
+
+  if (productError) {
+    const notFound = productErrorObj instanceof ApiError && productErrorObj.status === 404
+    return (
+      <div className="page">
+        <div className="page__head">
+          <Link className="btn btn--ghost" to="/mall">
+            ← 返回商城
+          </Link>
+        </div>
+        <section className="card">
+          {notFound ? (
+            <p className="empty-state">商品不存在或已下架。</p>
+          ) : (
+            <QueryErrorBlock error={productErrorObj} onRetry={() => void refetchProduct()} />
+          )}
+        </section>
+      </div>
+    )
+  }
 
   if (!product) {
     return (
@@ -133,7 +186,9 @@ export function ProductDetailPage(): ReactNode {
               <span className="detail__price-unit">分</span>
             </p>
             <p className="detail__balance">
-              {insufficient ? (
+              {summary === undefined ? (
+                <>余额加载中，暂时无法判断是否够兑换</>
+              ) : insufficient ? (
                 <>
                   当前余额 {formatPoints(balance)} 分，兑换需再攒{' '}
                   <span className="shortfall">{formatPoints(shortfall)} 分</span>

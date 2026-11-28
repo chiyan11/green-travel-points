@@ -84,4 +84,25 @@ describe('OrdersPage', () => {
 
     expect(await screen.findByText('该状态下暂无订单。')).toBeInTheDocument()
   })
+
+  it('订单加载失败时给出失败态与重试，不显示「该状态下暂无订单」', async () => {
+    let calls = 0
+    server.use(
+      http.get('*/api/v1/orders', () => {
+        calls += 1
+        if (calls === 1) return failJson(503, 'UNAVAILABLE', '服务暂时不可用')
+        return okJson(pageOf([makeOrder()]))
+      }),
+    )
+    renderPage(<OrdersPage />)
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('加载失败')
+    expect(alert).toHaveTextContent('服务暂时不可用')
+    expect(screen.queryByText('该状态下暂无订单。')).not.toBeInTheDocument()
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: '重试' }))
+    expect(await screen.findByText('环保帆布袋')).toBeInTheDocument()
+  })
 })
