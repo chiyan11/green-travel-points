@@ -344,8 +344,8 @@ pwsh -File .\scripts\verify.ps1
 | 单元测试（Go · http） | 路由、中间件、认证、限流、各 handler（假存储，不连库） | `go test ./internal/httpserver -v` | 75 个测试函数 / 94 例（含子测试），全绿 |
 | 单元测试（Go · app） | `sys_config` / `travel_mode` 参数校验、注册与商品字段校验（UC-14） | `go test ./internal/app -v` | 5 个函数 / 72 例（含子测试），全绿 |
 | 单元测试（Go · cmd/server） | 启动日志的 DSN 目标判定：本机 / 局域网 / ZeroTier / socket / 非法 DSN；写超时与请求超时的关系 | `go test ./cmd/server -v` | 2 个函数 / 15 个用例 |
-| 单元测试（前端） | Envelope 解包、错误映射、表单校验 | `npx vitest run` | 2 个文件 19 例（http 5 + validators 14） |
-| 页面测试（前端） | 登录失败态、行程上报与重复提交、商城空态/库存不足、订单取消、兑换失败重试复用幂等键、后台订单二次确认/按行禁用、后台角色门 403/200、新建商品后列表 refetch | `npx vitest run src/pages` | 8 个文件 22 例，jsdom + Testing Library + MSW |
+| 单元测试（前端） | Envelope 解包、错误映射、65s 超时与 401 回跳、幂等键降级、会话存储容错、枚举兜底、表单校验 | `npx vitest run` | 5 个文件 35 例（http 8 + idempotency 4 + session 4 + enums 5 + validators 14） |
+| 页面测试（前端） | 登录失败态与 `?next=` 回跳、行程上报/重复提交/上报后刷新碳趋势、商城空态与分页截断、订单取消/翻页/`?created=` 高亮、兑换二次确认与失败重试复用幂等键、各页取数失败态与重试、后台订单二次确认/按行禁用/翻页、后台角色门 403/200 | `npx vitest run src/pages` | 11 个文件 47 例，jsdom + Testing Library + MSW |
 | E2E（前端） | 注册 → 上报两笔行程 → 积分到账 → 商城兑换 → 取消返还；登录失败提示 | `npm run test:e2e` | Playwright + 真后端 + 共享库，2 例全绿，11 张截图存 `docs/screenshots/` |
 | 类型检查 | 前端全量 | `npx tsc --noEmit` | 零错误 |
 | 契约一致性 | `docs/api/openapi.yaml` ↔ `apps/web/src/types/api.ts` | `npm run gen:api` 后 `git diff --exit-code` | 已接入 `verify.ps1` 与 CI |

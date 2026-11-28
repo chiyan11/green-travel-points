@@ -23,6 +23,17 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * 单请求上限。共享库在异地（ZeroTier），写接口实测 10–40s，
+ * 这里留到 65s：比后端 `HTTP_REQUEST_TIMEOUT`(90s) 小，但要能兜住「请求永远不返回」。
+ */
+export const REQUEST_TIMEOUT_MS = 65_000
+
+/** 401 后回登录页的地址：带上来源页，登录成功后能跳回去。 */
+export function loginRedirectFrom(from: string): string {
+  return `/login?next=${encodeURIComponent(from)}`
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers)
   headers.set('Accept', 'application/json')
@@ -37,13 +48,30 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     headers.set('Authorization', `Bearer ${token}`)
   }
 
-  const res = await fetch(path, { ...init, headers })
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
 
-  // 会话失效统一处理：清本地会话并回登录页（避免多页重复写判断）。
+  let res: Response
+  try {
+    res = await fetch(path, { ...init, headers, signal: controller.signal })
+  } catch {
+    // 浏览器对 fetch 失败的原始错误是 TypeError('Failed to fetch')，用户看不懂；
+    // 超时被我们自己的 controller 中止，要给出可区分的文案。
+    if (controller.signal.aborted) {
+      throw new ApiError('请求超时，请稍后重试', 'TIMEOUT', 0)
+    }
+    throw new ApiError('网络异常，请检查连接后重试', 'NETWORK_ERROR', 0)
+  } finally {
+    clearTimeout(timer)
+  }
+
+  // 会话失效统一处理：清本地会话并回登录页，同时把来源页带上，
+  // 登录成功后能回到用户原本想看的页面（避免 401 之后一律回首页）。
   if (res.status === 401 && !path.startsWith('/api/v1/auth/')) {
     clearSession()
     if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
-      window.location.assign('/login')
+      const from = `${window.location.pathname}${window.location.search}`
+      window.location.assign(loginRedirectFrom(from))
     }
   }
 

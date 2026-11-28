@@ -1,5 +1,5 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { IconLeaf, IconLock, IconPhone, IconUser } from '@/components/icons'
 import { login, register } from '@/services/auth'
 import { ApiError } from '@/lib/http'
@@ -12,8 +12,15 @@ type Tab = 'login' | 'register'
  * 后端按手机号登记账号：注册可填昵称（省略则用手机号），登录用手机号 + 密码。
  * 文案固定「登录绿行积分」，E2E 用它确认首屏。
  */
+/** 只接受站内相对路径：`//evil.com` 与 `https://...` 都算外跳，一律回首页。 */
+function safeNext(raw: string | null): string {
+  if (raw === null || !raw.startsWith('/') || raw.startsWith('//')) return '/'
+  return raw
+}
+
 export function LoginPage(): ReactNode {
   const navigate = useNavigate()
+  const [params] = useSearchParams()
   const [tab, setTab] = useState<Tab>('login')
   const [account, setAccount] = useState('')
   const [nickname, setNickname] = useState('')
@@ -34,12 +41,17 @@ export function LoginPage(): ReactNode {
     }
     setPending(true)
     try {
-      if (tab === 'login') {
-        await login(account, password)
-      } else {
-        await register({ phone: account, password, nickname })
+      const outcome =
+        tab === 'login'
+          ? await login(account, password)
+          : await register({ phone: account, password, nickname })
+      // 会话没存下来时 token 只活在内存里，下一个请求就会 401：
+      // 这种情况必须当场告诉用户，而不是先跳首页再被踢回登录页。
+      if (!outcome.persisted) {
+        setError('浏览器存储不可用，无法保持登录状态；请允许本站使用本地存储，或用普通窗口重试')
+        return
       }
-      navigate('/', { replace: true })
+      navigate(safeNext(params.get('next')), { replace: true })
     } catch (err) {
       setError(err instanceof ApiError ? err.message : '网络异常，请确认后端已启动')
     } finally {

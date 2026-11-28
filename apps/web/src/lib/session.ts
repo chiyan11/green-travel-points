@@ -22,12 +22,25 @@ export function readSession(): AuthUser | null {
   }
 }
 
-export function writeSession(user: AuthUser): void {
-  localStorage.setItem(SESSION_KEY, JSON.stringify(user))
+/**
+ * 写入会话。返回 false 表示浏览器拒绝写入（隐私模式、存储配额满、被策略禁用），
+ * 调用方必须据此提示用户，而不是假装登录成功——否则下一次请求就没有 token 了。
+ */
+export function writeSession(user: AuthUser): boolean {
+  try {
+    localStorage.setItem(SESSION_KEY, JSON.stringify(user))
+    return true
+  } catch {
+    return false
+  }
 }
 
 export function clearSession(): void {
-  localStorage.removeItem(SESSION_KEY)
+  try {
+    localStorage.removeItem(SESSION_KEY)
+  } catch {
+    // 存储被禁用时本来就没有会话可清，不额外抛错打断登出流程
+  }
 }
 
 export function getToken(): string | null {

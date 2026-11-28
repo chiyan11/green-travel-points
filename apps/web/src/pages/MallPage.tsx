@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { IconGift, IconPackage, IconTicket } from '@/components/icons'
+import { QueryErrorBlock } from '@/components/QueryError'
 import { listProducts } from '@/services/products'
 import { getSummary } from '@/services/points'
 import { formatPoints } from '@/lib/format'
@@ -25,8 +26,18 @@ function coverIcon(category: string | undefined, coverUrl: string | undefined): 
 
 /** 积分商城：买得起才能换，买不起也要让用户知道还差多少。 */
 export function MallPage(): ReactNode {
-  const { data: products = [] } = useQuery({ queryKey: ['products'], queryFn: () => listProducts() })
+  const {
+    data: productList,
+    isError: productsError,
+    error: productsErrorObj,
+    refetch: refetchProducts,
+  } = useQuery({ queryKey: ['products'], queryFn: () => listProducts() })
   const { data: summary } = useQuery({ queryKey: ['summary'], queryFn: () => getSummary() })
+  const products = productList?.items ?? []
+  const total = productList?.total ?? 0
+  // 一页装不下时把截断说清楚，别让「共 N 件」和卡片数对不上
+  const truncated = total > products.length
+  // 余额取不到时显示「—」而不是 0：0 分会被误读成「真的没积分」
   const balance = summary?.balance ?? 0
 
   return (
@@ -36,14 +47,26 @@ export function MallPage(): ReactNode {
           <h1 className="page-title">积分商城</h1>
           <p className="page-sub">用碳积分换绿色好物，兑换扣减以后端为准。</p>
         </div>
-        <span className="balance-chip">我的余额 {formatPoints(balance)} 分</span>
+        <span className="balance-chip">
+          {summary === undefined ? '我的余额 — 分' : `我的余额 ${formatPoints(balance)} 分`}
+        </span>
       </div>
 
       <div className="section-head">
-        <span className="muted">共 {products.length} 件在售商品</span>
+        <span className="muted">
+          {productsError
+            ? '商品加载失败'
+            : truncated
+              ? `共 ${total} 件在售商品，当前显示前 ${products.length} 件`
+              : `共 ${products.length} 件在售商品`}
+        </span>
       </div>
 
-      {products.length === 0 ? (
+      {productsError ? (
+        <section className="card">
+          <QueryErrorBlock error={productsErrorObj} onRetry={() => void refetchProducts()} />
+        </section>
+      ) : products.length === 0 ? (
         <div className="empty">
           <span className="empty__art">
             <IconGift size={48} />

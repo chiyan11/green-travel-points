@@ -2,10 +2,13 @@ import { useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { IconGift, IconPackage, IconTicket } from '@/components/icons'
+import { QueryErrorBlock } from '@/components/QueryError'
 import { getProduct } from '@/services/products'
 import { createOrder } from '@/services/orders'
 import { getSummary } from '@/services/points'
+import { ApiError } from '@/lib/http'
 import { formatPoints } from '@/lib/format'
+import { newIdempotencyKey } from '@/lib/idempotency'
 import { productCoverKind } from '@/lib/productCover'
 
 /** 商品详情：价格与「兑换后还剩多少分」是决策信息，放在同一屏内。 */
@@ -17,14 +20,73 @@ export function ProductDetailPage(): ReactNode {
   const [error, setError] = useState('')
   const [confirming, setConfirming] = useState(false)
   const [pending, setPending] = useState(false)
-  // 一次兑换意图只生成一个幂等键：失败重试复用，成功或用户取消后清空。
-  const idempotencyKeyRef = useRef('')
+  // 一次兑换意图只生成一个幂等键：失败重试复用；换商品或兑换成功后重新生成。
+  // 注意「再想想」不清空——响应可能已经到达服务端，重开弹窗必须沿用同一个键才不会重复扣分。
+  const idempotencyRef = useRef<{ productId: string; key: string } | null>(null)
 
-  const { data: product } = useQuery({
+  const keyFor = (productId: string): string => {
+    if (idempotencyRef.current?.productId !== productId) {
+      idempotencyRef.current = { productId, key: newIdempotencyKey() }
+    }
+    return idempotencyRef.current.key
+  }
+
+  const {
+    data: product,
+    isPending: productPending,
+    isError: productError,
+    error: productErrorObj,
+    refetch: refetchProduct,
+  } = useQuery({
     queryKey: ['product', id],
-    queryFn: async () => (id ? getProduct(id) : undefined),
+    queryFn: () => getProduct(id as string),
+    enabled: Boolean(id),
   })
   const { data: summary } = useQuery({ queryKey: ['summary'], queryFn: () => getSummary() })
+
+  // 「加载中」和「加载失败」必须分开：以前两者都渲染成「商品不存在或已下架」，
+  // 用户看到 500 会以为商品真的下架了。
+  if (productPending) {
+    return (
+      <div className="page">
+        <div className="page__head">
+          <Link className="btn btn--ghost" to="/mall">
+            ← 返回商城
+          </Link>
+        </div>
+        <section className="card">
+          <div className="detail">
+            <div className="skeleton skeleton--block detail__cover" />
+            <div className="detail__body">
+              <div className="skeleton skeleton--line" />
+              <div className="skeleton skeleton--line" style={{ width: '60%' }} />
+              <div className="skeleton skeleton--block" style={{ height: 88 }} />
+            </div>
+          </div>
+        </section>
+      </div>
+    )
+  }
+
+  if (productError) {
+    const notFound = productErrorObj instanceof ApiError && productErrorObj.status === 404
+    return (
+      <div className="page">
+        <div className="page__head">
+          <Link className="btn btn--ghost" to="/mall">
+            ← 返回商城
+          </Link>
+        </div>
+        <section className="card">
+          {notFound ? (
+            <p className="empty-state">商品不存在或已下架。</p>
+          ) : (
+            <QueryErrorBlock error={productErrorObj} onRetry={() => void refetchProduct()} />
+          )}
+        </section>
+      </div>
+    )
+  }
 
   if (!product) {
     return (
@@ -45,12 +107,9 @@ export function ProductDetailPage(): ReactNode {
     if (insufficient || soldOut) return
     setError('')
     setPending(true)
-    if (idempotencyKeyRef.current === '') {
-      idempotencyKeyRef.current = crypto.randomUUID()
-    }
     try {
-      const order = await createOrder(product.id, receiver, idempotencyKeyRef.current)
-      idempotencyKeyRef.current = ''
+      const order = await createOrder(product.id, receiver, keyFor(product.id))
+      idempotencyRef.current = null
       // 下单事务里已经扣分并占了库存，所以余额、库存、订单三处都要失效：
       // 余额先 await（顶栏和本页读同一份 summary，否则会先看到兑换前的数字），
       // 商品列表与详情的库存同样要等刷新完再跳，否则回商城还是旧库存。
@@ -73,10 +132,13 @@ export function ProductDetailPage(): ReactNode {
     e.preventDefault()
     // 禁用态只挡点击，回车仍会提交表单，这里再挡一道
     if (insufficient || soldOut) return
-    if (idempotencyKeyRef.current === '') {
-      idempotencyKeyRef.current = crypto.randomUUID()
+    try {
+      // 提前生成：非安全上下文（局域网 http）拿不到随机源要当场提示，而不是静默无反应
+      keyFor(product.id)
+      setConfirming(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '无法发起兑换，请稍后重试')
     }
-    setConfirming(true)
   }
 
   const buttonLabel = insufficient ? '积分不足' : soldOut ? '已兑完' : '确认兑换'
@@ -124,7 +186,9 @@ export function ProductDetailPage(): ReactNode {
               <span className="detail__price-unit">分</span>
             </p>
             <p className="detail__balance">
-              {insufficient ? (
+              {summary === undefined ? (
+                <>余额加载中，暂时无法判断是否够兑换</>
+              ) : insufficient ? (
                 <>
                   当前余额 {formatPoints(balance)} 分，兑换需再攒{' '}
                   <span className="shortfall">{formatPoints(shortfall)} 分</span>
@@ -186,10 +250,7 @@ export function ProductDetailPage(): ReactNode {
               <button
                 type="button"
                 className="btn btn--ghost"
-                onClick={() => {
-                  setConfirming(false)
-                  idempotencyKeyRef.current = ''
-                }}
+                onClick={() => setConfirming(false)}
                 disabled={pending}
               >
                 再想想

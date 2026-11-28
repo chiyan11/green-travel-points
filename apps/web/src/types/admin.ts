@@ -52,6 +52,8 @@ export interface AdminOrder {
   quantity: number
   receiver: string
   status: OrderStatus
+  /** 后端原始 status，UNKNOWN 时用于展示。 */
+  statusText: string
   redeemCode: string
   createdAt: string
 }

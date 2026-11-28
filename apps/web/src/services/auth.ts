@@ -14,8 +14,17 @@ import { clearSession, readSession, writeSession } from '@/lib/session'
 import type { AuthSession, LoginResult, MeResult, RegisterInput } from '@/types/api'
 import type { AuthUser } from '@/types/domain'
 
-/** 登录：账号即手机号。成功后把 token 与用户信息写入本地会话。 */
-export async function login(account: string, password: string): Promise<AuthUser> {
+/**
+ * 登录：账号即手机号。成功后把 token 与用户信息写入本地会话。
+ * 返回 `persisted: false` 表示会话没写进 localStorage（隐私模式等），
+ * 调用方要提示「无法保持登录」，不能直接当成功处理。
+ */
+export interface LoginOutcome {
+  user: AuthUser
+  persisted: boolean
+}
+
+export async function login(account: string, password: string): Promise<LoginOutcome> {
   const res = await api.post<LoginResult>('/api/v1/auth/login', {
     account: account.trim(),
     password,
@@ -25,8 +34,7 @@ export async function login(account: string, password: string): Promise<AuthUser
     nickname: res.user.nickname,
     token: res.token,
   }
-  writeSession(user)
-  return user
+  return { user, persisted: writeSession(user) }
 }
 
 /** 注册：手机号 + 密码（≥6 位）+ 可选昵称；成功后直接带 token 登录态。 */
@@ -34,7 +42,7 @@ export async function register(input: {
   phone: string
   password: string
   nickname?: string
-}): Promise<AuthUser> {
+}): Promise<LoginOutcome> {
   const body: RegisterInput = {
     phone: input.phone.trim(),
     password: input.password,
@@ -48,8 +56,7 @@ export async function register(input: {
     nickname: res.nickname,
     token: res.token,
   }
-  writeSession(user)
-  return user
+  return { user, persisted: writeSession(user) }
 }
 
 export type { MeResult as MeResponse }

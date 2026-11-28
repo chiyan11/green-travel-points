@@ -69,19 +69,26 @@ export interface PointSummary {
   dailyCap: number
 }
 
-/** point_txn.txn_type（000003）：行程发放/兑换消耗/取消返还/人工调整/过期。 */
-export type PointTxnType = 'TRAVEL' | 'REDEEM' | 'REFUND' | 'ADJUST' | 'EXPIRE'
+/**
+ * point_txn.txn_type（000003）：行程发放/兑换消耗/取消返还/人工调整/过期。
+ * `UNKNOWN` 留给后端将来新增、前端还没发版的枚举值：宁可显示原始值，也不要改义或白屏。
+ */
+export type PointTxnType = 'TRAVEL' | 'REDEEM' | 'REFUND' | 'ADJUST' | 'EXPIRE' | 'UNKNOWN'
 
 /** point_txn.biz_ref_type（000003 注释）：trip_record / redeem_order / audit_log。 */
-export type PointBizRefType = 'trip_record' | 'redeem_order' | 'audit_log'
+export type PointBizRefType = 'trip_record' | 'redeem_order' | 'audit_log' | 'UNKNOWN'
 
 /** 积分流水（append-only 账本）；amount 正为入账、负为出账，occurredAt=occurred_at。 */
 export interface PointTxn {
   id: string
   type: PointTxnType
+  /** 后端原始枚举值，type 落到 UNKNOWN 时用它展示。 */
+  typeText: string
   amount: number
   balanceAfter: number
   bizRefType: PointBizRefType
+  /** 后端原始 refType，bizRefType 落到 UNKNOWN 时用它展示。 */
+  bizRefTypeText: string
   bizRefId: string
   occurredAt: string
 }
@@ -108,7 +115,7 @@ export interface Product {
 }
 
 /** redeem_order.status（000005 / 11-状态图-订单）。 */
-export type OrderStatus = 'PENDING' | 'PAID' | 'SHIPPED' | 'COMPLETED' | 'CANCELLED'
+export type OrderStatus = 'PENDING' | 'PAID' | 'SHIPPED' | 'COMPLETED' | 'CANCELLED' | 'UNKNOWN'
 
 /** 兑换订单。orderNo=对外订单号，redeemCode=核销码（SHIPPED 后生效），quantity 默认 1。 */
 export interface RedeemOrder {
@@ -122,6 +129,8 @@ export interface RedeemOrder {
   quantity: number
   receiver: string
   status: OrderStatus
+  /** 后端原始 status，status 落到 UNKNOWN 时用它展示。 */
+  statusText: string
   redeemCode: string
   createdAt: string
   updatedAt: string

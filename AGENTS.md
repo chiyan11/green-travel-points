@@ -108,9 +108,9 @@ green-travel-points/
 │       │   ├── main.tsx          应用引导（QueryClientProvider + RouterProvider）
 │       │   ├── routes.tsx        路由表：/login 公开，其余 RequireAuth + AppLayout
 │       │   ├── pages/            8 个用户页面（Home / Login / Trips / Points / Mall / ProductDetail / Orders / Profile；PlaceholderPage 未挂载）+ pages/admin/ 运营后台三屏（商品列表 / 新建商品 / 订单）
-│       │   ├── components/       AppLayout（外壳+导航）、AdminLayout（后台外壳）、RequireAuth（守卫）、CarbonTrendChart（折线图）、AstryxLink
+│       │   ├── components/       AppLayout（外壳+导航）、AdminLayout（后台外壳）、RequireAuth（守卫）、CarbonTrendChart（CSS 柱状图）、QueryError（失败态+重试）、icons（手写线性图标）、AstryxLink
 │       │   ├── services/         按域拆的 API 调用：auth / trips / products / points / orders / admin（按生成契约标注传输类型）
-│       │   ├── lib/              http（Envelope 解包、错误、401 处理）、session、validators、format、orderStatus、productCover、travelMode、queryClient
+│       │   ├── lib/              http（Envelope 解包、65s 超时、网络错误中文化、401 带回跳地址）、session、idempotency（兑换幂等键）、validators、format、orderStatus、productCover、travelMode、queryClient
 │       │   ├── test/             MSW server 与 render 壳（页面测试共用）
 │       │   ├── types/api.ts      由 docs/api/openapi.yaml 生成的 wire 类型（npm run gen:api，勿手改）
 │       │   ├── types/domain.ts   页面视图模型（id 转 string、coverUrl、startedAt 等展示口径）
@@ -307,8 +307,8 @@ pages/*.tsx  ──►  services/*.ts  ──►  lib/http.ts  ──►  fetch
 | 参数校验单测 | `apps/api/internal/app/admin_test.go`、`validation_test.go` | 5 个函数 / 72 例（含子测试） | `sys_config` 数值规则、`travel_mode` 更新校验、注册与商品字段校验，纯函数表驱动 |
 | repo 集成测试 | `apps/api/internal/repo/orders_test.go`、`audit_test.go`、`batches_test.go`、`points_test.go`、`trips_test.go`、`outbox_test.go`、`outbox_integration_test.go`、`p1_regression_test.go` | 8 文件、30 个测试函数（DB 集成 25 + 纯函数 5） | 真连 MySQL；`REPO_TEST_DSN` 未设置时数据库用例 SKIP（CI 必设）；DSN 数据库名必须以 `_test` 结尾；`p1_regression_test.go` 覆盖 P1 修复（跨用户同幂等键、同值更新、过期清算拒绝、对账批次偏差） |
 | 启动日志单测 | `apps/api/cmd/server/dbendpoint_test.go`、`main_test.go` | 2 个函数 / 15 例 | 表驱动：默认 DSN、局域网 / ZeroTier、localhost、IPv6 回环、unix socket、省略地址、非法 DSN；另测 `WriteTimeout` 跟随请求超时 |
-| 前端单测 | `apps/web/src/lib/*.test.ts` | 2 文件 19 例 | `http.test.ts` 用 `vi.stubGlobal('fetch')` 测解包与错误映射；`validators.test.ts` 测校验规则 |
-| 前端页面测试 | `apps/web/src/pages/*.test.tsx` | 8 文件 22 例 | jsdom + Testing Library + MSW 3 拦截 `fetch`；`src/test/render.tsx` 提供 QueryClient/路由壳，`src/test/http.ts` 造 `{code,message,data}` 壳（测试里也重放后端协议，不是随手 mock） |
+| 前端单测 | `apps/web/src/lib/*.test.ts`、`apps/web/src/services/*.test.ts` | 5 文件 35 例 | `http.test.ts` 用 `vi.stubGlobal('fetch')` 测解包、错误映射、65s 超时与 401 回跳地址；`idempotency.test.ts` 测 `randomUUID` 缺失时的 `getRandomValues` 回退；`session.test.ts` 测存储不可用；`enums.test.ts` 测未知枚举兜底与 `dailyCap:0` |
+| 前端页面测试 | `apps/web/src/pages/*.test.tsx`、`apps/web/src/pages/admin/*.test.tsx` | 11 文件 47 例 | jsdom + Testing Library + MSW 3 拦截 `fetch`；`src/test/render.tsx` 提供 QueryClient/路由壳，`src/test/http.ts` 造 `{code,message,data}` 壳（测试里也重放后端协议，不是随手 mock） |
 | E2E 主链路 | `apps/web/e2e/*.spec.ts`、`apps/web/e2e/*.e2e.ts` | 2 文件 3 例 | Playwright + Chromium，跑**真实前后端与共享库**，不 mock；消费者主链路每步落截图到 `docs/screenshots/`；运营后台用例依赖本机开发库种子账号 |
 
 ### 新增功能的底线
@@ -318,6 +318,10 @@ pages/*.tsx  ──►  services/*.ts  ──►  lib/http.ts  ──►  fetch
 - 新的前端校验或解包逻辑 → `vitest` 用例；纯展示改动不强制。
 - **新页面 / 页面新交互 → 至少 1 个 `src/pages/*.test.tsx` 用例**：用 MSW 声明端点，断言用户看到的结果（成功态与至少一个失败态），不要 mock service 函数。
 - MSW 的 `onUnhandledFrame: 'error'` 是硬开关：新增接口时忘了补 handler，测试会直接失败，照提示补上即可。
+- **每个取数区块都要有失败态**：用 `QueryErrorBlock`（`role="alert"` + 「重试」），不要用空态文案兜失败；`services` 里禁止 `try/catch` 吞异常返回 `undefined`。
+- **枚举读取处禁止断言**：未知值一律走 `toOrderStatus` / `normalizeTxnType` / `normalizeRefType` 落到 `UNKNOWN` 并保留原始串展示，避免后端加状态时白屏或改义。
+- **幂等键只对「一次兑换意图」生成一次**：`lib/idempotency.ts` 的 `newIdempotencyKey()` 在非安全上下文（HTTP 局域网）用 `getRandomValues` 回退；弹窗「再想想」不清键，成功后才清。
+- **列表分页参数由 service 传入**：页面必须能区分「就这么多」和「只拿到一页」，翻页/筛选把 `page` 放进 `queryKey`。
 - 改主链路（登录 / 上报 / 兑换 / 取消）后重跑 `npm run test:e2e` 并提交新的 `docs/screenshots/`：截图是验收证据，过期截图比没有更糟。
 - E2E 用真实后端，断言里不要写死共享库里的历史余额；用例自己注册新手机号造数据。
 - 不加「只为了覆盖率」的空测试；不为通过而放宽断言。
@@ -410,6 +414,8 @@ E2E **不在门禁里**：它需要真实后端 + 共享库，CI 没有这些环
 | 集成 / E2E | repo 集成测试 8 文件、30 个测试函数（DB 集成 25 + 纯函数 5），**已进 CI**（`mysql:8.4` service + 迁移 + DSN，0 SKIP 由清单校验强制）；E2E 主链路与运营后台已建（真后端 + 共享库），仍**未**进 CI | E2E 若要进 CI，需先给 CI 一个可用的 MySQL 服务容器与种子导入步骤 |
 | 部署 | compose 三服务均带 healthcheck（mysql/api/web），首次初始化按 01..11 挂载迁移后由 `99_seed.sh` 导入 seed（`SEED_ON_INIT=0` 关），端口 `${API_PORT:-8080}` / `${WEB_PORT:-8088}` / `${MYSQL_PORT:-3307}`；nginx 显式 90s 代理超时 + `resolver 127.0.0.11` 变量 `proxy_pass`；根 `.dockerignore` + Dockerfile 只 COPY 源码（web 镜像不再带入宿主 node_modules）；本机 Docker 引擎不可用（缺 WSL2），容器未实跑，替代证据见 `docs/deploy/部署冒烟记录.md` 与 `docs/deploy/P5-测试与部署-整改记录.md` | 在有 Docker 的机器补一次 `down -v && up -d --build` 实跑截图（含 `ps` 三服务 healthy、浏览器经 nginx 访问）；E2E 仍未进 CI |
 | 前端包体 | `vite build` 单包约 540 kB（gzip 163 kB）+ CSS 354 kB（gzip 54 kB）；移除 ECharts 后已从 1.95 MB 降下来，仍略超 500 kB 警告。 | 用路由级 `import()` 分包；预算从 gzip 163 kB 起算 |
+| 会话存储 | token 存在 `localStorage['gtp_session']`（`lib/session.ts`），写入失败会返回 `false` 并由登录页提示「浏览器存储不可用」；未上 HttpOnly Cookie（需要后端发 Cookie + CSRF 双改） | 若要防 XSS 窃 token，后端改发 `HttpOnly; Secure; SameSite=Lax` Cookie 并按 `SameSite` 补 CSRF 校验；前端同时去掉 `localStorage` 读取 |
+| 内容安全策略 | `apps/web/index.html` 与 nginx 配置都没有 CSP / `X-Frame-Options` | 加 `Content-Security-Policy: default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'`，先以 report-only 跑一轮再收紧 |
 
 ---
 

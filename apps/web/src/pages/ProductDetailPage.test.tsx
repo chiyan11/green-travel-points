@@ -1,7 +1,7 @@
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http } from 'msw'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ProductDetailPage } from '@/pages/ProductDetailPage'
 import { renderPage } from '@/test/render'
 import { failJson, okJson } from '@/test/http'
@@ -36,9 +36,33 @@ function makeSummary(over: Partial<PointsSummary> = {}): PointsSummary {
   }
 }
 
+function makeOrder(over: Record<string, unknown> = {}) {
+  return {
+    id: 7,
+    userId: 1005,
+    orderNo: 'GT202611240001',
+    productId: 1,
+    skuId: 1,
+    productName: '环保帆布袋',
+    skuName: '默认',
+    pointsSpent: 100,
+    quantity: 1,
+    receiver: '本人',
+    status: 'PAID',
+    redeemCode: 'RC-0007',
+    createdAt: '2026-11-24T02:00:00Z',
+    updatedAt: '2026-11-24T02:00:00Z',
+    ...over,
+  }
+}
+
 function renderDetail() {
   return renderPage(<ProductDetailPage />, { route: '/mall/1', path: '/mall/:id' })
 }
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 describe('ProductDetailPage', () => {
   it('库存为 0 时兑换按钮禁用并显示已兑完', async () => {
@@ -116,6 +140,91 @@ describe('ProductDetailPage', () => {
 
     expect(await screen.findByTestId('route-stub')).toBeInTheDocument()
   })
+  it('非安全上下文没有 randomUUID 时仍能弹窗并带上 32 位幂等键', async () => {
+    const keys: string[] = []
+    // 局域网 http 演示：crypto 在，但 randomUUID 是 [SecureContext] 专属
+    vi.stubGlobal('crypto', {
+      getRandomValues: (bytes: Uint8Array) => {
+        for (let i = 0; i < bytes.length; i += 1) bytes[i] = i
+        return bytes
+      },
+    } as unknown as Crypto)
+    server.use(
+      http.get('*/api/v1/products/1', () => okJson(makeProduct())),
+      http.get('*/api/v1/points/summary', () => okJson(makeSummary())),
+      http.post('*/api/v1/orders', ({ request }) => {
+        keys.push(request.headers.get('Idempotency-Key') ?? '')
+        return okJson(makeOrder())
+      }),
+    )
+    renderDetail()
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: '确认兑换' }))
+    await user.click(await screen.findByRole('button', { name: '确认兑换并生成核销码' }))
+
+    expect(await screen.findByTestId('route-stub')).toBeInTheDocument()
+    expect(keys).toHaveLength(1)
+    expect(keys[0]).toMatch(/^[0-9a-f]{32}$/)
+  })
+
+  it('点「再想想」不会重新生成幂等键', async () => {
+    const keys: string[] = []
+    const randomUUID = vi.fn(() => 'ABCDEF01-2345-6789-ABCD-EF0123456789')
+    vi.stubGlobal('crypto', {
+      randomUUID,
+      getRandomValues: (bytes: Uint8Array) => bytes,
+    } as unknown as Crypto)
+    server.use(
+      http.get('*/api/v1/products/1', () => okJson(makeProduct())),
+      http.get('*/api/v1/points/summary', () => okJson(makeSummary())),
+      http.post('*/api/v1/orders', ({ request }) => {
+        keys.push(request.headers.get('Idempotency-Key') ?? '')
+        return okJson(makeOrder())
+      }),
+    )
+    renderDetail()
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: '确认兑换' }))
+    await user.click(await screen.findByRole('button', { name: '再想想' }))
+    await user.click(await screen.findByRole('button', { name: '确认兑换' }))
+    await user.click(await screen.findByRole('button', { name: '确认兑换并生成核销码' }))
+
+    expect(await screen.findByTestId('route-stub')).toBeInTheDocument()
+    // 第一次点「确认兑换」就分配了键；「再想想」只是关弹窗，不该再分配一个
+    expect(randomUUID).toHaveBeenCalledTimes(1)
+    expect(keys).toHaveLength(1)
+    expect(keys[0]).toBe('abcdef0123456789abcdef0123456789')
+  })
+
+  it('兑换成功后重新发起会换一个新幂等键', async () => {
+    const keys: string[] = []
+    server.use(
+      http.get('*/api/v1/products/1', () => okJson(makeProduct())),
+      http.get('*/api/v1/points/summary', () => okJson(makeSummary())),
+      http.post('*/api/v1/orders', ({ request }) => {
+        keys.push(request.headers.get('Idempotency-Key') ?? '')
+        return okJson(makeOrder())
+      }),
+    )
+    const first = renderDetail()
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: '确认兑换' }))
+    await user.click(await screen.findByRole('button', { name: '确认兑换并生成核销码' }))
+    expect(await screen.findByTestId('route-stub')).toBeInTheDocument()
+
+    // 重新挂载等价于用户再进一次详情页：上一笔已成功，不该复用旧键
+    first.unmount()
+    renderDetail()
+    await user.click(await screen.findByRole('button', { name: '确认兑换' }))
+    await user.click(await screen.findByRole('button', { name: '确认兑换并生成核销码' }))
+
+    expect(keys).toHaveLength(2)
+    expect(keys[1]).not.toBe(keys[0])
+  })
+
   it('兑换失败后重试复用同一个幂等键', async () => {
     const keys: string[] = []
     let calls = 0
@@ -163,5 +272,29 @@ describe('ProductDetailPage', () => {
     expect(keys).toHaveLength(2)
     expect(keys[0]).not.toBe('')
     expect(keys[1]).toBe(keys[0])
+  })
+
+  it('商品详情 500 显示加载失败与重试，而不是「商品不存在」', async () => {
+    server.use(
+      http.get('*/api/v1/products/1', () => failJson(500, 'INTERNAL', '数据库连接失败')),
+      http.get('*/api/v1/points/summary', () => okJson(makeSummary())),
+    )
+    renderDetail()
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('加载失败')
+    expect(alert).toHaveTextContent('数据库连接失败')
+    expect(screen.queryByText('商品不存在或已下架。')).not.toBeInTheDocument()
+  })
+
+  it('商品 404 才显示「商品不存在或已下架」', async () => {
+    server.use(
+      http.get('*/api/v1/products/1', () => failJson(404, 'NOT_FOUND', '商品不存在')),
+      http.get('*/api/v1/points/summary', () => okJson(makeSummary())),
+    )
+    renderDetail()
+
+    expect(await screen.findByText('商品不存在或已下架。')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 })

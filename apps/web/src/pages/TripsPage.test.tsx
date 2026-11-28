@@ -1,8 +1,10 @@
 import { screen, within, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http } from 'msw'
+import { useQuery } from '@tanstack/react-query'
 import { describe, expect, it } from 'vitest'
 import { TripsPage } from '@/pages/TripsPage'
+import { getCarbonSeries } from '@/services/points'
 import { renderPage } from '@/test/render'
 import { failJson, okJson, pageOf } from '@/test/http'
 import { server } from '@/test/server'
@@ -96,5 +98,51 @@ describe('TripsPage', () => {
 
     expect(await screen.findByText('行程距离超出上限 100km')).toBeInTheDocument()
     expect(screen.queryByText('本次结果（后端核算）')).not.toBeInTheDocument()
+  })
+
+  it('上报成功后让 7 日碳趋势重新取数（首页/积分页不显示旧图）', async () => {
+    let trendCalls = 0
+    server.use(
+      http.get('*/api/v1/trips', () => okJson(pageOf([]))),
+      http.post('*/api/v1/trips', () => okJson(makeTrip())),
+      http.get('*/api/v1/points/daily-carbon', () => {
+        trendCalls += 1
+        return okJson([{ date: '2026-11-24', grams: 1120 }])
+      }),
+    )
+
+    // 复刻首页/积分页的查询键，验证提交后它会被失效并重新请求
+    function TrendProbe() {
+      const { dataUpdatedAt } = useQuery({ queryKey: ['carbon-trend-7d'], queryFn: () => getCarbonSeries(7) })
+      return <span data-testid="trend-at">{dataUpdatedAt}</span>
+    }
+
+    renderPage(
+      <>
+        <TripsPage />
+        <TrendProbe />
+      </>,
+    )
+
+    await waitFor(() => expect(trendCalls).toBeGreaterThanOrEqual(1))
+    const before = trendCalls
+
+    await submitTrip('3.2')
+    await screen.findByText('本次结果（后端核算）')
+
+    await waitFor(() => expect(trendCalls).toBeGreaterThan(before))
+  })
+
+  it('行程列表加载失败时给出失败态，不伪装成「还没有行程记录」', async () => {
+    server.use(
+      http.get('*/api/v1/trips', () => failJson(500, 'INTERNAL', '查询超时')),
+    )
+    renderPage(<TripsPage />)
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('加载失败')
+    expect(alert).toHaveTextContent('查询超时')
+    expect(screen.queryByText('还没有行程记录')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '重试' })).toBeEnabled()
   })
 })

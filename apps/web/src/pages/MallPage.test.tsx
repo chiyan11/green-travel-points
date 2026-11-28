@@ -1,9 +1,10 @@
 import { screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { http } from 'msw'
 import { describe, expect, it } from 'vitest'
 import { MallPage } from '@/pages/MallPage'
 import { renderPage } from '@/test/render'
-import { okJson, pageOf } from '@/test/http'
+import { failJson, okJson, pageOf } from '@/test/http'
 import { server } from '@/test/server'
 import type { PointsSummary, Product } from '@/types/api'
 
@@ -57,5 +58,28 @@ describe('MallPage', () => {
     expect(screen.getByText('100 分')).toBeInTheDocument()
     expect(screen.getByText('库存 49')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '查看详情' })).toHaveAttribute('href', '/mall/1')
+  })
+
+  it('商品列表加载失败时给出失败态与重试，而不是空态', async () => {
+    let calls = 0
+    server.use(
+      http.get('*/api/v1/products', () => {
+        calls += 1
+        if (calls === 1) return failJson(500, 'INTERNAL', '数据库连接失败')
+        return okJson(pageOf([makeProduct()]))
+      }),
+      http.get('*/api/v1/points/summary', () => okJson(summary)),
+    )
+    renderPage(<MallPage />)
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('加载失败')
+    expect(alert).toHaveTextContent('数据库连接失败')
+    // 空态文案不能出现：那是「真的没商品」，不是「没取到」
+    expect(screen.queryByText('暂无在售商品，等上架后再来看看。')).not.toBeInTheDocument()
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: '重试' }))
+    expect(await screen.findByText('环保帆布袋')).toBeInTheDocument()
   })
 })

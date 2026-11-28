@@ -1,4 +1,4 @@
-# 一键校验：后端静态检查 + 单测 + 构建，前端类型检查 + 单测 + 构建。
+﻿# 一键校验：后端静态检查 + 单测 + 构建，前端类型检查 + 单测 + 构建。
 # 用法： pwsh -File .\scripts\verify.ps1
 # 任一环节失败即以非 0 退出，可直接用于本地自检或交接前门禁。
 #
@@ -65,8 +65,14 @@ Step 'web: tsc'       { Assert-Command npx | Out-Null; Push-Location $web; try {
 Step 'web: vitest'    { Assert-Command npx | Out-Null; Push-Location $web; try { npx --no-install vitest run } finally { Pop-Location } }
 Step 'web: build'     { Assert-Command npx | Out-Null; Push-Location $web; try { npx --no-install vite build } finally { Pop-Location } }
 Step 'deploy: compose migrations' {
-  $pwsh = Assert-Command pwsh
-  & $pwsh.Source -NoProfile -File (Join-Path $PSScriptRoot 'check-compose-migrations.ps1')
+  # 优先 pwsh 7；只装了 Windows PowerShell 5.1 的机器上退回到当前宿主，
+  # 否则这一整步会因为「缺 pwsh」而让门禁红掉（脚本已统一加 UTF-8 BOM，5.1 也能正确解析中文）。
+  $shell = if (Get-Command pwsh -ErrorAction SilentlyContinue) {
+    (Get-Command pwsh).Source
+  } else {
+    (Get-Process -Id $PID).Path
+  }
+  & $shell -NoProfile -File (Join-Path $PSScriptRoot 'check-compose-migrations.ps1')
 }
 
 Write-Host ""

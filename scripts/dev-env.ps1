@@ -1,4 +1,4 @@
-# 开发环境变量（Windows / PowerShell）
+﻿# 开发环境变量（Windows / PowerShell）
 #
 # 作用：把 Go 与 Node 的缓存目录重定向到仓库内的 .cache/。原因是部分受限环境
 # （例如 DSH 文件沙箱只允许写工作区）无法写入 C:\Users\<用户> 下的默认缓存，

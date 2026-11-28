@@ -5,7 +5,7 @@ import {
   transitionAdminOrder,
   type AdminOrderAction,
 } from '@/services/admin'
-import { ORDER_STATUS_META, orderStatusBadgeClass } from '@/lib/orderStatus'
+import { ORDER_STATUS_META, orderStatusBadgeClass, orderStatusLabel } from '@/lib/orderStatus'
 import { formatDateTime, formatPoints } from '@/lib/format'
 import { ApiError } from '@/lib/http'
 import type { AdminOrder } from '@/types/admin'
@@ -32,11 +32,12 @@ const NEXT_ACTION: Partial<
 export function AdminOrdersPage(): ReactNode {
   const queryClient = useQueryClient()
   const [status, setStatus] = useState<OrderStatus | ''>('')
+  const [page, setPage] = useState(1)
   const [error, setError] = useState('')
 
   const { data, isPending, isError, error: queryError } = useQuery({
-    queryKey: ['admin-orders', status],
-    queryFn: () => listAdminOrders(status),
+    queryKey: ['admin-orders', status, page],
+    queryFn: () => listAdminOrders(status, page),
   })
 
   const mutation = useMutation({
@@ -52,6 +53,8 @@ export function AdminOrdersPage(): ReactNode {
   })
 
   const orders = data?.items ?? []
+  const total = data?.total ?? 0
+  const totalPages = Math.max(1, Math.ceil(total / (data?.pageSize || 20)))
   // 只灰正在处理的那一行：A 行请求在途时，B 行仍可单独操作。
   const pendingId = mutation.isPending ? mutation.variables?.id : undefined
 
@@ -73,7 +76,10 @@ export function AdminOrdersPage(): ReactNode {
           <button
             key={f.value || 'ALL'}
             className={status === f.value ? 'chip chip--active' : 'chip'}
-            onClick={() => setStatus(f.value)}
+            onClick={() => {
+              setStatus(f.value)
+              setPage(1)
+            }}
           >
             {f.label}
           </button>
@@ -85,7 +91,7 @@ export function AdminOrdersPage(): ReactNode {
       <section className="card">
         <div className="section-head">
           <h3>兑换订单</h3>
-          <span className="muted">共 {data?.total ?? 0} 单</span>
+          <span className="muted">共 {total} 单</span>
         </div>
 
         {isPending ? (
@@ -116,7 +122,6 @@ export function AdminOrdersPage(): ReactNode {
             </thead>
             <tbody>
               {orders.map((o: AdminOrder) => {
-                const meta = ORDER_STATUS_META[o.status]
                 const next = NEXT_ACTION[o.status]
                 return (
                   <tr key={o.id}>
@@ -128,7 +133,9 @@ export function AdminOrdersPage(): ReactNode {
                     <td>-{formatPoints(o.pointsSpent)}</td>
                     <td>{o.receiver}</td>
                     <td>
-                      <span className={`badge ${orderStatusBadgeClass(o.status)}`}>{meta.label}</span>
+                      <span className={`badge ${orderStatusBadgeClass(o.status)}`}>
+                        {orderStatusLabel(o.status, o.statusText)}
+                      </span>
                     </td>
                     <td>{formatDateTime(o.createdAt)}</td>
                     <td>
@@ -149,6 +156,28 @@ export function AdminOrdersPage(): ReactNode {
               })}
             </tbody>
           </table>
+        )}
+
+        {!isPending && !isError && totalPages > 1 && (
+          <div className="pager">
+            <button
+              className="btn btn--ghost btn--inline"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              上一页
+            </button>
+            <span className="muted">
+              第 {page} / {totalPages} 页
+            </span>
+            <button
+              className="btn btn--ghost btn--inline"
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            >
+              下一页
+            </button>
+          </div>
         )}
       </section>
     </>

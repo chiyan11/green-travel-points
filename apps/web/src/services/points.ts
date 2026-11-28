@@ -20,19 +20,29 @@ import {
   type PointTxnType,
 } from '@/types/domain'
 
-function normalizeRefType(r: WirePointTxn): PointBizRefType {
-  const refType: string = r.refType
-  if (refType === 'trip_record' || refType === 'redeem_order' || refType === 'audit_log') return refType
-  return 'audit_log'
+const KNOWN_TXN_TYPE: readonly string[] = ['TRAVEL', 'REDEEM', 'REFUND', 'ADJUST', 'EXPIRE']
+const KNOWN_REF_TYPE: readonly string[] = ['trip_record', 'redeem_order', 'audit_log']
+
+/** 未知枚举值落到 UNKNOWN（原始值另行保留），不再硬塞成 audit_log 改掉语义。 */
+function normalizeTxnType(raw: string | undefined): PointTxnType {
+  const value = (raw ?? '').toUpperCase()
+  return KNOWN_TXN_TYPE.includes(value) ? (value as PointTxnType) : 'UNKNOWN'
+}
+
+function normalizeRefType(raw: string | undefined): PointBizRefType {
+  const value = raw ?? ''
+  return KNOWN_REF_TYPE.includes(value) ? (value as PointBizRefType) : 'UNKNOWN'
 }
 
 function toTxn(r: WirePointTxn): PointTxn {
   return {
     id: String(r.id),
-    type: r.type as PointTxnType,
+    type: normalizeTxnType(r.type),
+    typeText: r.type ?? '',
     amount: r.amount,
     balanceAfter: r.balanceAfter,
-    bizRefType: normalizeRefType(r),
+    bizRefType: normalizeRefType(r.refType),
+    bizRefTypeText: r.refType ?? '',
     bizRefId: String(r.refId),
     occurredAt: r.createdAt,
   }
@@ -45,13 +55,28 @@ export async function getSummary(): Promise<PointSummary> {
     totalCarbonSavedGrams: s.totalCarbonSavedGrams,
     earnedThisMonth: s.earnedThisMonth,
     earnedToday: s.earnedToday,
-    dailyCap: s.dailyCap || DAILY_POINTS_CAP,
+    // `||` 会把后端的 0（不限上限）误当成「没给值」翻成 500
+    dailyCap: s.dailyCap ?? DAILY_POINTS_CAP,
   }
 }
 
-export async function listTxns(): Promise<PointTxn[]> {
-  const page = await api.get<PointTxnPage>('/api/v1/points/transactions?page=1&pageSize=50')
-  return (page.items ?? []).map(toTxn)
+export interface TxnList {
+  items: PointTxn[]
+  page: number
+  pageSize: number
+  total: number
+}
+
+export async function listTxns(page = 1, pageSize = 50): Promise<TxnList> {
+  const res = await api.get<PointTxnPage>(
+    `/api/v1/points/transactions?page=${page}&pageSize=${pageSize}`,
+  )
+  return {
+    items: (res.items ?? []).map(toTxn),
+    page: res.page,
+    pageSize: res.pageSize,
+    total: res.total,
+  }
 }
 
 export interface DailyCarbonPoint {

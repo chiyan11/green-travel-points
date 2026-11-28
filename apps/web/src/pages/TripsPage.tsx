@@ -1,6 +1,7 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { IconCheck, IconEmptyRoute, IconRoute } from '@/components/icons'
+import { QueryErrorBlock } from '@/components/QueryError'
 import { TRAVEL_MODES, type TravelMode, type TripRecord } from '@/types/domain'
 import { validateDistance } from '@/lib/validators'
 import { listTrips, submitTrip } from '@/services/trips'
@@ -16,7 +17,12 @@ const QUICK_DISTANCES = [
 /** 行程上报：选方式、填距离、看后端核算的结算单。 */
 export function TripsPage(): ReactNode {
   const queryClient = useQueryClient()
-  const { data: trips = [] } = useQuery({
+  const {
+    data: trips = [],
+    isError: tripsError,
+    error: tripsErrorObj,
+    refetch: refetchTrips,
+  } = useQuery({
     queryKey: ['trips'],
     queryFn: () => listTrips(),
   })
@@ -49,6 +55,8 @@ export function TripsPage(): ReactNode {
       void queryClient.invalidateQueries({ queryKey: ['trips'] })
       void queryClient.invalidateQueries({ queryKey: ['summary'] })
       void queryClient.invalidateQueries({ queryKey: ['txns'] })
+      // 新的出行会改变当天的碳减排柱：不失效的话首页/积分页还显示提交前的图
+      void queryClient.invalidateQueries({ queryKey: ['carbon-trend-7d'] })
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : '提交失败')
     }
@@ -179,10 +187,12 @@ export function TripsPage(): ReactNode {
       <section className="card">
         <div className="card__head">
           <h2 className="card__title">最近行程</h2>
-          <span className="muted">共 {trips.length} 条</span>
+          <span className="muted">{tripsError ? '—' : `共 ${trips.length} 条`}</span>
         </div>
 
-        {trips.length === 0 ? (
+        {tripsError ? (
+          <QueryErrorBlock error={tripsErrorObj} onRetry={() => void refetchTrips()} />
+        ) : trips.length === 0 ? (
           <div className="empty">
             <span className="empty__art">
               <IconEmptyRoute size={48} />

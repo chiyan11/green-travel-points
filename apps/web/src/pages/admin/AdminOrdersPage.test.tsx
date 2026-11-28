@@ -121,4 +121,29 @@ describe('AdminOrdersPage 订单流转二次确认', () => {
     release?.()
     await waitFor(() => expect(within(rowOf('GT-A')).getByText('已发货')).toBeInTheDocument())
   })
+
+  it('超过一页时给出分页，翻页请求 page=2 而不是把第二页截掉', async () => {
+    const pages: string[] = []
+    server.use(
+      http.get('*/api/v1/admin/orders', ({ request }) => {
+        const page = new URL(request.url).searchParams.get('page') ?? '1'
+        pages.push(page)
+        const items =
+          page === '2'
+            ? [makeOrder({ id: 2, orderNo: 'GT-P2' })]
+            : [makeOrder({ id: 1, orderNo: 'GT-P1' })]
+        return okJson({ items, page: Number(page), pageSize: 20, total: 21 })
+      }),
+    )
+
+    renderPage(<AdminOrdersPage />)
+    const user = userEvent.setup()
+
+    expect(await screen.findByText(/共 21 单/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '下一页' }))
+
+    expect(await screen.findByText('GT-P2')).toBeInTheDocument()
+    expect(pages).toContain('2')
+    expect(screen.getByText(/第 2 \/ 2 页/)).toBeInTheDocument()
+  })
 })
