@@ -43,7 +43,9 @@ async function login(page: Page, account: string, password: string) {
   await page.getByLabel('密码').fill(password)
   await page.locator('form').getByRole('button', { name: '登录' }).click()
   await expect(page).toHaveURL(/\/$/)
-  await expect(page.getByRole('heading', { name: '绿行积分' })).toBeVisible()
+  // 首页一版版改过文案，不再固定大标题；只断言登录完成后外壳（导航 + 退出）出现。
+  await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '退出' })).toBeVisible()
 }
 
 test('建商品 → 上架 → 下单 → 后台看订单并确认接单', async ({ page, browser }) => {
@@ -96,7 +98,9 @@ test('建商品 → 上架 → 下单 → 后台看订单并确认接单', async
   await card.getByRole('link', { name: '查看详情' }).click()
 
   await expect(citizenPage.getByRole('heading', { name: productName })).toBeVisible()
+  // 详情页现在是两步：先「确认兑换」打开确认弹窗，再点「确认兑换并生成核销码」才发请求。
   await citizenPage.getByRole('button', { name: '确认兑换' }).click()
+  await citizenPage.getByRole('button', { name: '确认兑换并生成核销码' }).click()
   await expect(citizenPage).toHaveURL(/\/orders/)
   await expect(citizenPage.getByText(productName).first()).toBeVisible()
 
@@ -107,14 +111,30 @@ test('建商品 → 上架 → 下单 → 后台看订单并确认接单', async
   await citizenContext.close()
 
   // 4. 后台订单列表：看到该订单（待商户确认）→ 确认接单（PENDING → PAID）
+  //    按钮现在先弹 window.confirm（目标状态 + 不可撤销）；Playwright 默认把弹窗 dismiss 掉，
+  //    不接 dialog 的话请求不会发出，这里显式 accept 并把文案留下来断言。
   await page.goto('/admin/orders')
   const orderRow = page.getByRole('row', { name: new RegExp(productName) })
   await expect(orderRow).toBeVisible()
   await expect(orderRow.getByText('待商户确认')).toBeVisible()
 
-  await page.getByRole('row', { name: new RegExp(productName) })
-    .getByRole('button', { name: '确认收款' })
-    .click()
+  let confirmMessage = ''
+  page.on('dialog', async (dialog) => {
+    confirmMessage = dialog.message()
+    await dialog.accept()
+  })
+
+  const [confirmResponse] = await Promise.all([
+    page.waitForResponse(
+      (res) => res.url().includes('/api/v1/admin/orders/') && res.url().endsWith('/confirm'),
+    ),
+    page.getByRole('row', { name: new RegExp(productName) })
+      .getByRole('button', { name: '确认接单' })
+      .click(),
+  ])
+  expect(confirmResponse.status(), `确认接单接口返回 ${confirmResponse.status()}`).toBe(200)
+  expect(confirmMessage).toContain('不可撤销')
+  expect(confirmMessage).toContain('已确认')
   await expect(
     page.getByRole('row', { name: new RegExp(productName) }).getByText(/已确认/),
   ).toBeVisible()
