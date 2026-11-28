@@ -78,6 +78,20 @@ func (s *Store) CreateOrder(ctx context.Context, in app.CreateOrderInput) (app.O
 	}
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
+			// 指定 SKU 却查不到：SKU 本身不存在，不是“库存不足”。
+			if in.SKUId > 0 {
+				return app.Order{}, false, app.ErrNotFound
+			}
+			// 按商品挑 SKU 却无行：先区分“商品不存在”和“商品存在但无库存”，
+			// 避免把 404 误报成 409 OUT_OF_STOCK（DEF-02）。
+			var exists int
+			if perr := tx.QueryRowContext(ctx,
+				`SELECT 1 FROM product WHERE id = ?`, in.ProductID).Scan(&exists); perr != nil {
+				if errors.Is(perr, sql.ErrNoRows) {
+					return app.Order{}, false, app.ErrNotFound
+				}
+				return app.Order{}, false, perr
+			}
 			return app.Order{}, false, app.ErrOutOfStock
 		}
 		return app.Order{}, false, err
