@@ -15,6 +15,7 @@
 import { api } from '@/lib/http'
 import type { Page } from '@/types/domain'
 import type { AdminOrder, AdminProduct, AdminProductInput } from '@/types/admin'
+import { toOrderStatus } from '@/services/orders'
 
 interface RawSKU {
   id: number
@@ -53,7 +54,8 @@ interface RawAdminOrder {
 }
 
 function toAdminProduct(r: RawAdminProduct): AdminProduct {
-  const status = r.status === 'DRAFT' || r.status === 'OFFLINE' ? r.status : 'ONLINE'
+  const status =
+    r.status === 'ONLINE' || r.status === 'DRAFT' || r.status === 'OFFLINE' ? r.status : 'OFFLINE'
   return {
     id: String(r.id),
     merchantId: String(r.merchantId ?? 0),
@@ -85,7 +87,8 @@ function toAdminOrder(r: RawAdminOrder): AdminOrder {
     pointsSpent: r.pointsSpent,
     quantity: r.quantity,
     receiver: r.receiver,
-    status: r.status as AdminOrder['status'],
+    status: toOrderStatus(r.status),
+    statusText: r.status ?? '',
     redeemCode: r.redeemCode ?? '',
     createdAt: r.createdAt,
   }
@@ -136,15 +139,17 @@ export async function setSKUStock(skuId: string, stock: number): Promise<void> {
 
 export async function listAdminOrders(
   status: string,
+  page = 1,
+  pageSize = 20,
 ): Promise<Page<AdminOrder>> {
-  const params = new URLSearchParams({ page: '1', pageSize: '50' })
+  const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) })
   if (status) params.set('status', status)
-  const page = await api.get<Page<RawAdminOrder>>(`/api/v1/admin/orders?${params.toString()}`)
+  const res = await api.get<Page<RawAdminOrder>>(`/api/v1/admin/orders?${params.toString()}`)
   return {
-    items: (page.items ?? []).map(toAdminOrder),
-    page: page.page,
-    pageSize: page.pageSize,
-    total: page.total,
+    items: (res.items ?? []).map(toAdminOrder),
+    page: res.page,
+    pageSize: res.pageSize,
+    total: res.total,
   }
 }
 

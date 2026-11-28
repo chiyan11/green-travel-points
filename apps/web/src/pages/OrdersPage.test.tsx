@@ -75,14 +75,56 @@ describe('OrdersPage', () => {
     expect(within(card()).getByText('待商户确认')).toBeInTheDocument()
   })
 
-  it('筛选已发货时显示对应空态', async () => {
-    server.use(http.get('*/api/v1/orders', () => okJson(pageOf([makeOrder()]))))
+  it('筛选已发货时把状态传给后端并显示对应空态', async () => {
+    const seen: string[] = []
+    server.use(
+      http.get('*/api/v1/orders', ({ request }) => {
+        const status = new URL(request.url).searchParams.get('status') ?? ''
+        seen.push(status)
+        // 后端按状态过滤：请求了 SHIPPED 就没有数据
+        return okJson(status === 'SHIPPED' ? pageOf([]) : pageOf([makeOrder()]))
+      }),
+    )
     renderPage(<OrdersPage />)
     const user = userEvent.setup()
 
     await user.click(await screen.findByRole('button', { name: '已发货' }))
 
     expect(await screen.findByText('该状态下暂无订单。')).toBeInTheDocument()
+    expect(seen).toContain('SHIPPED')
+  })
+
+  it('超过一页时给出上一页/下一页，翻页请求第二页', async () => {
+    const pages: string[] = []
+    server.use(
+      http.get('*/api/v1/orders', ({ request }) => {
+        const page = new URL(request.url).searchParams.get('page') ?? '1'
+        pages.push(page)
+        const items =
+          page === '2'
+            ? [makeOrder({ id: 9, productName: '咖啡馆兑换券' })]
+            : [makeOrder({ id: 7 })]
+        return okJson({ items, page: Number(page), pageSize: 20, total: 21 })
+      }),
+    )
+    renderPage(<OrdersPage />)
+    const user = userEvent.setup()
+
+    expect(await screen.findByText(/共 21 条/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '下一页' }))
+
+    expect(await screen.findByText('咖啡馆兑换券')).toBeInTheDocument()
+    expect(pages).toContain('2')
+    expect(screen.getByText(/第 2 \/ 2 页/)).toBeInTheDocument()
+  })
+
+  it('带 ?created= 进入时给出兑换成功提示并高亮该订单', async () => {
+    server.use(http.get('*/api/v1/orders', () => okJson(pageOf([makeOrder({ id: 7 })]))))
+    renderPage(<OrdersPage />, { route: '/orders?created=7', path: '/orders' })
+
+    expect(await screen.findByRole('status')).toHaveTextContent('兑换成功')
+    const highlighted = await screen.findByRole('article')
+    expect(highlighted.className).toContain('order-card--highlight')
   })
 
   it('订单加载失败时给出失败态与重试，不显示「该状态下暂无订单」', async () => {

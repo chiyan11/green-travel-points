@@ -1,4 +1,4 @@
-# 校验 deploy/docker-compose.yml 是否把 db/migrations 下全部 up 迁移挂成了 initdb 脚本，
+﻿# 校验 deploy/docker-compose.yml 是否把 db/migrations 下全部 up 迁移挂成了 initdb 脚本，
 # 且 /docker-entrypoint-initdb.d 里的序号（01..N）连续、唯一。
 #
 # 背景：MySQL 只在数据目录为空时执行 /docker-entrypoint-initdb.d 里的脚本，

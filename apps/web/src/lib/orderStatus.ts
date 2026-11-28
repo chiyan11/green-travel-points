@@ -16,6 +16,7 @@ export const ORDER_STATUS_META: Record<
   SHIPPED: { label: '已发货', badgeVariant: 'success', cancellable: false },
   COMPLETED: { label: '已完成', badgeVariant: 'neutral', cancellable: false },
   CANCELLED: { label: '已取消', badgeVariant: 'error', cancellable: false },
+  UNKNOWN: { label: '未知状态', badgeVariant: 'neutral', cancellable: false },
 }
 
 /** 旧式 `.badge--*` 类名（运营后台仍在用 span.badge，不依赖 Astryx Badge 组件）。 */
@@ -31,6 +32,16 @@ export function orderStatusBadgeClass(status: OrderStatus): string {
   return BADGE_CLASS[ORDER_STATUS_META[status].badgeVariant]
 }
 
+/**
+ * 展示用文案：后端出现了前端还不认识的枚举时，直接显示原始值，
+ * 而不是断言成某个已知状态（那会把「新状态」说成「待商户确认」）。
+ */
+export function orderStatusLabel(status: OrderStatus, raw?: string): string {
+  if (status !== 'UNKNOWN') return ORDER_STATUS_META[status].label
+  const text = (raw ?? '').trim()
+  return text !== '' ? text : ORDER_STATUS_META.UNKNOWN.label
+}
+
 /** 合法跃迁边表；非法跃迁必须被后端拒绝，前端仅做按钮禁用提示。 */
 const TRANSITIONS: Record<OrderStatus, readonly OrderStatus[]> = {
   PENDING: ['PAID', 'CANCELLED'],
@@ -38,6 +49,7 @@ const TRANSITIONS: Record<OrderStatus, readonly OrderStatus[]> = {
   SHIPPED: ['COMPLETED'],
   COMPLETED: [],
   CANCELLED: [],
+  UNKNOWN: [],
 }
 
 export function canTransition(from: OrderStatus, to: OrderStatus): boolean {
@@ -51,4 +63,12 @@ export const POINT_TXN_TYPE_META: Record<PointTxnType, { label: string; sign: 1 
   REFUND: { label: '取消返还', sign: 1 },
   EXPIRE: { label: '过期扣减', sign: -1 },
   ADJUST: { label: '人工调整', sign: 1 },
+  UNKNOWN: { label: '其他变动', sign: 1 },
+}
+
+/** 流水类型文案同样保留原始值兜底。 */
+export function pointTxnTypeLabel(type: PointTxnType, raw?: string): string {
+  if (type !== 'UNKNOWN') return POINT_TXN_TYPE_META[type].label
+  const text = (raw ?? '').trim()
+  return text !== '' ? text : POINT_TXN_TYPE_META.UNKNOWN.label
 }

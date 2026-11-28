@@ -55,6 +55,8 @@ export function TripsPage(): ReactNode {
       void queryClient.invalidateQueries({ queryKey: ['trips'] })
       void queryClient.invalidateQueries({ queryKey: ['summary'] })
       void queryClient.invalidateQueries({ queryKey: ['txns'] })
+      // 新的出行会改变当天的碳减排柱：不失效的话首页/积分页还显示提交前的图
+      void queryClient.invalidateQueries({ queryKey: ['carbon-trend-7d'] })
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : '提交失败')
     }

@@ -1809,3 +1809,30 @@ textarea.native-input {
     font-size: var(--fs-28);
   }
 }
+
+/* 兑换成功提示 / 高亮新订单 / 分页条 */
+.notice {
+  margin: 0 0 var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-card);
+  font-size: var(--fs-14);
+}
+
+.notice--ok {
+  border: 1px solid var(--green-100);
+  background: var(--green-50);
+  color: var(--green-800);
+}
+
+.order-card--highlight {
+  border-color: var(--green-700);
+  box-shadow: inset 3px 0 0 var(--green-700);
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
+  padding: var(--sp-4) 0 0;
+}

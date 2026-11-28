@@ -76,6 +76,31 @@ describe('PointsPage', () => {
     expect(await screen.findByText('出行获得')).toBeInTheDocument()
   })
 
+  it('dailyCap 为 0 时显示「不限」，不画成 0 分上限', async () => {
+    server.use(
+      http.get('*/api/v1/points/summary', () => okJson(makeSummary({ dailyCap: 0 }))),
+      http.get('*/api/v1/points/transactions', () => okJson(pageOf([makeTxn()]))),
+      http.get('*/api/v1/points/daily-carbon', () => okJson(trend)),
+    )
+    renderPage(<PointsPage />)
+
+    expect(await screen.findByText('单日上限 不限')).toBeInTheDocument()
+    expect(screen.getByText(/当前不设上限/)).toBeInTheDocument()
+  })
+
+  it('未知流水类型显示后端原始值，不硬塞成「人工调整」', async () => {
+    server.use(
+      http.get('*/api/v1/points/summary', () => okJson(makeSummary())),
+      http.get('*/api/v1/points/transactions', () =>
+        okJson(pageOf([makeTxn({ id: 9, type: 'BONUS' as PointTxn['type'] })])),
+      ),
+      http.get('*/api/v1/points/daily-carbon', () => okJson(trend)),
+    )
+    renderPage(<PointsPage />)
+
+    expect(await screen.findByText('BONUS')).toBeInTheDocument()
+  })
+
   it('余额汇总加载失败时不把余额画成 0 分，而是给出失败态', async () => {
     server.use(
       http.get('*/api/v1/points/summary', () => failJson(503, 'UNAVAILABLE', '账本服务不可用')),

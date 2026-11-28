@@ -27,12 +27,16 @@ function coverIcon(category: string | undefined, coverUrl: string | undefined): 
 /** 积分商城：买得起才能换，买不起也要让用户知道还差多少。 */
 export function MallPage(): ReactNode {
   const {
-    data: products = [],
+    data: productList,
     isError: productsError,
     error: productsErrorObj,
     refetch: refetchProducts,
   } = useQuery({ queryKey: ['products'], queryFn: () => listProducts() })
   const { data: summary } = useQuery({ queryKey: ['summary'], queryFn: () => getSummary() })
+  const products = productList?.items ?? []
+  const total = productList?.total ?? 0
+  // 一页装不下时把截断说清楚，别让「共 N 件」和卡片数对不上
+  const truncated = total > products.length
   // 余额取不到时显示「—」而不是 0：0 分会被误读成「真的没积分」
   const balance = summary?.balance ?? 0
 
@@ -49,7 +53,13 @@ export function MallPage(): ReactNode {
       </div>
 
       <div className="section-head">
-        <span className="muted">{productsError ? '商品加载失败' : `共 ${products.length} 件在售商品`}</span>
+        <span className="muted">
+          {productsError
+            ? '商品加载失败'
+            : truncated
+              ? `共 ${total} 件在售商品，当前显示前 ${products.length} 件`
+              : `共 ${products.length} 件在售商品`}
+        </span>
       </div>
 
       {productsError ? (

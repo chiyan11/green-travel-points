@@ -3,16 +3,21 @@ import type { ReactNode } from 'react'
 import { CarbonTrendChart } from '@/components/CarbonTrendChart'
 import { QueryErrorBlock } from '@/components/QueryError'
 import { IconAward, IconTrendDown, IconTrendUp } from '@/components/icons'
-import { POINT_TXN_TYPE_META } from '@/lib/orderStatus'
+import { pointTxnTypeLabel } from '@/lib/orderStatus'
 import { formatDateTime, formatGrams, formatPoints } from '@/lib/format'
 import { getCarbonSeries, getSummary, listTxns } from '@/services/points'
 import type { PointBizRefType } from '@/types/domain'
 
-/** 业务引用类型的中文说明：流水里不展示裸枚举值。 */
+/** 业务引用类型的中文说明；未知取值回落到后端原始串，不吞信息。 */
 const BIZ_LABEL: Record<PointBizRefType, string> = {
   trip_record: '行程核算',
   redeem_order: '商城兑换',
   audit_log: '人工调整',
+  UNKNOWN: '其他来源',
+}
+
+function bizLabel(type: PointBizRefType, raw: string): string {
+  return type === 'UNKNOWN' && raw.trim() !== '' ? raw : BIZ_LABEL[type]
 }
 
 /** 我的积分：一张主卡放余额与今日额度，两张副卡放累计减排与本月获得。 */
@@ -24,7 +29,7 @@ export function PointsPage(): ReactNode {
     refetch: refetchSummary,
   } = useQuery({ queryKey: ['summary'], queryFn: () => getSummary() })
   const {
-    data: txns = [],
+    data: txnList,
     isPending: txnsPending,
     isError: txnsError,
     error: txnsErrorObj,
@@ -33,6 +38,9 @@ export function PointsPage(): ReactNode {
     queryKey: ['txns'],
     queryFn: () => listTxns(),
   })
+  const txns = txnList?.items ?? []
+  const txnsTotal = txnList?.total ?? 0
+
   const {
     data: trend = [],
     isPending: trendPending,
@@ -47,7 +55,9 @@ export function PointsPage(): ReactNode {
   const balance = summary?.balance ?? 0
   const earnedToday = summary?.earnedToday ?? 0
   const cap = summary?.dailyCap ?? 500
-  const pct = Math.min(100, Math.round((earnedToday / Math.max(cap, 1)) * 100))
+  // 后端的 0 表示不限上限，不能显示成「单日上限 0 分」
+  const capText = cap === 0 ? '不限' : `${formatPoints(cap)} 分`
+  const pct = cap === 0 ? 0 : Math.min(100, Math.round((earnedToday / Math.max(cap, 1)) * 100))
 
   return (
     <div className="page">
@@ -56,7 +66,7 @@ export function PointsPage(): ReactNode {
           <h1 className="page-title">我的积分</h1>
           <p className="page-sub">余额与流水只通过账本变更，当日发放受上限约束。</p>
         </div>
-        <span className="badge badge--muted">单日上限 {formatPoints(cap)} 分</span>
+        <span className="badge badge--muted">单日上限 {capText}</span>
       </div>
 
       {summaryError ? (
@@ -85,7 +95,9 @@ export function PointsPage(): ReactNode {
             </div>
           </div>
           <p className="stat__note">
-            今日已发 {formatPoints(earnedToday)} / {formatPoints(cap)} 分，超出部分不计积分
+            {cap === 0
+              ? `今日已发 ${formatPoints(earnedToday)} 分，当前不设上限`
+              : `今日已发 ${formatPoints(earnedToday)} / ${formatPoints(cap)} 分，超出部分不计积分`}
           </p>
         </section>
 
@@ -121,7 +133,13 @@ export function PointsPage(): ReactNode {
         <div className="card__head">
           <h2 className="card__title">积分流水</h2>
           <span className="muted">
-            {txnsPending ? '加载中…' : txnsError ? '—' : `共 ${txns.length} 条`}
+            {txnsPending
+              ? '加载中…'
+              : txnsError
+                ? '—'
+                : txnsTotal > txns.length
+                  ? `共 ${txnsTotal} 条，当前显示最近 ${txns.length} 条`
+                  : `共 ${txns.length} 条`}
           </span>
         </div>
 
@@ -150,7 +168,7 @@ export function PointsPage(): ReactNode {
         ) : (
           <div className="list">
             {txns.map((t) => {
-              const meta = POINT_TXN_TYPE_META[t.type]
+              const meta = { label: pointTxnTypeLabel(t.type, t.typeText) }
               const isOut = t.amount < 0
               return (
                 <div className="list__row" key={t.id}>
@@ -160,7 +178,7 @@ export function PointsPage(): ReactNode {
                   <div className="list__body">
                     <p className="list__title">{meta.label}</p>
                     <p className="list__meta">
-                      {BIZ_LABEL[t.bizRefType]} · {formatDateTime(t.occurredAt)} · 余额{' '}
+                      {bizLabel(t.bizRefType, t.bizRefTypeText)} · {formatDateTime(t.occurredAt)} · 余额{' '}
                       {formatPoints(t.balanceAfter)}
                     </p>
                   </div>

@@ -9,6 +9,20 @@ import { api } from '@/lib/http'
 import type { Order as WireOrder, OrderPage } from '@/types/api'
 import type { OrderStatus, RedeemOrder } from '@/types/domain'
 
+const KNOWN_ORDER_STATUS: readonly string[] = [
+  'PENDING',
+  'PAID',
+  'SHIPPED',
+  'COMPLETED',
+  'CANCELLED',
+]
+
+/** 未知枚举值不猜、不改义：落到 UNKNOWN，原始值另存用于展示。 */
+export function toOrderStatus(raw: string | undefined): OrderStatus {
+  const value = (raw ?? '').toUpperCase()
+  return KNOWN_ORDER_STATUS.includes(value) ? (value as OrderStatus) : 'UNKNOWN'
+}
+
 function toOrder(r: WireOrder): RedeemOrder {
   return {
     id: String(r.id),
@@ -20,16 +34,32 @@ function toOrder(r: WireOrder): RedeemOrder {
     pointsSpent: r.pointsSpent,
     quantity: r.quantity,
     receiver: r.receiver,
-    status: (r.status || 'PENDING') as OrderStatus,
+    status: toOrderStatus(r.status),
+    statusText: r.status ?? '',
     redeemCode: r.redeemCode,
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
   }
 }
 
-export async function listOrders(): Promise<RedeemOrder[]> {
-  const page = await api.get<OrderPage>('/api/v1/orders?page=1&pageSize=50')
-  return (page.items ?? []).map(toOrder)
+/** 列表统一返回分页信息：页面必须能区分「就这么多」和「只拿到一页」。 */
+export interface OrderList {
+  items: RedeemOrder[]
+  page: number
+  pageSize: number
+  total: number
+}
+
+export async function listOrders(page = 1, pageSize = 20, status?: OrderStatus): Promise<OrderList> {
+  const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) })
+  if (status && status !== 'UNKNOWN') params.set('status', status)
+  const res = await api.get<OrderPage>(`/api/v1/orders?${params.toString()}`)
+  return {
+    items: (res.items ?? []).map(toOrder),
+    page: res.page,
+    pageSize: res.pageSize,
+    total: res.total,
+  }
 }
 
 /**

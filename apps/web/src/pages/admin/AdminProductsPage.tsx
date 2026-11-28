@@ -19,6 +19,7 @@ export function AdminProductsPage(): ReactNode {
   const queryClient = useQueryClient()
   const [searchParams] = useSearchParams()
   const [status, setStatus] = useState<ProductStatus | ''>('')
+  const [page, setPage] = useState(1)
   const [keyword, setKeyword] = useState('')
   const [keywordInput, setKeywordInput] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
@@ -27,9 +28,11 @@ export function AdminProductsPage(): ReactNode {
   const createdName = searchParams.get('created') ?? ''
 
   const { data, isPending, isError, error: queryError } = useQuery({
-    queryKey: ['admin-products', status, keyword],
-    queryFn: () => listAdminProducts({ status, keyword }),
+    queryKey: ['admin-products', status, keyword, page],
+    queryFn: () => listAdminProducts({ status, keyword, page }),
   })
+  const total = data?.total ?? 0
+  const totalPages = Math.max(1, Math.ceil(total / (data?.pageSize || 20)))
 
   const invalidate = () => void queryClient.invalidateQueries({ queryKey: ['admin-products'] })
 
@@ -55,6 +58,7 @@ export function AdminProductsPage(): ReactNode {
   const onSearch = (e: FormEvent) => {
     e.preventDefault()
     setKeyword(keywordInput.trim())
+    setPage(1)
   }
 
   const onExpand = (p: AdminProduct) => {
@@ -90,7 +94,10 @@ export function AdminProductsPage(): ReactNode {
           <button
             key={f.value || 'ALL'}
             className={status === f.value ? 'chip chip--active' : 'chip'}
-            onClick={() => setStatus(f.value)}
+            onClick={() => {
+              setStatus(f.value)
+              setPage(1)
+            }}
           >
             {f.label}
           </button>
@@ -117,7 +124,7 @@ export function AdminProductsPage(): ReactNode {
       <section className="card">
         <div className="section-head">
           <h3>商品列表</h3>
-          <span className="muted">共 {data?.total ?? 0} 件</span>
+          <span className="muted">共 {total} 件</span>
         </div>
 
         {isPending ? (
@@ -226,6 +233,28 @@ export function AdminProductsPage(): ReactNode {
               })}
             </tbody>
           </table>
+        )}
+
+        {!isPending && !isError && totalPages > 1 && (
+          <div className="pager">
+            <button
+              className="btn btn--ghost btn--inline"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              上一页
+            </button>
+            <span className="muted">
+              第 {page} / {totalPages} 页
+            </span>
+            <button
+              className="btn btn--ghost btn--inline"
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            >
+              下一页
+            </button>
+          </div>
         )}
       </section>
     </>
