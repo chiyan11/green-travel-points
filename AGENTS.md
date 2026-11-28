@@ -56,9 +56,9 @@ docker compose -f deploy/docker-compose.yml up -d --build
 ### 必须知道的四个事实
 
 1. **配置只来自环境变量。** `internal/config/config.go` 只调用 `os.LookupEnv`，**不解析 `.env` 文件**；复制 `.env.example` 成 `.env` 不会生效。默认值可直接连本机库：`greentravel:greentravel@tcp(127.0.0.1:3306)/green_travel_points`。
-2. **端口写死。** 后端 `:8080`，前端 `5173`（`apps/web/vite.config.ts`），代理规则 `/api → 127.0.0.1:8080`。改端口要同时改这两处。
+2. **端口在 compose 里可覆盖。** 本机后端默认 `:8080`（`HTTP_ADDR` 可改），前端 `5173`（`apps/web/vite.config.ts`），代理规则 `/api → 127.0.0.1:8080`；compose 映射为 `API_PORT` / `WEB_PORT` / `MYSQL_PORT`（默认 8080 / 8088 / 3307）。改本机端口要同时改 vite 代理。
 3. **缓存重定向。** 若全局缓存目录不可写（受限沙箱、只读用户目录），先执行 `. .\scripts\dev-env.ps1`，它把 `GOCACHE` / `GOMODCACHE` / `npm` 缓存指到仓库内 `.cache/`。
-4. **种子账号可直接登录。** `db/seed/dev_demo.sql` 自带合法的 `pbkdf2$600000$<salt>$<digest>` 口令哈希：市民 `13800000001` / `demo123456`（user 1001，1200 分），运营管理员 `13800000002` / `admin123456`（user 1002，运营后台 `/admin` 用它登录）。也可注册新账号；开发身份头仅在 `APP_ENV=dev` 且显式设置 `AUTH_ALLOW_DEV_HEADER=true` 时生效，其他环境开启会拒绝启动。**仅限按 seed 初始化的本地库**：共享库（`docs/dev/shared-db.md`）仍是旧占位哈希且演示用户 id=1，seed 明令禁止在共享库执行，只可按头部说明做定向 UPDATE。
+4. **种子账号可直接登录。** `db/seed/dev_demo.sql` 自带合法的 `pbkdf2$600000$<salt>$<digest>` 口令哈希：市民 `13800000001` / `demo123456`（user 1001，1200 分），运营管理员 `13800000002` / `admin123456`（user 1002，运营后台 `/admin` 用它登录）。**compose 首次初始化会自动导入它**（`db/seed/docker-init.sh` 挂为 `99_seed.sh`，`SEED_ON_INIT=0` 可关），所以 `down -v && up -d --build` 后可直接登录。也可注册新账号；开发身份头仅在 `APP_ENV=dev` 且显式设置 `AUTH_ALLOW_DEV_HEADER=true` 时生效，其他环境开启会拒绝启动。**仅限按 seed 初始化的本地库**：共享库（`docs/dev/shared-db.md`）仍是旧占位哈希且演示用户 id=1，seed 明令禁止在共享库执行，只可按头部说明做定向 UPDATE。
 
 > **团队共享库（ZeroTier 内网）**：连接方式见 [`docs/dev/shared-db.md`](docs/dev/shared-db.md)。
 > 该链路延迟较高，后端启动需带 `HTTP_REQUEST_TIMEOUT=60s`，`DB_DSN` 要加 `timeout/readTimeout/writeTimeout`；
@@ -123,7 +123,9 @@ green-travel-points/
 ├── db/
 │   ├── migrations/               11 组 up/down 迁移（见 §6）
 │   └── seed/dev_demo.sql         演示数据：用户 1001、管理员 1002、3 个商品
+│       └── docker-init.sh        compose initdb 包装（99_seed.sh，SEED_ON_INIT=0 关闭）
 ├── deploy/                       docker-compose.yml、Dockerfile.api、Dockerfile.web、nginx.conf
+├── .dockerignore                 构建上下文只留源码（挡 node_modules/dist/.cache/.git）
 ├── docs/                         需求规格、设计规格、故事地图/Backlog、实验报告、分工计划、Sprint 0 记录、数据库记录、接口说明、前端接口清单、UML
 │   ├── api/openapi.yaml          机器可读契约（生成 types/api.ts 的唯一来源）
 │   └── screenshots/              E2E 跑出来的验收截图（改主链路后必须更新）
@@ -306,7 +308,7 @@ pages/*.tsx  ──►  services/*.ts  ──►  lib/http.ts  ──►  fetch
 | repo 集成测试 | `apps/api/internal/repo/orders_test.go`、`audit_test.go`、`batches_test.go`、`points_test.go`、`trips_test.go`、`outbox_test.go`、`outbox_integration_test.go`、`p1_regression_test.go` | 8 文件、30 个测试函数（DB 集成 25 + 纯函数 5） | 真连 MySQL；`REPO_TEST_DSN` 未设置时数据库用例 SKIP（CI 必设）；DSN 数据库名必须以 `_test` 结尾；`p1_regression_test.go` 覆盖 P1 修复（跨用户同幂等键、同值更新、过期清算拒绝、对账批次偏差） |
 | 启动日志单测 | `apps/api/cmd/server/dbendpoint_test.go`、`main_test.go` | 2 个函数 / 15 例 | 表驱动：默认 DSN、局域网 / ZeroTier、localhost、IPv6 回环、unix socket、省略地址、非法 DSN；另测 `WriteTimeout` 跟随请求超时 |
 | 前端单测 | `apps/web/src/lib/*.test.ts` | 2 文件 19 例 | `http.test.ts` 用 `vi.stubGlobal('fetch')` 测解包与错误映射；`validators.test.ts` 测校验规则 |
-| 前端页面测试 | `apps/web/src/pages/*.test.tsx` | 5 文件 17 例 | jsdom + Testing Library + MSW 3 拦截 `fetch`；`src/test/render.tsx` 提供 QueryClient/路由壳，`src/test/http.ts` 造 `{code,message,data}` 壳（测试里也重放后端协议，不是随手 mock） |
+| 前端页面测试 | `apps/web/src/pages/*.test.tsx` | 8 文件 22 例 | jsdom + Testing Library + MSW 3 拦截 `fetch`；`src/test/render.tsx` 提供 QueryClient/路由壳，`src/test/http.ts` 造 `{code,message,data}` 壳（测试里也重放后端协议，不是随手 mock） |
 | E2E 主链路 | `apps/web/e2e/*.spec.ts`、`apps/web/e2e/*.e2e.ts` | 2 文件 3 例 | Playwright + Chromium，跑**真实前后端与共享库**，不 mock；消费者主链路每步落截图到 `docs/screenshots/`；运营后台用例依赖本机开发库种子账号 |
 
 ### 新增功能的底线
@@ -369,7 +371,9 @@ pwsh -File .\scripts\verify.ps1
 | 6 | `tsc --noEmit` | 类型漂移；TS7 不认 `baseUrl`，路径别名用相对形式 |
 | 7 | `vitest run` | 断言过时、mock 返回值形状变了 |
 | 8 | `vite build` | 仅构建期才暴露的引用错误 |
-| 9 | `deploy: compose migrations`（`scripts/check-compose-migrations.ps1`） | 新加 `db/migrations/*.up.sql` 却没挂进 `deploy/docker-compose.yml`，容器起库会缺表 |
+| 9 | `deploy: compose migrations`（`scripts/check-compose-migrations.ps1`） | 新加 `db/migrations/*.up.sql` 却没挂进 `deploy/docker-compose.yml`，容器起库会缺表；脚本逐行锚定挂载并跳过 `#` 注释、校验 initdb 序号 1..N 连续唯一，注释掉一行会直接红 |
+
+每步先重置 `$LASTEXITCODE` 再判断，并用 `Get-Command` 检查 go/gofmt/npm/npx/pwsh；缺命令就是明确失败，不会因为上一步的 0 而假绿。
 
 CI（`.github/workflows/ci.yml`）两个 job 与本地一致，差异：CI 的 api job 起 `mysql:8.4` service，先按文件名顺序跑完 11 组迁移再 `go test -race -coverprofile`（`REPO_TEST_DSN` 指向 `green_travel_points_test`），随后校验 repo 集成用例清单——出现 `--- SKIP` 或 `--- PASS` 少于 10 个即红；web job 用 `npm ci`。
 
@@ -404,7 +408,7 @@ E2E **不在门禁里**：它需要真实后端 + 共享库，CI 没有这些环
 | Token | 自签 HMAC-SHA256 紧凑串，**不是标准 JWT**（无 header 段） | 需要标准 JWT 时统一改签发与校验两端 |
 | sqlc | `apps/api/sqlc.yaml` 已配置但未启用，repo 全是手写 SQL | 启用即要重写 repo 层，别半途混用 |
 | 集成 / E2E | repo 集成测试 8 文件、30 个测试函数（DB 集成 25 + 纯函数 5），**已进 CI**（`mysql:8.4` service + 迁移 + DSN，0 SKIP 由清单校验强制）；E2E 主链路与运营后台已建（真后端 + 共享库），仍**未**进 CI | E2E 若要进 CI，需先给 CI 一个可用的 MySQL 服务容器与种子导入步骤 |
-| 部署 | compose 已编入 `mysql` + `api` + `web`（nginx 在 web 镜像内），11 组迁移全挂载，`check-compose-migrations.ps1` 已进门禁；本机 Docker 引擎不可用（缺 WSL2），容器未实跑，替代证据见 `docs/deploy/部署冒烟记录.md` | 在有 Docker 的机器补一次 `up -d --build` 实跑截图；E2E 仍未进 CI |
+| 部署 | compose 三服务均带 healthcheck（mysql/api/web），首次初始化按 01..11 挂载迁移后由 `99_seed.sh` 导入 seed（`SEED_ON_INIT=0` 关），端口 `${API_PORT:-8080}` / `${WEB_PORT:-8088}` / `${MYSQL_PORT:-3307}`；nginx 显式 90s 代理超时 + `resolver 127.0.0.11` 变量 `proxy_pass`；根 `.dockerignore` + Dockerfile 只 COPY 源码（web 镜像不再带入宿主 node_modules）；本机 Docker 引擎不可用（缺 WSL2），容器未实跑，替代证据见 `docs/deploy/部署冒烟记录.md` 与 `docs/deploy/P5-测试与部署-整改记录.md` | 在有 Docker 的机器补一次 `down -v && up -d --build` 实跑截图（含 `ps` 三服务 healthy、浏览器经 nginx 访问）；E2E 仍未进 CI |
 | 前端包体 | `vite build` 单包约 540 kB（gzip 163 kB）+ CSS 354 kB（gzip 54 kB）；移除 ECharts 后已从 1.95 MB 降下来，仍略超 500 kB 警告。 | 用路由级 `import()` 分包；预算从 gzip 163 kB 起算 |
 
 ---
@@ -417,8 +421,9 @@ E2E **不在门禁里**：它需要真实后端 + 共享库，CI 没有这些环
 | 仓库子目录读写 `EPERM` | 目录 ACL 不含当前用户（复制/解压继承） | `icacls "<仓库根>" /grant "$env:USERNAME:(OI)(CI)F" /T /C` |
 | `/readyz` 503 | 连不上 MySQL | 确认库在跑、账号 `greentravel/greentravel` 存在、`DB_DSN` 正确 |
 | 页面 401 | token 过期（2h）或压根没登录（前端不再注入 `X-User-Id`） | 重新登录；脚本联调需显式开 `AUTH_ALLOW_DEV_HEADER=true` |
-| 商城 / 积分列表为空 | 没导种子；库里确实没数据 | 导入 `db/seed/dev_demo.sql` |
+| 商城 / 积分列表为空 | 没导种子；库里确实没数据 | 导入 `db/seed/dev_demo.sql`（compose 栈首次启动会自动导入，`SEED_ON_INIT=0` 时才需手工） |
 | `docker compose` 连不上 daemon | Docker Desktop 未启动 | 启动后重试，或改本地 `go run` + `npm run dev` |
+| `smoke-deploy.ps1` 报“不是本机回环地址” | 脚本默认拒绝共享库 | 只读巡检也用回环地址；确实要远程跑加 `-AllowRemote`（写路径再叠 `-AllowMutate`） |
 | `tsc` 报 `TS5102 baseUrl` | TS7 移除该选项 | 路径别名写成相对形式 |
 | pnpm 安装依赖失败 | TS7 平台二进制 + Windows Junction 问题 | 改用 npm |
 

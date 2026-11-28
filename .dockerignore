@@ -1,0 +1,29 @@
+# 构建上下文是仓库根（deploy/docker-compose.yml 的 context: ..），
+# 这里把宿主产物与历史目录挡在外面：镜像里只允许出现源码与依赖清单。
+# 历史问题（N03）：宿主 node_modules 被 COPY 进镜像，.bin/vite 变成普通文件，
+# npm run build 报 EACCES，上下文也从几十 MB 涨到数百 MB。
+
+# 依赖与构建产物
+**/node_modules
+**/dist
+**/playwright-report
+**/test-results
+**/.vite
+
+# 本地缓存与临时数据
+.cache
+deploy/mysql-data
+**/*.log
+
+# 版本库与编辑器
+.git
+.gitignore
+.vscode
+.idea
+
+# 截图等大体积文档附件
+docs/screenshots
+
+# 本机环境文件
+.env
+.env.*

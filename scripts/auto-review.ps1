@@ -5,7 +5,8 @@
 
 .DESCRIPTION
   该脚本只做可重复、可验证的机械检查，不替代人工/AI 的语义审查：
-    1. git fetch / 在干净的主分支上快进到 origin/<BaseBranch>；
+    1. git fetch origin <BaseBranch>（默认只 fetch，不改本地 HEAD）；
+       显式给 -AutoPull 且工作区干净、当前就在 BaseBranch 时才会 `git merge --ff-only`；
     2. 运行 scripts/verify.ps1（gofmt / vet / test / build / tsc / vitest / vite build / compose 迁移）；
     3. 运行 npm audit --omit=dev，记录生产依赖漏洞；
     4. 计算距上次审查的变更文件，写入 .cache/review/latest.md 与 latest.json；
@@ -27,7 +28,11 @@
   报告目录（相对仓库根），默认 .cache/review。
 
 .PARAMETER SkipFetch
-  跳过 git fetch / merge（离线或本地验证脚本时用）。
+  跳过 git fetch（离线或本地验证脚本时用）。
+
+.PARAMETER AutoPull
+  允许在 BaseBranch 且工作区干净时 `git merge --ff-only origin/<BaseBranch>`。
+  默认不合并：审查脚本不应悄悄移动别人的基线，要拉代码请显式打开这个开关。
 
 .PARAMETER SkipVerify
   跳过 verify.ps1（只验证脚本本身时用）。
@@ -38,6 +43,7 @@
 .PARAMETER MarkReviewed
   语义审查完成后，把当前 HEAD 写入 .cache/review/last-reviewed.txt。
   默认不写：脚本只做机械基线，不能替人或 AI 宣布“已审查”。
+  开启后必须先通过 scripts/verify.ps1（-SkipVerify 时直接拒绝标记）。
 
 .EXAMPLE
   pwsh -File .\scripts\auto-review.ps1
@@ -52,6 +58,7 @@ param(
     [string]$ReportDir = '.cache/review',
     [string]$AssignmentDoc = 'docs/项目分工与迭代计划.md',
     [switch]$SkipFetch,
+    [switch]$AutoPull,
     [switch]$SkipVerify,
     [switch]$SkipAudit,
     [switch]$MarkReviewed
@@ -233,7 +240,9 @@ if (-not $SkipFetch) {
         $status = 'FETCH_FAILED'
     } else {
         $fetchNote = '成功'
-        if ($branch -eq $BaseBranch -and $dirtyCount -eq 0) {
+        if (-not $AutoPull) {
+            $mergeNote = '未执行（默认只 fetch；需要拉代码请加 -AutoPull）'
+        } elseif ($branch -eq $BaseBranch -and $dirtyCount -eq 0) {
             Write-Step "工作区干净，快进到 origin/$BaseBranch"
             $mergeOutput = & git -C $RepoRoot merge --ff-only "origin/$BaseBranch" 2>&1
             if ($LASTEXITCODE -eq 0) {
@@ -255,8 +264,24 @@ if (-not $SkipFetch) {
 $head = (Invoke-Git rev-parse HEAD | Select-Object -First 1).Trim()
 $shortHead = $head.Substring(0, [Math]::Min(12, $head.Length))
 
-# -MarkReviewed 只记录“语义审查已完成”的 HEAD，不跑门禁、不覆盖 latest.md。
+# -MarkReviewed 只记录“语义审查已完成”的 HEAD，不覆盖 latest.md，
+# 但必须先跑门禁：没过 verify 的 HEAD 不允许被标成已审查。
 if ($MarkReviewed) {
+    if ($SkipVerify) {
+        Write-Host "REVIEW_MARK_REFUSED=-SkipVerify 时不能标记已审查" -ForegroundColor Red
+        exit 2
+    }
+    Write-Step '运行门禁（-MarkReviewed 前置）'
+    $pwsh = Get-Command pwsh -ErrorAction SilentlyContinue
+    if ($null -eq $pwsh) {
+        Write-Host "REVIEW_MARK_REFUSED=找不到 pwsh，无法运行 verify.ps1" -ForegroundColor Red
+        exit 2
+    }
+    & $pwsh.Source -NoProfile -File (Join-Path $RepoRoot 'scripts/verify.ps1')
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "REVIEW_MARK_REFUSED=verify.ps1 exit $LASTEXITCODE" -ForegroundColor Red
+        exit 1
+    }
     Set-Content -LiteralPath $lastReviewedFile -Value $head -Encoding ascii
     Write-Host "REVIEW_MARKED=$head"
     exit 0
@@ -428,7 +453,8 @@ if (-not $SkipAudit) {
 }
 
 if ($auditCritical -gt 0) {
-    $status = 'SECURITY_CRITICAL'
+    # 不覆盖已经出现的失败状态：门禁没过比依赖漏洞更根本，退出码要保留 VERIFY_FAILED。
+    if ($status -eq 'PASS') { $status = 'SECURITY_CRITICAL' }
 }
 
 $verifyTail = ''

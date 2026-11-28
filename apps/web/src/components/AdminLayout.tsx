@@ -9,7 +9,8 @@ const NAV_ITEMS = [
 
 /**
  * 运营后台外壳：与消费者端 AppLayout 分开，导航只保留后台三块功能。
- * 管理员身份由后端 RequireAdmin 判定，页面首个请求 403 时会提示无权限。
+ * 管理员身份由路由上的 AdminGate（探测 /admin/products 的 200/403）把住，
+ * 普通市民根本进不到这个外壳，不会看到后台导航与表单。
  */
 export function AdminLayout() {
   const navigate = useNavigate()
