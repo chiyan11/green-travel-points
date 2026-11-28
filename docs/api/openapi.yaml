@@ -1234,14 +1234,11 @@ components:
           type: boolean
     PingResult:
       type: object
-      required: [pong, env]
+      required: [pong]
       properties:
         pong:
           type: string
           example: green-travel-points
-        env:
-          type: string
-          example: dev
     HealthResult:
       type: object
       required: [status]

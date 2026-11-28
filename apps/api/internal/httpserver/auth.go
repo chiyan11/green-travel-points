@@ -216,7 +216,10 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 
 func (h *AuthHandler) Require(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		raw := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+		raw := strings.TrimSpace(r.Header.Get("Authorization"))
+		if scheme, token, ok := strings.Cut(raw, " "); ok && strings.EqualFold(scheme, "Bearer") {
+			raw = strings.TrimSpace(token)
+		}
 		id, err := h.verify(raw)
 		if err != nil && h.allowDevHeader {
 			// 仅在显式开启开发身份头时回退；id 必须是正整数。

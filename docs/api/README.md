@@ -38,7 +38,7 @@ npm run gen:api     # 读 ../../docs/api/openapi.yaml，生成 src/types/api.ts�
 - 分页参数：`page`（从 1 起，默认 1）、`pageSize`（默认 20，上限 100）；响应 `{items, page, pageSize, total}`。
 - 时间：RFC3339（带时区）。行程上报的 `traveledAt` 只能是服务器当前时间前 7 天内的时间；每日积分上限按服务器当前自然日统计，不能通过传入其他日期重置。
 - 金额/积分：整数 `int64`。
-- 身份：使用 `Authorization: Bearer <token>`（登录 / 注册响应里的 `token`）。仅 `APP_ENV=dev` 且显式设置 `AUTH_ALLOW_DEV_HEADER=true` 时接受 `X-User-Id: <正整数>`；其他环境开启该开关会拒绝启动，生产还必须显式设置 `AUTH_SECRET`。
+- 身份：使用 `Authorization: Bearer <token>`（登录 / 注册响应里的 `token`，Bearer 不区分大小写）。仅 `APP_ENV=dev` 且显式设置 `AUTH_ALLOW_DEV_HEADER=true` 时接受 `X-User-Id: <正整数>`；其他环境开启该开关会拒绝启动，生产还必须显式设置 `AUTH_SECRET`。
   运营接口额外要求角色为 `ADMIN`（`RequireAdmin`），越权返回 403 `FORBIDDEN`。
   注册约束：手机号为 11 位中国大陆号码（`^1[3-9]\d{9}$`）、昵称 ≤64 字、密码 6–128 位。
   登录与注册按直连 IP 分别限流 5 次/分钟，超限返回 `429 RATE_LIMITED` 并带 `Retry-After`（秒）。不信任代理头；通过同一反向代理访问的客户端会共享该代理 IP 的额度。

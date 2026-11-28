@@ -73,7 +73,7 @@ func NewRouter(opt Options) http.Handler {
 	trips := NewTripHandler(opt.Trips, logger)
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Get("/ping", func(w http.ResponseWriter, r *http.Request) {
-			OK(w, map[string]string{"pong": "green-travel-points", "env": opt.Env})
+			OK(w, map[string]string{"pong": "green-travel-points"})
 		})
 		r.Post("/auth/register", auth.Register)
 		r.Post("/auth/login", auth.Login)

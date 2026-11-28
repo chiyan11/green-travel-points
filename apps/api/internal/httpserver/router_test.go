@@ -65,6 +65,18 @@ func TestPing(t *testing.T) {
 	if ct := rr.Header().Get("Content-Type"); ct != "application/json; charset=utf-8" {
 		t.Fatalf("Content-Type = %q", ct)
 	}
+	var body struct {
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Data["pong"] != "green-travel-points" {
+		t.Fatalf("unexpected ping response: %s", rr.Body.String())
+	}
+	if _, ok := body.Data["env"]; ok {
+		t.Fatalf("ping should not expose env: %s", rr.Body.String())
+	}
 }
 
 func TestNotFoundUsesEnvelope(t *testing.T) {

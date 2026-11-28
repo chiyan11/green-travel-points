@@ -107,6 +107,31 @@ func TestBearerTakesPrecedenceOverDevHeader(t *testing.T) {
 	}
 }
 
+func TestBearerSchemeCaseInsensitive(t *testing.T) {
+	h := NewAuthHandler(nil, "test-secret", false, discardLogger())
+	token, err := h.issue(7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, scheme := range []string{"Bearer", "bearer", "BEARER", "Basic"} {
+		t.Run(scheme, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.Header.Set("Authorization", scheme+" "+token)
+			rec := httptest.NewRecorder()
+			h.Require(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			})).ServeHTTP(rec, req)
+			want := http.StatusOK
+			if scheme == "Basic" {
+				want = http.StatusUnauthorized
+			}
+			if rec.Code != want {
+				t.Fatalf("status = %d, want %d", rec.Code, want)
+			}
+		})
+	}
+}
+
 func TestTokenWithZeroUserIDRejected(t *testing.T) {
 	h := NewAuthHandler(nil, "test-secret", false, discardLogger())
 	token, err := h.issue(0)
