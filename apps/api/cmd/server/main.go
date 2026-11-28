@@ -84,7 +84,7 @@ func run() error {
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
-		// 写超时必须在业务请求超时之后到期，否则 middleware.Timeout 还没到，
+		// 写超时必须在业务请求超时之后到期，否则请求超时还没到，
 		// 服务器就先把连接掐断：客户端（含 Vite dev 代理）看到 502，
 		// 后端日志里只剩一条 duration≈30s 的成功记录。跨机共享库上单个写请求
 		// 动辄 20–40s，这条关系是硬要求。
@@ -131,7 +131,7 @@ func newLogger(env string) *slog.Logger {
 
 // serverWriteTimeout 让 http.Server 的写超时始终晚于业务请求超时到期。
 //
-// middleware.Timeout(RequestTimeout) 只是给 handler 的 ctx 加上截止时间，真正把
+// 请求超时中间件给 handler 的 ctx 加上截止时间，真正把
 // 响应写回连接的是 http.Server；两者的关系反了（WriteTimeout 更短）就会出现
 // 「handler 还在等数据库，服务器已经关连接」——客户端看到 502，日志里却是成功。
 func serverWriteTimeout(requestTimeout time.Duration) time.Duration {

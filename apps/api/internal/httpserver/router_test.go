@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -8,7 +9,75 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"greentravelpoints/internal/app"
 )
+
+type timeoutCatalog struct{ fakeCatalog }
+
+func (timeoutCatalog) ListProducts(ctx context.Context, _ app.ProductQuery) (app.Page[app.Product], error) {
+	<-ctx.Done()
+	return app.Page[app.Product]{}, ctx.Err()
+}
+
+func TestRouterTimeoutJSON(t *testing.T) {
+	h := NewRouter(Options{Logger: discardLogger(), Catalog: timeoutCatalog{}, RequestTimeout: 10 * time.Millisecond})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/products", nil))
+	var env Envelope
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatal(err)
+	}
+	if rec.Code != http.StatusGatewayTimeout || env.Code != CodeUnavailable {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestTimeoutJSON(t *testing.T) {
+	tests := []struct {
+		name   string
+		cancel bool
+		handle http.HandlerFunc
+		status int
+		code   string
+	}{
+		{"normal", false, func(w http.ResponseWriter, _ *http.Request) { OK(w, "ok") }, 200, CodeOK},
+		{"deadline before write", false, func(w http.ResponseWriter, r *http.Request) {
+			<-r.Context().Done()
+			Fail(w, 500, CodeInternal, "database detail")
+		}, 504, CodeUnavailable},
+		{"deadline without write", false, func(_ http.ResponseWriter, r *http.Request) {
+			<-r.Context().Done()
+		}, 504, CodeUnavailable},
+		{"client cancellation", true, func(w http.ResponseWriter, r *http.Request) {
+			<-r.Context().Done()
+			Fail(w, 500, CodeInternal, "cancelled")
+		}, 500, CodeInternal},
+		{"already committed", false, func(w http.ResponseWriter, r *http.Request) {
+			OK(w, "ok")
+			<-r.Context().Done()
+		}, 200, CodeOK},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			if tt.cancel {
+				ctx, cancel := context.WithCancel(req.Context())
+				cancel()
+				req = req.WithContext(ctx)
+			}
+			rec := httptest.NewRecorder()
+			timeoutJSON(10*time.Millisecond)(tt.handle).ServeHTTP(rec, req)
+			var env Envelope
+			if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+				t.Fatalf("invalid JSON: %v; body=%s", err, rec.Body.String())
+			}
+			if rec.Code != tt.status || env.Code != tt.code {
+				t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
 
 func testRouter(dbless bool) http.Handler {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
