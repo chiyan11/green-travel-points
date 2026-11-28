@@ -36,8 +36,8 @@ func (s *Store) ListAllProducts(ctx context.Context, q app.AdminProductQuery) (a
 		args = append(args, strings.ToUpper(q.Status))
 	}
 	if q.Keyword != "" {
-		like := "%" + q.Keyword + "%"
-		where = append(where, "(p.name LIKE ? OR p.description LIKE ?)")
+		like := literalLike(q.Keyword)
+		where = append(where, "(p.name LIKE ? ESCAPE '!' OR p.description LIKE ? ESCAPE '!')")
 		args = append(args, like, like)
 	}
 	whereSQL := strings.Join(where, " AND ")

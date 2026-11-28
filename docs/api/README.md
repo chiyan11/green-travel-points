@@ -36,6 +36,7 @@ npm run gen:api     # 读 ../../docs/api/openapi.yaml，生成 src/types/api.ts�
 
 - 统一响应壳：`{"code":"OK","message":"ok","data":...}`；错误时 `data` 省略。
 - 分页参数：`page`（从 1 起，默认 1，上限 100000，超限返回 400）、`pageSize`（默认 20，上限 100）；响应 `{items, page, pageSize, total}`。
+- 商品关键词按字面子串匹配，`%`、`_` 和 `\` 不作为通配符。
 - 时间：RFC3339（带时区）。行程上报的 `traveledAt` 只能是服务器当前时间前 7 天内的时间；每日积分上限按服务器当前自然日统计，不能通过传入其他日期重置。
 - 金额/积分：整数 `int64`。
 - 身份：使用 `Authorization: Bearer <token>`（登录 / 注册响应里的 `token`，Bearer 不区分大小写）。仅 `APP_ENV=dev` 且显式设置 `AUTH_ALLOW_DEV_HEADER=true` 时接受 `X-User-Id: <正整数>`；其他环境开启该开关会拒绝启动，生产还必须显式设置 `AUTH_SECRET`。

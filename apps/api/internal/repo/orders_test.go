@@ -31,6 +31,40 @@ import (
 // 安全约束：库名必须以 _test 结尾——这些用例会整表清空，指错库会把演示数据洗掉。
 const testDSNEnv = "REPO_TEST_DSN"
 
+func TestLiteralLike(t *testing.T) {
+	for _, tt := range []struct{ input, want string }{
+		{"abc", "%abc%"},
+		{"%_!\\", "%!%!_!!\\%"},
+	} {
+		if got := literalLike(tt.input); got != tt.want {
+			t.Errorf("literalLike(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestProductKeywordLiteralIntegration(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	for i, name := range []string{"marker%percent", "marker_under", `marker\slash`, "marker!bang", "markerXother"} {
+		mustExec(t, store.db, `INSERT INTO product
+			(id, merchant_id, name, description, category, cover_url, status, sort_order, limit_per_user)
+			VALUES (?, ?, ?, '', 'test', '', 'ONLINE', 0, 0)`, 9100+i, testMerchant, name)
+	}
+	for i, keyword := range []string{"%", "_", `\`, "!"} {
+		t.Run(keyword, func(t *testing.T) {
+			want := int64(9100 + i)
+			user, err := store.ListProducts(ctx, app.ProductQuery{Keyword: keyword})
+			if err != nil || user.Total != 1 || len(user.Items) != 1 || user.Items[0].ID != want {
+				t.Fatalf("user search: result=%+v err=%v, want id=%d", user, err, want)
+			}
+			admin, err := store.ListAllProducts(ctx, app.AdminProductQuery{Keyword: keyword})
+			if err != nil || admin.Total != 1 || len(admin.Items) != 1 || admin.Items[0].ID != want {
+				t.Fatalf("admin search: result=%+v err=%v, want id=%d", admin, err, want)
+			}
+		})
+	}
+}
+
 // 固定夹具 ID，与种子数据（1001–1003）互不重叠。
 const (
 	testUserID    = int64(9001)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 
 	"greentravelpoints/internal/app"
 )
@@ -22,8 +23,8 @@ func (s *Store) ListProducts(ctx context.Context, q app.ProductQuery) (app.Page[
 		args = append(args, q.Category)
 	}
 	if q.Keyword != "" {
-		like := "%" + q.Keyword + "%"
-		where = append(where, "(p.name LIKE ? OR p.description LIKE ?)")
+		like := literalLike(q.Keyword)
+		where = append(where, "(p.name LIKE ? ESCAPE '!' OR p.description LIKE ? ESCAPE '!')")
 		args = append(args, like, like)
 	}
 	whereSQL := joinAnd(where)
@@ -74,6 +75,10 @@ func (s *Store) ListProducts(ctx context.Context, q app.ProductQuery) (app.Page[
 		return app.Page[app.Product]{}, err
 	}
 	return app.Page[app.Product]{Items: items, Page: page, PageSize: pageSize, Total: total}, nil
+}
+
+func literalLike(keyword string) string {
+	return "%" + strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(keyword) + "%"
 }
 
 // GetProduct 返回上架商品详情（含 SKU 列表）。
