@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, afterEach } from 'vitest'
-import { ApiError, api, fetchPing } from './http'
+import { ApiError, REQUEST_TIMEOUT_MS, api, fetchPing, loginRedirectFrom } from './http'
+import { clearSession, readSession, writeSession } from './session'
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -60,5 +61,49 @@ describe('api.get', () => {
     expect(init.method).toBe('POST')
     expect(init.body).toBe('{"mode":"subway","distanceKm":3}')
     expect(new Headers(init.headers).get('Content-Type')).toBe('application/json')
+  })
+
+  it('网络不可达时抛出中文 NETWORK_ERROR，而不是 Failed to fetch', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')))
+
+    const err = (await api.get('/api/v1/points/summary').catch((e: unknown) => e)) as ApiError
+    expect(err).toBeInstanceOf(ApiError)
+    expect(err.code).toBe('NETWORK_ERROR')
+    expect(err.message).toBe('网络异常，请检查连接后重试')
+  })
+
+  it('超过 65s 未返回时中止请求并给出超时文案', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        (_url: string, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () =>
+              reject(new DOMException('aborted', 'AbortError')),
+            )
+          }),
+      ),
+    )
+
+    const pending = api.get('/api/v1/points/summary').catch((e: unknown) => e)
+    await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS + 1)
+    const err = (await pending) as ApiError
+    expect(err.code).toBe('TIMEOUT')
+    expect(err.message).toBe('请求超时，请稍后重试')
+    vi.useRealTimers()
+  })
+
+  it('401 会清掉本地会话，并给出带回跳地址的登录链接', async () => {
+    writeSession({ userId: 'u_1', nickname: '测试', token: 'token-1' })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
+      code: 'UNAUTHORIZED',
+      message: '需要登录',
+    }, 401)))
+
+    await expect(api.get('/api/v1/points/summary')).rejects.toMatchObject({ status: 401 })
+    expect(readSession()).toBeNull()
+    expect(loginRedirectFrom('/points?tab=1')).toBe('/login?next=%2Fpoints%3Ftab%3D1')
+    clearSession()
   })
 })

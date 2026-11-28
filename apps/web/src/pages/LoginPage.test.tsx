@@ -1,7 +1,7 @@
 import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http } from 'msw'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { LoginPage } from '@/pages/LoginPage'
 import { renderPage } from '@/test/render'
 import { failJson, okJson } from '@/test/http'
@@ -76,5 +76,70 @@ describe('LoginPage', () => {
 
     expect(await screen.findByTestId('route-stub')).toBeInTheDocument()
     expect(readSession()).toEqual({ userId: 'u_1005', nickname: '宋昊阳', token: 'token-abc' })
+  })
+
+  it('带 ?next= 登录后回到来源页，而不是一律回首页', async () => {
+    server.use(
+      http.post('*/api/v1/auth/login', () =>
+        okJson({ token: 'token-1', user: { userId: 'u_1', nickname: '测试' } }),
+      ),
+    )
+    renderPage(<LoginPage />, { route: '/login?next=%2Fpoints', path: '/login' })
+    const user = await fillCredentials('13800000001', '123456')
+
+    await user.click(within(formOf()).getByRole('button', { name: '登录' }))
+
+    const stub = await screen.findByTestId('route-stub')
+    expect(stub).toHaveAttribute('data-path', '/points')
+  })
+
+  it('?next= 是站外地址时回首页，不作为开放重定向', async () => {
+    server.use(
+      http.post('*/api/v1/auth/login', () =>
+        okJson({ token: 'token-1', user: { userId: 'u_1', nickname: '测试' } }),
+      ),
+    )
+    renderPage(<LoginPage />, { route: '/login?next=%2F%2Fevil.example.com', path: '/login' })
+    const user = await fillCredentials('13800000001', '123456')
+
+    await user.click(within(formOf()).getByRole('button', { name: '登录' }))
+
+    const stub = await screen.findByTestId('route-stub')
+    expect(stub).toHaveAttribute('data-path', '/')
+  })
+
+  it('浏览器存储不可用时提示无法保持登录，且不跳首页', async () => {
+    server.use(
+      http.post('*/api/v1/auth/login', () =>
+        okJson({ token: 'token-1', user: { userId: 'u_1', nickname: '测试' } }),
+      ),
+    )
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('QuotaExceededError')
+    })
+    renderLogin()
+    const user = await fillCredentials('13800000001', '123456')
+
+    await user.click(within(formOf()).getByRole('button', { name: '登录' }))
+
+    expect(await screen.findByText(/浏览器存储不可用/)).toBeInTheDocument()
+    expect(screen.queryByTestId('route-stub')).not.toBeInTheDocument()
+    expect(readSession()).toBeNull()
+    vi.restoreAllMocks()
+  })
+
+  it('会话写入成功后才算登录完成', async () => {
+    server.use(
+      http.post('*/api/v1/auth/login', () =>
+        okJson({ token: 'token-1', user: { userId: 'u_1', nickname: '测试' } }),
+      ),
+    )
+    renderLogin()
+    const user = await fillCredentials('13800000001', '123456')
+
+    await user.click(within(formOf()).getByRole('button', { name: '登录' }))
+
+    expect(await screen.findByTestId('route-stub')).toBeInTheDocument()
+    expect(readSession()?.token).toBe('token-1')
   })
 })
