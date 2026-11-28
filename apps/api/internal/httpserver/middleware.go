@@ -1,12 +1,58 @@
 package httpserver
 
 import (
+	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5/middleware"
 )
+
+type timeoutWriter struct {
+	http.ResponseWriter
+	ctx       context.Context
+	committed bool
+	timedOut  bool
+}
+
+func (w *timeoutWriter) WriteHeader(status int) {
+	if w.committed {
+		return
+	}
+	w.committed = true
+	if errors.Is(w.ctx.Err(), context.DeadlineExceeded) {
+		w.timedOut = true
+		Fail(w.ResponseWriter, http.StatusGatewayTimeout, CodeUnavailable, "请求超时")
+		return
+	}
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *timeoutWriter) Write(p []byte) (int, error) {
+	if !w.committed {
+		w.WriteHeader(http.StatusOK)
+	}
+	if w.timedOut {
+		return len(p), nil
+	}
+	return w.ResponseWriter.Write(p)
+}
+
+func timeoutJSON(timeout time.Duration) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx, cancel := context.WithTimeout(r.Context(), timeout)
+			defer cancel()
+			tw := &timeoutWriter{ResponseWriter: w, ctx: ctx}
+			next.ServeHTTP(tw, r.WithContext(ctx))
+			if !tw.committed && errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				tw.WriteHeader(http.StatusGatewayTimeout)
+			}
+		})
+	}
+}
 
 // statusRecorder 记录响应状态码与字节数，供访问日志使用。
 type statusRecorder struct {

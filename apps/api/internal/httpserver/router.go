@@ -59,7 +59,7 @@ func NewRouter(opt Options) http.Handler {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Recoverer)
 	r.Use(RequestLogger(logger))
-	r.Use(middleware.Timeout(opt.RequestTimeout))
+	r.Use(timeoutJSON(opt.RequestTimeout))
 
 	health := Health{DB: opt.DB, Logger: logger}
 	r.Get("/healthz", health.Liveness)
