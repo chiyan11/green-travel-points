@@ -21,10 +21,12 @@ const FILTERS: Array<{ value: OrderStatus | ''; label: string }> = [
 ]
 
 /** 按当前状态给出下一步动作：PENDING→确认接单、PAID→发货、SHIPPED→核销完成。没有收款环节。 */
-const NEXT_ACTION: Partial<Record<OrderStatus, { action: AdminOrderAction; label: string }>> = {
-  PENDING: { action: 'confirm', label: '确认接单' },
-  PAID: { action: 'ship', label: '发货' },
-  SHIPPED: { action: 'complete', label: '核销完成' },
+const NEXT_ACTION: Partial<
+  Record<OrderStatus, { action: AdminOrderAction; label: string; target: OrderStatus }>
+> = {
+  PENDING: { action: 'confirm', label: '确认接单', target: 'PAID' },
+  PAID: { action: 'ship', label: '发货', target: 'SHIPPED' },
+  SHIPPED: { action: 'complete', label: '核销完成', target: 'COMPLETED' },
 }
 
 export function AdminOrdersPage(): ReactNode {
@@ -50,6 +52,19 @@ export function AdminOrdersPage(): ReactNode {
   })
 
   const orders = data?.items ?? []
+  // 只灰正在处理的那一行：A 行请求在途时，B 行仍可单独操作。
+  const pendingId = mutation.isPending ? mutation.variables?.id : undefined
+
+  const onTransition = (o: AdminOrder) => {
+    const next = NEXT_ACTION[o.status]
+    if (!next) return
+    const label = ORDER_STATUS_META[next.target].label
+    const ok = window.confirm(
+      `确认把订单 ${o.orderNo} 流转为「${label}」？\n该操作不可撤销：后台没有回退入口，误点只能改库。`,
+    )
+    if (!ok) return
+    mutation.mutate({ id: o.id, action: next.action })
+  }
 
   return (
     <>
@@ -120,10 +135,10 @@ export function AdminOrdersPage(): ReactNode {
                       {next ? (
                         <button
                           className="btn btn--ghost"
-                          disabled={mutation.isPending}
-                          onClick={() => mutation.mutate({ id: o.id, action: next.action })}
+                          disabled={pendingId === o.id}
+                          onClick={() => onTransition(o)}
                         >
-                          {next.label}
+                          {pendingId === o.id ? `${next.label}中…` : next.label}
                         </button>
                       ) : (
                         <span className="muted">—</span>

@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { AppLayout } from '@/components/AppLayout'
 import { AdminLayout } from '@/components/AdminLayout'
 import { RequireAuth } from '@/components/RequireAuth'
+import { AdminGate } from '@/components/AdminGate'
 import { HomePage } from '@/pages/HomePage'
 import { LoginPage } from '@/pages/LoginPage'
 import { TripsPage } from '@/pages/TripsPage'
@@ -16,7 +17,8 @@ import { AdminOrdersPage } from '@/pages/admin/AdminOrdersPage'
 
 /**
  * 路由：/login 公开；消费者端页面经 RequireAuth + AppLayout；
- * 运营后台（M8）挂在 /admin，独立布局，管理员身份由后端 RequireAdmin 判定。
+ * 运营后台（M8）挂在 /admin：RequireAuth 保证已登录，AdminGate 再探测一次后端
+ * （200/403）确认是 ADMIN，普通市民只看到无权限面板，不渲染后台外壳与导航。
  *
  * 消费者端 8 个页面均已接入真实后端（请求只在 src/services/* 里发），
  * wire 类型由 docs/api/openapi.yaml 生成到 src/types/api.ts，页面视图模型见 src/types/domain.ts。
@@ -44,7 +46,9 @@ export const router = createBrowserRouter([
     path: '/admin',
     element: (
       <RequireAuth>
-        <AdminLayout />
+        <AdminGate>
+          <AdminLayout />
+        </AdminGate>
       </RequireAuth>
     ),
     children: [

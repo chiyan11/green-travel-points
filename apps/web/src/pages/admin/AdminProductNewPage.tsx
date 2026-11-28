@@ -1,6 +1,6 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { createAdminProduct } from '@/services/admin'
 import type { ProductStatus } from '@/types/domain'
 import { ApiError } from '@/lib/http'
@@ -11,6 +11,7 @@ const DEFAULT_MERCHANT_ID = 1001
 /** 新建商品：单 SKU（标准款），状态默认草稿，提交后回列表。 */
 export function AdminProductNewPage(): ReactNode {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [name, setName] = useState('')
   const [category, setCategory] = useState('')
   const [description, setDescription] = useState('')
@@ -23,6 +24,9 @@ export function AdminProductNewPage(): ReactNode {
   const mutation = useMutation({
     mutationFn: createAdminProduct,
     onSuccess: (product) => {
+      // 列表 staleTime 30s：不主动失效的话，返回列表会看到「已创建：X」但表格里没有 X。
+      // 用前缀 key 覆盖所有筛选/分页组合。
+      void queryClient.invalidateQueries({ queryKey: ['admin-products'] })
       navigate(`/admin/products?created=${encodeURIComponent(product.name)}`)
     },
     onError: (err: unknown) => {
